@@ -21,3 +21,15 @@
 syntax = "proto3";
 
 package astarteplatform.msghub;
+
+import "astarteplatform/msghub/interface.proto";
+import "astarteplatform/msghub/node.proto";
+
+service MessageHub {
+  rpc Attach(Node) returns (stream NodeMessage) {}
+}
+
+message NodeMessage{
+  Interface interface = 1;
+  string path = 2;
+}

@@ -18,14 +18,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-fn main() {
-    let proto_files = &[
-        "proto/astarteplatform/msghub/message_hub_service.proto",
-        "proto/astarteplatform/msghub/node.proto",
-        "proto/astarteplatform/msghub/interface.proto",
-    ];
+syntax = "proto3";
 
-    tonic_build::configure()
-        .compile(proto_files, &["proto"])
-        .unwrap_or_else(|e| panic!("Failed to compile protos {:?}", e));
+package astarteplatform.msghub;
+
+import "astarteplatform/msghub/interface.proto";
+
+message Node {
+  string uuid = 1;
+  repeated Interface introspection = 2;
 }
