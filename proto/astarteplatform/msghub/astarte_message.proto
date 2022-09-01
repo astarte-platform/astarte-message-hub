@@ -18,16 +18,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-fn main() {
-    let proto_files = &[
-        "proto/astarteplatform/msghub/message_hub_service.proto",
-        "proto/astarteplatform/msghub/node.proto",
-        "proto/astarteplatform/msghub/interface.proto",
-        "proto/astarteplatform/msghub/astarte_message.proto",
-        "proto/astarteplatform/msghub/astarte_type.proto",
-    ];
+syntax = "proto3";
 
-    tonic_build::configure()
-        .compile(proto_files, &["proto"])
-        .unwrap_or_else(|e| panic!("Failed to compile protos {:?}", e));
+package astarteplatform.msghub;
+
+import "google/protobuf/timestamp.proto";
+
+import "astarteplatform/msghub/astarte_type.proto";
+import "astarteplatform/msghub/interface.proto";
+
+message AstarteMessage{
+  Interface interface = 1;
+  string path = 2;
+  oneof payload {
+    AstarteDataType astarte_data = 3;
+    AstarteUnset astarte_unset = 4;
+  }
+  google.protobuf.Timestamp timestamp = 5;
 }
+
+message AstarteUnset{}
