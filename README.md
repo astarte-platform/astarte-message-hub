@@ -191,5 +191,26 @@ sequenceDiagram
          AstarteMessageHub->>Node1: Unable to send message
     end
 ```
+## Detach Method
+Remove an existing Node and its introspection from Astarte Message Hub.
 
+``` protobuf
+service MessageHub {
+  rpc Detach(Node) returns (google.protobuf.Empty){}
+  ....
+}
+```
+
+```mermaid
+sequenceDiagram
+    participant Node1
+    participant AstarteMessageHub
+    participant Astarte
+    Node1->>AstarteMessageHub: detach(node)
+    AstarteMessageHub->>Astarte: sendIntrospection()
+    
+    alt when the introspection process fails
+         AstarteMessageHub->>Node1: Unable to attach the node
+    end
+```
 
