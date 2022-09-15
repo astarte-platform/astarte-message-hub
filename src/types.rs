@@ -386,7 +386,8 @@ mod test {
             if let IndividualData::AstarteDateTime(date_time_value) = data.individual_data.unwrap()
             {
                 let expected_sys_time: SystemTime = expected_datetime_value.into();
-                assert_eq!(expected_sys_time, date_time_value.try_into().unwrap());
+                let sys_time: SystemTime = date_time_value.try_into().unwrap();
+                assert_eq!(expected_sys_time, sys_time);
             } else {
                 panic!();
             }

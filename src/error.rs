@@ -18,12 +18,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-pub use crate::proto_message_hub::message_hub_server::MessageHubServer;
+use thiserror::Error;
 
-mod astarte_sdk_types;
-mod error;
-mod types;
+#[derive(Error, Debug)]
+pub enum AstarteMessageHubError {
+    #[error("")]
+    Infallible(#[from] std::convert::Infallible),
 
-pub mod proto_message_hub {
-    tonic::include_proto!("astarteplatform.msghub");
+    #[error("")]
+    TryFromIntError(#[from] core::num::TryFromIntError),
 }
