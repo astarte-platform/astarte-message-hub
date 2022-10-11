@@ -510,6 +510,37 @@ mod test {
     }
 
     #[test]
+    fn datetime_array_into_astarte_type_individual_success() {
+        use chrono::{DateTime, Utc};
+        use std::time::SystemTime;
+
+        let expected_vec_datetime_value = vec![Utc::now(), Utc::now()];
+        let vec_datetime_astarte_individual_type: AstarteDataTypeIndividual =
+            expected_vec_datetime_value.clone().into();
+
+        if let IndividualData::AstarteDateTimeArray(vec_datetime_value) =
+            vec_datetime_astarte_individual_type
+                .individual_data
+                .unwrap()
+        {
+            for i in 0..expected_vec_datetime_value.len() {
+                let system_time: SystemTime = vec_datetime_value
+                    .values
+                    .get(i)
+                    .unwrap()
+                    .clone()
+                    .try_into()
+                    .unwrap();
+
+                let date_time: DateTime<Utc> = system_time.try_into().unwrap();
+                assert_eq!(expected_vec_datetime_value.get(i).unwrap(), &date_time);
+            }
+        } else {
+            panic!();
+        }
+    }
+
+    #[test]
     fn datetime_array_into_astarte_data_type_success() {
         use chrono::{DateTime, Utc};
         use std::time::SystemTime;
