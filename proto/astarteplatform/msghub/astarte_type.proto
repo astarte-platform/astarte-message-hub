@@ -25,31 +25,31 @@ package astarteplatform.msghub;
 import "google/protobuf/timestamp.proto";
 
 message AstarteDoubleArray {
-  repeated double astarte_double = 1;
+  repeated double values = 1;
 }
 
 message AstarteIntegerArray {
-  repeated int32 astarte_integer = 1;
+  repeated int32 values = 1;
 }
 
 message AstarteBooleanArray {
-  repeated bool astarte_boolean = 1;
+  repeated bool values = 1;
 }
 
 message AstarteLongIntegerArray {
-  repeated int64 astarte_long_integer = 1;
+  repeated int64 values = 1;
 }
 
 message AstarteStringArray {
-  repeated string astarte_string = 1;
+  repeated string values = 1;
 }
 
 message AstarteBinaryBlobArray {
-  repeated bytes astarte_binary_blob = 1;
+  repeated bytes values = 1;
 }
 
 message AstarteDateTimeArray{
-  repeated google.protobuf.Timestamp astarte_date_time = 1;
+  repeated google.protobuf.Timestamp values = 1;
 }
 
 message AstarteDataTypeObject {

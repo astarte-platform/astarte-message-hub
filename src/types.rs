@@ -54,6 +54,21 @@ macro_rules! impl_type_conversion_traits {
     };
 }
 
+macro_rules! impl_array_type_conversion_traits {
+    ( {$( ($typ:ty, $astartedatatype:ident) ,)*}) => {
+
+        $(
+               impl From<$typ> for AstarteDataTypeIndividual {
+                    fn from(values: $typ) -> Self {
+                        AstarteDataTypeIndividual {
+                            individual_data: Some(IndividualData::$astartedatatype($astartedatatype{values}))
+                        }
+                    }
+                }
+        )*
+    };
+}
+
 impl_type_conversion_traits!({
     (f64, AstarteDouble),
     (i32, AstarteInteger),
@@ -62,6 +77,15 @@ impl_type_conversion_traits!({
     (&str, AstarteString),
     (String, AstarteString),
     (Vec<u8>, AstarteBinaryBlob),
+});
+
+impl_array_type_conversion_traits!({
+    (Vec<f64>, AstarteDoubleArray),
+    (Vec<i32>, AstarteIntegerArray),
+    (Vec<bool>, AstarteBooleanArray),
+    (Vec<i64>, AstarteLongIntegerArray),
+    (Vec<String>, AstarteStringArray),
+    (Vec<Vec<u8>>, AstarteBinaryBlobArray),
 });
 
 impl From<DateTime<Utc>> for AstarteDataTypeIndividual {
@@ -74,76 +98,12 @@ impl From<DateTime<Utc>> for AstarteDataTypeIndividual {
     }
 }
 
-impl From<Vec<f64>> for AstarteDataTypeIndividual {
-    fn from(value: Vec<f64>) -> Self {
-        AstarteDataTypeIndividual {
-            individual_data: Some(IndividualData::AstarteDoubleArray(AstarteDoubleArray {
-                astarte_double: value,
-            })),
-        }
-    }
-}
-
-impl From<Vec<i32>> for AstarteDataTypeIndividual {
-    fn from(value: Vec<i32>) -> Self {
-        AstarteDataTypeIndividual {
-            individual_data: Some(IndividualData::AstarteIntegerArray(AstarteIntegerArray {
-                astarte_integer: value,
-            })),
-        }
-    }
-}
-
-impl From<Vec<i64>> for AstarteDataTypeIndividual {
-    fn from(value: Vec<i64>) -> Self {
-        AstarteDataTypeIndividual {
-            individual_data: Some(IndividualData::AstarteLongIntegerArray(
-                AstarteLongIntegerArray {
-                    astarte_long_integer: value,
-                },
-            )),
-        }
-    }
-}
-
-impl From<Vec<bool>> for AstarteDataTypeIndividual {
-    fn from(value: Vec<bool>) -> Self {
-        AstarteDataTypeIndividual {
-            individual_data: Some(IndividualData::AstarteBooleanArray(AstarteBooleanArray {
-                astarte_boolean: value,
-            })),
-        }
-    }
-}
-
-impl From<Vec<String>> for AstarteDataTypeIndividual {
-    fn from(value: Vec<String>) -> Self {
-        AstarteDataTypeIndividual {
-            individual_data: Some(IndividualData::AstarteStringArray(AstarteStringArray {
-                astarte_string: value,
-            })),
-        }
-    }
-}
-
-impl From<Vec<Vec<u8>>> for AstarteDataTypeIndividual {
-    fn from(value: Vec<Vec<u8>>) -> Self {
-        AstarteDataTypeIndividual {
-            individual_data: Some(IndividualData::AstarteBinaryBlobArray(
-                AstarteBinaryBlobArray {
-                    astarte_binary_blob: value,
-                },
-            )),
-        }
-    }
-}
-
 impl From<Vec<DateTime<Utc>>> for AstarteDataTypeIndividual {
-    fn from(value: Vec<DateTime<Utc>>) -> Self {
+    fn from(values: Vec<DateTime<Utc>>) -> Self {
         use prost_types::Timestamp;
         AstarteDataTypeIndividual {
             individual_data: Some(IndividualData::AstarteDateTimeArray(AstarteDateTimeArray {
-                astarte_date_time: value
+                values: values
                     .iter()
                     .map(|x| {
                         let system_time: SystemTime = x.clone().into();
@@ -279,7 +239,7 @@ mod test {
         if let IndividualData::AstarteDoubleArray(vec_double_values) =
             vec_double_individual_type.individual_data.unwrap()
         {
-            assert_eq!(expected_vec_double_value, vec_double_values.astarte_double);
+            assert_eq!(expected_vec_double_value, vec_double_values.values);
         } else {
             panic!();
         }
@@ -294,7 +254,7 @@ mod test {
         if let IndividualData::AstarteStringArray(vec_string_values) =
             vec_string_individual_type.individual_data.unwrap()
         {
-            assert_eq!(expected_vec_string_value, vec_string_values.astarte_string);
+            assert_eq!(expected_vec_string_value, vec_string_values.values);
         } else {
             panic!();
         }
@@ -445,7 +405,7 @@ mod test {
             if let IndividualData::AstarteDoubleArray(vec_double_values) =
                 data.individual_data.unwrap()
             {
-                assert_eq!(expected_vec_double_value, vec_double_values.astarte_double);
+                assert_eq!(expected_vec_double_value, vec_double_values.values);
             } else {
                 panic!();
             }
@@ -463,7 +423,7 @@ mod test {
             if let IndividualData::AstarteIntegerArray(vec_i32_values) =
                 data.individual_data.unwrap()
             {
-                assert_eq!(expected_vec_i32_value, vec_i32_values.astarte_integer);
+                assert_eq!(expected_vec_i32_value, vec_i32_values.values);
             } else {
                 panic!();
             }
@@ -481,7 +441,7 @@ mod test {
             if let IndividualData::AstarteLongIntegerArray(vec_i64_values) =
                 data.individual_data.unwrap()
             {
-                assert_eq!(expected_vec_i64_value, vec_i64_values.astarte_long_integer);
+                assert_eq!(expected_vec_i64_value, vec_i64_values.values);
             } else {
                 panic!();
             }
@@ -499,7 +459,7 @@ mod test {
             if let IndividualData::AstarteBooleanArray(vec_bool_values) =
                 data.individual_data.unwrap()
             {
-                assert_eq!(expected_vec_bool_value, vec_bool_values.astarte_boolean);
+                assert_eq!(expected_vec_bool_value, vec_bool_values.values);
             } else {
                 panic!();
             }
@@ -518,7 +478,7 @@ mod test {
             if let IndividualData::AstarteStringArray(vec_string_values) =
                 data.individual_data.unwrap()
             {
-                assert_eq!(expected_vec_string_value, vec_string_values.astarte_string);
+                assert_eq!(expected_vec_string_value, vec_string_values.values);
             } else {
                 panic!();
             }
@@ -539,7 +499,7 @@ mod test {
             {
                 assert_eq!(
                     expected_vec_binary_blob_value,
-                    vec_binary_blob_values.astarte_binary_blob
+                    vec_binary_blob_values.values
                 );
             } else {
                 panic!();
@@ -564,7 +524,7 @@ mod test {
             {
                 for i in 0..expected_vec_datetime_value.len() {
                     let system_time: SystemTime = vec_datetime_value
-                        .astarte_date_time
+                        .values
                         .get(i)
                         .unwrap()
                         .clone()
