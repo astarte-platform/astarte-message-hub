@@ -17,3 +17,11 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+pub use crate::proto_message_hub::message_hub_server::MessageHubServer;
+
+mod types;
+
+pub mod proto_message_hub {
+    tonic::include_proto!("astarteplatform.msghub");
+}
