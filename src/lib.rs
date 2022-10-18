@@ -18,8 +18,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+pub use crate::astarte_message_hub::AstarteMessageHub;
 pub use crate::proto_message_hub::message_hub_server::MessageHubServer;
 
+mod astarte_message_hub;
 mod astarte_sdk_types;
 mod error;
 mod types;

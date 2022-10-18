@@ -18,6 +18,33 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-fn main() {
-    println!("Astarte-message-hub!");
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use log::info;
+use tokio::sync::RwLock;
+use tonic::transport::Server;
+
+use astarte_message_hub::AstarteMessageHub;
+use astarte_message_hub::MessageHubServer;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+
+    let addr: SocketAddr = "[::1]:10000".parse().unwrap();
+
+    let astarte_message_hub = AstarteMessageHub {
+        nodes: Arc::new(RwLock::new(HashMap::new())),
+    };
+
+    let astarte_message_server = MessageHubServer::new(astarte_message_hub);
+    Server::builder()
+        .add_service(astarte_message_server)
+        .serve(addr)
+        .await?;
+    info!("Astarte Message Hub listening on: {}", addr);
+
+    Ok(())
 }
