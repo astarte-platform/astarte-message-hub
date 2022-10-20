@@ -28,6 +28,60 @@ fn main() {
     ];
 
     tonic_build::configure()
+        .compile_well_known_types(true)
+        .type_attribute(
+            "AstarteDataTypeIndividual.individual_data",
+            "#[derive(serde::Serialize,serde::Deserialize)]",
+        )
+        .type_attribute(
+            "AstarteBinaryBlob",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "AstarteDateTime",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "AstarteDoubleArray",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "AstarteIntegerArray",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "AstarteBooleanArray",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "AstarteLongIntegerArray",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "AstarteStringArray",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "AstarteBinaryBlobArray",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "AstarteDateTimeArray",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "IndividualData",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "AstarteDataTypeIndividual",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .type_attribute(
+            "AstarteDataTypeObject",
+            "#[derive(serde::Deserialize, serde::Serialize)]",
+        )
+        .extern_path(".google.protobuf", "::pbjson_types")
         .compile(proto_files, &["proto"])
         .unwrap_or_else(|e| panic!("Failed to compile protos {:?}", e));
 }

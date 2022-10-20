@@ -19,7 +19,6 @@
  */
 
 use std::collections::HashMap;
-use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
 
@@ -90,25 +89,21 @@ impl_array_type_conversion_traits!({
 
 impl From<DateTime<Utc>> for AstarteDataTypeIndividual {
     fn from(value: DateTime<Utc>) -> Self {
-        let system_time: SystemTime = value.into();
-
         AstarteDataTypeIndividual {
-            individual_data: Some(IndividualData::AstarteDateTime(system_time.into())),
+            individual_data: Some(IndividualData::AstarteDateTime(value.into())),
         }
     }
 }
 
 impl From<Vec<DateTime<Utc>>> for AstarteDataTypeIndividual {
     fn from(values: Vec<DateTime<Utc>>) -> Self {
-        use prost_types::Timestamp;
+        use pbjson_types::Timestamp;
+
         AstarteDataTypeIndividual {
             individual_data: Some(IndividualData::AstarteDateTimeArray(AstarteDateTimeArray {
                 values: values
-                    .iter()
-                    .map(|x| {
-                        let system_time: SystemTime = x.clone().into();
-                        system_time.into()
-                    })
+                    .into_iter()
+                    .map(|x| x.into())
                     .collect::<Vec<Timestamp>>(),
             })),
         }
@@ -136,6 +131,7 @@ impl From<HashMap<String, AstarteDataTypeIndividual>> for AstarteDataType {
 
 #[cfg(test)]
 mod test {
+    use chrono::DateTime;
     use std::collections::HashMap;
 
     use crate::proto_message_hub::astarte_data_type::Data::AstarteIndividual;
@@ -376,7 +372,6 @@ mod test {
     #[test]
     fn datetime_into_astarte_data_type_success() {
         use chrono::Utc;
-        use std::time::SystemTime;
 
         let expected_datetime_value = Utc::now();
 
@@ -385,9 +380,8 @@ mod test {
         if let AstarteIndividual(data) = datetime_astarte_data_type.data.unwrap() {
             if let IndividualData::AstarteDateTime(date_time_value) = data.individual_data.unwrap()
             {
-                let expected_sys_time: SystemTime = expected_datetime_value.into();
-                let sys_time: SystemTime = date_time_value.try_into().unwrap();
-                assert_eq!(expected_sys_time, sys_time);
+                let resul_date_time: DateTime<Utc> = date_time_value.try_into().unwrap();
+                assert_eq!(expected_datetime_value, resul_date_time);
             } else {
                 panic!();
             }
@@ -513,7 +507,6 @@ mod test {
     #[test]
     fn datetime_array_into_astarte_type_individual_success() {
         use chrono::{DateTime, Utc};
-        use std::time::SystemTime;
 
         let expected_vec_datetime_value = vec![Utc::now(), Utc::now()];
         let vec_datetime_astarte_individual_type: AstarteDataTypeIndividual =
@@ -525,7 +518,7 @@ mod test {
                 .unwrap()
         {
             for i in 0..expected_vec_datetime_value.len() {
-                let system_time: SystemTime = vec_datetime_value
+                let date_time: DateTime<Utc> = vec_datetime_value
                     .values
                     .get(i)
                     .unwrap()
@@ -533,7 +526,6 @@ mod test {
                     .try_into()
                     .unwrap();
 
-                let date_time: DateTime<Utc> = system_time.try_into().unwrap();
                 assert_eq!(expected_vec_datetime_value.get(i).unwrap(), &date_time);
             }
         } else {
@@ -544,7 +536,6 @@ mod test {
     #[test]
     fn datetime_array_into_astarte_data_type_success() {
         use chrono::{DateTime, Utc};
-        use std::time::SystemTime;
 
         let expected_vec_datetime_value = vec![Utc::now(), Utc::now()];
         let vec_datetime_astarte_data_type: AstarteDataType =
@@ -555,7 +546,7 @@ mod test {
                 data.individual_data.unwrap()
             {
                 for i in 0..expected_vec_datetime_value.len() {
-                    let system_time: SystemTime = vec_datetime_value
+                    let date_time: DateTime<Utc> = vec_datetime_value
                         .values
                         .get(i)
                         .unwrap()
@@ -563,7 +554,6 @@ mod test {
                         .try_into()
                         .unwrap();
 
-                    let date_time: DateTime<Utc> = system_time.try_into().unwrap();
                     assert_eq!(expected_vec_datetime_value.get(i).unwrap(), &date_time);
                 }
             } else {

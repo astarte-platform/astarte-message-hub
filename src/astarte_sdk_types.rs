@@ -18,63 +18,59 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use std::time::SystemTime;
-
 use crate::error::AstarteMessageHubError;
 use astarte_sdk::types::AstarteType;
 use chrono::DateTime;
 
 use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
 
-impl TryFrom<IndividualData> for AstarteType {
-    type Error = AstarteMessageHubError;
-    fn try_from(d: IndividualData) -> Result<Self, Self::Error> {
-        return match d {
-            IndividualData::AstarteDouble(val) => Ok(AstarteType::Double(val.into())),
-            IndividualData::AstarteInteger(val) => Ok(AstarteType::Integer(val.into())),
-            IndividualData::AstarteBoolean(val) => Ok(AstarteType::Boolean(val.into())),
-            IndividualData::AstarteLongInteger(val) => Ok(AstarteType::LongInteger(val.into())),
-            IndividualData::AstarteString(val) => Ok(AstarteType::String(val.into())),
-            IndividualData::AstarteBinaryBlob(val) => Ok(AstarteType::BinaryBlob(val.into())),
-            IndividualData::AstarteDateTime(val) => {
-                let sys_time: SystemTime = val.try_into()?;
-                Ok(AstarteType::DateTime(sys_time.into()))
-            }
-            IndividualData::AstarteDoubleArray(val) => {
-                Ok(AstarteType::DoubleArray(val.values.into()))
-            }
-            IndividualData::AstarteIntegerArray(val) => {
-                Ok(AstarteType::IntegerArray(val.values.into()))
-            }
-            IndividualData::AstarteBooleanArray(val) => {
-                Ok(AstarteType::BooleanArray(val.values.into()))
-            }
-            IndividualData::AstarteLongIntegerArray(val) => {
-                Ok(AstarteType::LongIntegerArray(val.values.into()))
-            }
-            IndividualData::AstarteStringArray(val) => {
-                Ok(AstarteType::StringArray(val.values.into()))
-            }
-            IndividualData::AstarteBinaryBlobArray(val) => {
-                Ok(AstarteType::BinaryBlobArray(val.values.into()))
-            }
-            IndividualData::AstarteDateTimeArray(val) => {
-                let mut times: Vec<DateTime<chrono::Utc>> = vec![];
-                for time in val.values.iter() {
-                    let sys_time: SystemTime = time.clone().try_into()?;
-                    times.push(sys_time.into());
+macro_rules! impl_individual_data_to_astarte_type_conversion_traits {
+    (scalar $($typ:ident, $astartedatatype:ident),*; vector $($arraytyp:ident, $astartearraydatatype:ident),*) => {
+        impl TryFrom<IndividualData> for AstarteType {
+            type Error = AstarteMessageHubError;
+            fn try_from(d: IndividualData) -> Result<Self, Self::Error> {
+                match d {
+                    $(
+                    IndividualData::$typ(val) => Ok(AstarteType::$astartedatatype(val.try_into()?)),
+                    )?
+                    $(
+                    IndividualData::$arraytyp(val) => Ok(AstarteType::$astartearraydatatype(val.values.try_into()?)),
+                    )?
+                    IndividualData::AstarteDateTimeArray(val) => {
+                        let mut times: Vec<DateTime<chrono::Utc>> = vec![];
+                        for time in val.values.iter() {
+                            times.push(time.clone().try_into()?);
+                        }
+                        Ok(AstarteType::DateTimeArray(times))
+                    }
                 }
-                Ok(AstarteType::DateTimeArray(times))
             }
-        };
+        }
     }
 }
 
+impl_individual_data_to_astarte_type_conversion_traits!(
+    scalar
+    AstarteDouble, Double,
+    AstarteInteger,  Integer,
+    AstarteBoolean, Boolean,
+    AstarteLongInteger,LongInteger,
+    AstarteString, String,
+    AstarteBinaryBlob, BinaryBlob,
+    AstarteDateTime, DateTime ;
+    vector
+    AstarteDoubleArray, DoubleArray,
+    AstarteIntegerArray, IntegerArray,
+    AstarteBooleanArray, BooleanArray,
+    AstarteLongIntegerArray, LongIntegerArray,
+    AstarteStringArray, StringArray,
+    AstarteBinaryBlobArray, BinaryBlobArray
+);
+
 #[cfg(test)]
 mod test {
-    use std::time::SystemTime;
-
     use astarte_sdk::types::AstarteType;
+    use chrono::{DateTime, Utc};
 
     use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
 
@@ -158,13 +154,12 @@ mod test {
 
     #[test]
     fn proto_astarte_date_time_into_astarte_sdk_type_success() {
-        let value: SystemTime = SystemTime::now();
+        let value: DateTime<Utc> = Utc::now();
         let expected_date_time_value = IndividualData::AstarteDateTime(value.into());
         let astarte_type: AstarteType = expected_date_time_value.try_into().unwrap();
 
         if let AstarteType::DateTime(astarte_value) = astarte_type {
-            let system_time: SystemTime = astarte_value.try_into().unwrap();
-            assert_eq!(value, system_time);
+            assert_eq!(value, astarte_value);
         } else {
             panic!();
         }
@@ -272,25 +267,22 @@ mod test {
 
     #[test]
     fn proto_astarte_date_time_array_into_astarte_sdk_type_success() {
-        let value: Vec<SystemTime> = vec![SystemTime::now(), SystemTime::now()];
         use crate::proto_message_hub::AstarteDateTimeArray;
+        use pbjson_types::Timestamp;
+
+        let value: Vec<DateTime<Utc>> = vec![Utc::now(), Utc::now()];
         let expected_date_time_array_value =
             IndividualData::AstarteDateTimeArray(AstarteDateTimeArray {
                 values: value
                     .clone()
                     .into_iter()
                     .map(|it| it.into())
-                    .collect::<Vec<prost_types::Timestamp>>(),
+                    .collect::<Vec<Timestamp>>(),
             });
         let astarte_type: AstarteType = expected_date_time_array_value.try_into().unwrap();
 
         if let AstarteType::DateTimeArray(astarte_value) = astarte_type {
-            let system_times = astarte_value
-                .clone()
-                .into_iter()
-                .map(|it| it.try_into().unwrap())
-                .collect::<Vec<SystemTime>>();
-            assert_eq!(value, system_times);
+            assert_eq!(value, astarte_value);
         } else {
             panic!();
         }
