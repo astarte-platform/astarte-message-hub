@@ -6,6 +6,9 @@
 
 # Astarte Message Hub
 
+![](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/build.yaml/badge.svg?branch=master)
+[![codecov](https://codecov.io/gh/astarte-platform/astarte-message-hub/branch/master/graph/badge.svg)](https://app.codecov.io/gh/astarte-message-hub)
+
 A central service that runs on (Linux) devices for collecting and delivering messages from N apps using 1 MQTT connection to Astarte.
 
 ## Architecture
