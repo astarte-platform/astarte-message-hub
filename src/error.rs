@@ -20,11 +20,14 @@
 
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum AstarteMessageHubError {
     #[error("")]
     Infallible(#[from] std::convert::Infallible),
 
     #[error("")]
     TryFromIntError(#[from] core::num::TryFromIntError),
+
+    #[error("Unable to convert type")]
+    ConversionError,
 }
