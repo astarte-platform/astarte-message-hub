@@ -18,9 +18,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+use astarte_sdk::types::AstarteType;
+use astarte_sdk::{Aggregation, Clientbound};
 use std::collections::HashMap;
-use std::time::SystemTime;
 
+use crate::error::AstarteMessageHubError;
 use chrono::{DateTime, Utc};
 
 use crate::proto_message_hub::astarte_data_type::Data::{AstarteIndividual, AstarteObject};
@@ -28,7 +30,7 @@ use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
 use crate::proto_message_hub::{
     AstarteBinaryBlobArray, AstarteBooleanArray, AstarteDataType, AstarteDataTypeIndividual,
     AstarteDataTypeObject, AstarteDateTimeArray, AstarteDoubleArray, AstarteIntegerArray,
-    AstarteLongIntegerArray, AstarteStringArray,
+    AstarteLongIntegerArray, AstarteMessage, AstarteStringArray,
 };
 
 macro_rules! impl_type_conversion_traits {
@@ -90,25 +92,21 @@ impl_array_type_conversion_traits!({
 
 impl From<DateTime<Utc>> for AstarteDataTypeIndividual {
     fn from(value: DateTime<Utc>) -> Self {
-        let system_time: SystemTime = value.into();
-
         AstarteDataTypeIndividual {
-            individual_data: Some(IndividualData::AstarteDateTime(system_time.into())),
+            individual_data: Some(IndividualData::AstarteDateTime(value.into())),
         }
     }
 }
 
 impl From<Vec<DateTime<Utc>>> for AstarteDataTypeIndividual {
     fn from(values: Vec<DateTime<Utc>>) -> Self {
-        use prost_types::Timestamp;
+        use pbjson_types::Timestamp;
+
         AstarteDataTypeIndividual {
             individual_data: Some(IndividualData::AstarteDateTimeArray(AstarteDateTimeArray {
                 values: values
-                    .iter()
-                    .map(|x| {
-                        let system_time: SystemTime = x.clone().into();
-                        system_time.into()
-                    })
+                    .into_iter()
+                    .map(|x| x.into())
                     .collect::<Vec<Timestamp>>(),
             })),
         }
@@ -134,14 +132,98 @@ impl From<HashMap<String, AstarteDataTypeIndividual>> for AstarteDataType {
     }
 }
 
+macro_rules! impl_astarte_type_to_individual_data_conversion_traits {
+    ($($typ:ident),*) => {
+        impl TryFrom<AstarteType> for AstarteDataTypeIndividual {
+            type Error = AstarteMessageHubError;
+            fn try_from(d: AstarteType) -> Result<Self, Self::Error> {
+                use crate::types::AstarteMessageHubError::ConversionError;
+
+                match d {
+                    $(
+                    AstarteType::$typ(val) => Ok(val.into()),
+                    )*
+                    AstarteType::Unset => Err(ConversionError)
+                }
+            }
+        }
+    }
+}
+
+impl_astarte_type_to_individual_data_conversion_traits!(
+    Double,
+    Integer,
+    Boolean,
+    LongInteger,
+    String,
+    BinaryBlob,
+    DateTime,
+    DoubleArray,
+    IntegerArray,
+    BooleanArray,
+    LongIntegerArray,
+    StringArray,
+    BinaryBlobArray,
+    DateTimeArray
+);
+
+impl TryFrom<Clientbound> for AstarteMessage {
+    type Error = AstarteMessageHubError;
+
+    fn try_from(value: Clientbound) -> Result<Self, Self::Error> {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteUnset;
+        use crate::proto_message_hub::Interface;
+
+        let payload: Payload = match value.data {
+            Aggregation::Individual(astarte_type) => {
+                if let AstarteType::Unset = astarte_type {
+                    Payload::AstarteUnset(AstarteUnset {})
+                } else {
+                    let individual_type: AstarteDataTypeIndividual = astarte_type.try_into()?;
+                    Payload::AstarteData(AstarteDataType {
+                        data: Some(AstarteIndividual(individual_type)),
+                    })
+                }
+            }
+            Aggregation::Object(astarte_map) => {
+                let astarte_data: AstarteDataType = astarte_map
+                    .into_iter()
+                    .map(|(k, v)| (k, v.try_into().unwrap()))
+                    .collect::<HashMap<String, AstarteDataTypeIndividual>>()
+                    .into();
+
+                Payload::AstarteData(astarte_data)
+            }
+        };
+
+        Ok(AstarteMessage {
+            interface: Some(Interface {
+                name: value.interface.clone(),
+                major: 0,
+                minor: 0,
+            }),
+            path: value.path.clone(),
+            timestamp: None,
+            payload: Some(payload),
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use crate::error::AstarteMessageHubError;
+    use astarte_sdk::types::AstarteType;
+    use astarte_sdk::{Aggregation, Clientbound};
+    use chrono::{DateTime, Utc};
     use std::collections::HashMap;
 
     use crate::proto_message_hub::astarte_data_type::Data::AstarteIndividual;
     use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
+    use crate::proto_message_hub::astarte_message::Payload;
     use crate::proto_message_hub::AstarteDataType;
     use crate::proto_message_hub::AstarteDataTypeIndividual;
+    use crate::proto_message_hub::AstarteMessage;
 
     #[test]
     fn from_double_to_astarte_individual_type_success() {
@@ -376,7 +458,6 @@ mod test {
     #[test]
     fn datetime_into_astarte_data_type_success() {
         use chrono::Utc;
-        use std::time::SystemTime;
 
         let expected_datetime_value = Utc::now();
 
@@ -385,8 +466,8 @@ mod test {
         if let AstarteIndividual(data) = datetime_astarte_data_type.data.unwrap() {
             if let IndividualData::AstarteDateTime(date_time_value) = data.individual_data.unwrap()
             {
-                let expected_sys_time: SystemTime = expected_datetime_value.into();
-                assert_eq!(expected_sys_time, date_time_value.try_into().unwrap());
+                let resul_date_time: DateTime<Utc> = date_time_value.try_into().unwrap();
+                assert_eq!(expected_datetime_value, resul_date_time);
             } else {
                 panic!();
             }
@@ -512,7 +593,6 @@ mod test {
     #[test]
     fn datetime_array_into_astarte_type_individual_success() {
         use chrono::{DateTime, Utc};
-        use std::time::SystemTime;
 
         let expected_vec_datetime_value = vec![Utc::now(), Utc::now()];
         let vec_datetime_astarte_individual_type: AstarteDataTypeIndividual =
@@ -524,7 +604,7 @@ mod test {
                 .unwrap()
         {
             for i in 0..expected_vec_datetime_value.len() {
-                let system_time: SystemTime = vec_datetime_value
+                let date_time: DateTime<Utc> = vec_datetime_value
                     .values
                     .get(i)
                     .unwrap()
@@ -532,7 +612,6 @@ mod test {
                     .try_into()
                     .unwrap();
 
-                let date_time: DateTime<Utc> = system_time.try_into().unwrap();
                 assert_eq!(expected_vec_datetime_value.get(i).unwrap(), &date_time);
             }
         } else {
@@ -543,7 +622,6 @@ mod test {
     #[test]
     fn datetime_array_into_astarte_data_type_success() {
         use chrono::{DateTime, Utc};
-        use std::time::SystemTime;
 
         let expected_vec_datetime_value = vec![Utc::now(), Utc::now()];
         let vec_datetime_astarte_data_type: AstarteDataType =
@@ -554,7 +632,7 @@ mod test {
                 data.individual_data.unwrap()
             {
                 for i in 0..expected_vec_datetime_value.len() {
-                    let system_time: SystemTime = vec_datetime_value
+                    let date_time: DateTime<Utc> = vec_datetime_value
                         .values
                         .get(i)
                         .unwrap()
@@ -562,7 +640,6 @@ mod test {
                         .try_into()
                         .unwrap();
 
-                    let date_time: DateTime<Utc> = system_time.try_into().unwrap();
                     assert_eq!(expected_vec_datetime_value.get(i).unwrap(), &date_time);
                 }
             } else {
@@ -613,6 +690,432 @@ mod test {
             }
         } else {
             panic!();
+        }
+    }
+
+    #[test]
+    fn convert_astarte_type_unset_give_conversion_error() {
+        let expected_data = AstarteType::Unset;
+
+        let result: Result<AstarteDataTypeIndividual, AstarteMessageHubError> =
+            expected_data.try_into();
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.err().unwrap(),
+            AstarteMessageHubError::ConversionError
+        )
+    }
+
+    #[test]
+    fn convert_client_bound_unset_to_astarte_message() {
+        use crate::proto_message_hub::AstarteUnset;
+        let expected_data = AstarteType::Unset;
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        assert_eq!(
+            Payload::AstarteUnset(AstarteUnset {}),
+            astarte_message.payload.unwrap()
+        );
+    }
+
+    fn get_individual_data_from_payload(payload: Payload) -> AstarteType {
+        if let Payload::AstarteData(astarte_data) = payload {
+            if let AstarteIndividual(astarte_individual_data) = astarte_data.data.unwrap() {
+                astarte_individual_data
+                    .individual_data
+                    .unwrap()
+                    .try_into()
+                    .unwrap()
+            } else {
+                panic!()
+            }
+        } else {
+            panic!()
+        }
+    }
+
+    #[test]
+    fn convert_client_bound_individual_f64_to_astarte_message() {
+        let expected_data = AstarteType::Double(10.1);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_i32_to_astarte_message() {
+        let expected_data = AstarteType::Integer(10);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_bool_to_astarte_message() {
+        let expected_data = AstarteType::Boolean(true);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_i64_to_astarte_message() {
+        let expected_data = AstarteType::LongInteger(45);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_string_to_astarte_message() {
+        let expected_data = AstarteType::String("test".to_owned());
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_bytes_to_astarte_message() {
+        let expected_data = AstarteType::BinaryBlob(vec![12, 48]);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_date_time_to_astarte_message() {
+        let expected_data = AstarteType::DateTime(Utc::now());
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_f64_array_to_astarte_message() {
+        let expected_data = AstarteType::DoubleArray(vec![13.5, 487.35]);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_i32_array_to_astarte_message() {
+        let expected_data = AstarteType::IntegerArray(vec![78, 45]);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_bool_array_to_astarte_message() {
+        let expected_data = AstarteType::BooleanArray(vec![true, false, true]);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_i64_array_to_astarte_message() {
+        let expected_data = AstarteType::LongIntegerArray(vec![658, 77845, 4444]);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_string_array_to_astarte_message() {
+        let expected_data =
+            AstarteType::StringArray(vec!["test1".to_owned(), "test_098".to_string()]);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_bytes_array_to_astarte_message() {
+        let expected_data = AstarteType::BinaryBlobArray(vec![vec![12, 48], vec![47, 55], vec![9]]);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_individual_date_time_array_to_astarte_message() {
+        let expected_data = AstarteType::DateTimeArray(vec![Utc::now(), Utc::now()]);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Individual(expected_data.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+        assert_eq!(expected_data, astarte_type);
+    }
+
+    #[test]
+    fn convert_client_bound_object_to_astarte_message() {
+        use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
+
+        let expected_map = HashMap::from([
+            ("Mercury".to_owned(), AstarteType::Double(0.4)),
+            ("Venus".to_owned(), AstarteType::Double(0.7)),
+            ("Earth".to_owned(), AstarteType::Double(1.0)),
+            ("Mars".to_owned(), AstarteType::Double(1.5)),
+        ]);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Object(expected_map.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+
+        if let Payload::AstarteData(astarte_data) = astarte_message.payload.unwrap() {
+            if let AstarteObject(astarte_object) = astarte_data.data.unwrap() {
+                let object_data = astarte_object.object_data;
+                for (k, v) in expected_map.into_iter() {
+                    let astarte_type: AstarteType = object_data
+                        .get(&k)
+                        .unwrap()
+                        .individual_data
+                        .clone()
+                        .unwrap()
+                        .try_into()
+                        .unwrap();
+                    assert_eq!(v, astarte_type);
+                }
+            } else {
+                panic!()
+            }
+        } else {
+            panic!()
+        }
+    }
+
+    #[test]
+    fn convert_client_bound_object2_to_astarte_message() {
+        use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
+
+        let expected_map = HashMap::from([
+            ("M".to_owned(), AstarteType::Double(0.4)),
+            (
+                "V".to_owned(),
+                AstarteType::StringArray(vec!["test1".to_owned(), "test2".to_owned()]),
+            ),
+            ("R".to_owned(), AstarteType::Integer(112)),
+            ("a".to_owned(), AstarteType::Boolean(false)),
+        ]);
+
+        let client_bound = Clientbound {
+            interface: "test.name.json".to_owned(),
+            path: "test".to_owned(),
+            data: Aggregation::Object(expected_map.clone()),
+        };
+
+        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
+        assert_eq!(
+            client_bound.interface,
+            astarte_message.interface.unwrap().name
+        );
+
+        if let Payload::AstarteData(astarte_data) = astarte_message.payload.unwrap() {
+            if let AstarteObject(astarte_object) = astarte_data.data.unwrap() {
+                let object_data = astarte_object.object_data;
+                for (k, v) in expected_map.into_iter() {
+                    let astarte_type: AstarteType = object_data
+                        .get(&k)
+                        .unwrap()
+                        .individual_data
+                        .clone()
+                        .unwrap()
+                        .try_into()
+                        .unwrap();
+                    assert_eq!(v, astarte_type);
+                }
+            } else {
+                panic!()
+            }
+        } else {
+            panic!()
         }
     }
 }
