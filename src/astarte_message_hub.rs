@@ -95,9 +95,20 @@ impl<T: AstartePublisher + AstarteSubscriber + 'static> MessageHub for AstarteMe
 
     async fn send(
         &self,
-        _request: Request<AstarteMessage>,
+        request: Request<AstarteMessage>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
-        todo!()
+        info!("Node Send Request => {:?}", request);
+
+        let astarte_message = request.into_inner();
+
+        if let Err(err) = self.astarte_handler.publish(astarte_message).await {
+            Err(Status::internal(format!(
+                "Unable to publish astarte message, err: {:?}",
+                err
+            )))
+        } else {
+            Ok(Response::new(pbjson_types::Empty {}))
+        }
     }
 
     async fn detach(
@@ -265,5 +276,71 @@ mod test {
             "Unable to subscribe, err: Some(AstarteInvalidData(\"interface not found\"))",
             err.message()
         )
+    }
+
+    #[tokio::test]
+    async fn send_message_success() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::message_hub_server::MessageHub;
+        use crate::proto_message_hub::Interface;
+
+        let mut mock_astarte = MockAstarte::new();
+        mock_astarte.expect_publish().returning(|_| Ok(()));
+
+        let astarte_message_hub: AstarteMessageHub<MockAstarte> =
+            AstarteMessageHub::new(mock_astarte);
+
+        let interface = Interface {
+            name: "io.demo.ServerProperties".to_owned(),
+            minor: 0,
+            major: 2,
+        };
+
+        let astarte_message = AstarteMessage {
+            interface: Some(interface),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteData(5.into())),
+            timestamp: None,
+        };
+
+        let req_astarte_message = Request::new(astarte_message);
+        let send_result = astarte_message_hub.send(req_astarte_message).await;
+
+        assert!(send_result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn send_message_reject() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::message_hub_server::MessageHub;
+        use crate::proto_message_hub::Interface;
+
+        let mut mock_astarte = MockAstarte::new();
+        mock_astarte
+            .expect_publish()
+            .returning(|_| Err(Error::new(ErrorKind::InvalidInput, "interface not found")));
+
+        let astarte_message_hub: AstarteMessageHub<MockAstarte> =
+            AstarteMessageHub::new(mock_astarte);
+
+        let interface = Interface {
+            name: "io.demo.ServerProperties".to_owned(),
+            minor: 0,
+            major: 2,
+        };
+
+        let astarte_message = AstarteMessage {
+            interface: Some(interface),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteData(5.into())),
+            timestamp: None,
+        };
+
+        let req_astarte_message = Request::new(astarte_message);
+        let send_result = astarte_message_hub.send(req_astarte_message).await;
+
+        assert!(send_result.is_err());
+        let err: Status = send_result.err().unwrap();
+        assert_eq!("Unable to publish astarte message, err: Custom { kind: InvalidInput, error: \"interface not found\" }", err.message())
     }
 }
