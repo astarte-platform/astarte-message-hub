@@ -19,3 +19,4 @@
  */
 
 pub(crate) mod astarte;
+pub mod astarte_provider;
