@@ -19,7 +19,7 @@ pbjson-types = "0.5"
 chrono = "0.4.22"
 thiserror = "1.0"
 astarte_sdk = {git ="https://github.com/astarte-platform/astarte-device-sdk-rust.git" }
-serde = "1.0.145"
+serde = "1.0.147"
 
 [build-dependencies]
 tonic-build = "0.8.2"
