@@ -18,11 +18,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-pub mod file;
-pub mod http;
-pub mod protobuff;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::channel;
+
+use crate::config::http::HttpConfigProvider;
+use crate::config::protobuf::ProtobufConfigProvider;
+use crate::error::AstarteMessageHubError;
+
+pub mod file;
+pub mod http;
+pub mod protobuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MessageHubOptions {
@@ -34,4 +41,40 @@ pub struct MessageHubOptions {
     pub interfaces_directory: String,
     pub store_directory: String,
     pub astarte_ignore_ssl: Option<bool>,
+}
+
+impl MessageHubOptions {
+    pub async fn get() -> Result<MessageHubOptions, AstarteMessageHubError> {
+        let base_config = file::read_options(None)?;
+        let store_directory = base_config.store_directory.clone();
+        let path = format!("{}message_hub_config.toml", store_directory);
+
+        if Path::new(&path).exists() {
+            return file::get_options_from_path(path);
+        }
+
+        if base_config.is_valid() {
+            return Ok(base_config);
+        }
+
+        let (tx, mut rx) = channel(1);
+
+        let web_server =
+            HttpConfigProvider::new("127.0.0.1:40041", store_directory.clone(), tx.clone());
+        let protobuf_server =
+            ProtobufConfigProvider::new("[::1]:50051", store_directory.clone(), tx.clone()).await;
+
+        let _ = rx.recv().await.unwrap();
+
+        web_server.stop().await;
+        protobuf_server.stop().await;
+        return file::get_options_from_path(path);
+    }
+
+    fn is_valid(&self) -> bool {
+        self.device_id.is_some()
+            && self.realm.is_some()
+            && self.pairing_url.is_some()
+            && (self.pairing_token.is_some() || self.credentials_secret.is_some())
+    }
 }
