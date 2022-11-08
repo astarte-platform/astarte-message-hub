@@ -18,18 +18,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+use std::io;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum AstarteMessageHubError {
-    #[error("")]
+    #[error(transparent)]
     Infallible(#[from] std::convert::Infallible),
 
-    #[error("")]
+    #[error(transparent)]
     TryFromIntError(#[from] core::num::TryFromIntError),
 
     #[error("Unable to convert type")]
     ConversionError,
+
+    #[error(transparent)]
+    IoError(#[from] io::Error),
 
     #[error(transparent)]
     AstarteError(#[from] astarte_sdk::AstarteError),
