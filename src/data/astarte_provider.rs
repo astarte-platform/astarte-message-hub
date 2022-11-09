@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use std::io::Error;
 use std::sync::Arc;
 
+#[cfg(not(test))]
 use astarte_sdk::AstarteSdk;
 use async_trait::async_trait;
 use log::warn;
@@ -32,10 +33,11 @@ use uuid::Uuid;
 
 use crate::astarte_message_hub::AstarteNode;
 use crate::data::astarte::AstarteSubscriber;
+#[cfg(test)]
+use crate::data::mock_astarte::MockAstarteSdk as AstarteSdk;
 use crate::proto_message_hub;
 use crate::proto_message_hub::AstarteMessage;
 
-#[derive(Clone)]
 pub struct Astarte {
     pub device_sdk: AstarteSdk,
     subscribers: Arc<RwLock<HashMap<Uuid, Subscriber>>>,
@@ -96,5 +98,145 @@ impl Astarte {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use astarte_sdk::{Aggregation, AstarteError, Clientbound};
+    use tokio::sync::mpsc::Receiver;
+    use tonic::Status;
+
+    use crate::astarte_message_hub::AstarteNode;
+    use crate::data::astarte::AstarteSubscriber;
+    use crate::data::mock_astarte::MockAstarteSdk;
+    use crate::proto_message_hub::Interface;
+
+    #[tokio::test]
+    async fn subscribe_success() {
+        use crate::data::astarte_provider::Astarte;
+
+        let device_sdk = MockAstarteSdk::new();
+
+        let interfaces = vec![Interface {
+            name: "io.demo.ServerProperties".to_owned(),
+            minor: 0,
+            major: 2,
+        }];
+
+        let astarte_node = AstarteNode {
+            id: "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            introspection: interfaces,
+        };
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.subscribe(&astarte_node).await;
+        assert!(result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn poll_success() {
+        use crate::data::astarte_provider::Astarte;
+        use crate::proto_message_hub::astarte_data_type::Data;
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteDataTypeIndividual;
+        use crate::proto_message_hub::AstarteMessage;
+
+        let interface_name = "io.demo.ServerProperties";
+        let path = "test";
+        let value: i32 = 5;
+
+        let mut device_sdk = MockAstarteSdk::new();
+
+        let interfaces = vec![Interface {
+            name: interface_name.to_owned(),
+            minor: 0,
+            major: 2,
+        }];
+
+        let astarte_node = AstarteNode {
+            id: "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            introspection: interfaces,
+        };
+
+        device_sdk.expect_poll().returning(move || {
+            Ok(Clientbound {
+                interface: interface_name.to_string(),
+                path: path.to_string(),
+                data: Aggregation::Individual(value.into()),
+            })
+        });
+
+        let mut astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let subscribe_result = astarte.subscribe(&astarte_node).await;
+        assert!(subscribe_result.is_ok());
+
+        let mut rx: Receiver<Result<AstarteMessage, Status>> = subscribe_result.unwrap();
+        astarte.run().await;
+
+        let astarte_message_result = rx.recv().await.unwrap();
+        assert!(astarte_message_result.is_ok());
+
+        let astarte_message = astarte_message_result.unwrap();
+
+        assert_eq!(astarte_message.interface.unwrap().name, interface_name);
+        assert_eq!(astarte_message.path, path);
+
+        if let Payload::AstarteData(astarte_data) = astarte_message.payload.unwrap() {
+            if let Data::AstarteIndividual(individual_data) = astarte_data.data.unwrap() {
+                let result_value: AstarteDataTypeIndividual = value.into();
+                assert_eq!(result_value, individual_data);
+            }
+        } else {
+            panic!()
+        }
+    }
+
+    #[tokio::test]
+    async fn poll_failed_with_astarte_error() {
+        use crate::data::astarte_provider::Astarte;
+        use crate::proto_message_hub::AstarteMessage;
+
+        let interface_name = "io.demo.ServerProperties";
+
+        let mut device_sdk = MockAstarteSdk::new();
+
+        let interfaces = vec![Interface {
+            name: interface_name.to_owned(),
+            minor: 0,
+            major: 2,
+        }];
+
+        let astarte_node = AstarteNode {
+            id: "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            introspection: interfaces,
+        };
+
+        device_sdk
+            .expect_poll()
+            .returning(move || Err(AstarteError::DeserializationError));
+
+        let mut astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let subscribe_result = astarte.subscribe(&astarte_node).await;
+        assert!(subscribe_result.is_ok());
+
+        let mut rx: Receiver<Result<AstarteMessage, Status>> = subscribe_result.unwrap();
+        astarte.run().await;
+
+        assert!(rx.try_recv().is_err());
     }
 }

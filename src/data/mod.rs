@@ -20,3 +20,6 @@
 
 pub(crate) mod astarte;
 pub mod astarte_provider;
+
+#[cfg(test)]
+mod mock_astarte;
