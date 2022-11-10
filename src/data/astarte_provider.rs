@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use std::io::Error;
 use std::sync::Arc;
 
+use astarte_device_sdk::types::AstarteType;
 #[cfg(not(test))]
 use astarte_device_sdk::AstarteDeviceSdk;
 use astarte_device_sdk::Interface;
@@ -33,11 +34,13 @@ use tonic::Status;
 use uuid::Uuid;
 
 use crate::astarte_message_hub::AstarteNode;
-use crate::data::astarte::AstarteSubscriber;
+use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
 #[cfg(test)]
 use crate::data::mock_astarte::MockAstarteDeviceSdk as AstarteDeviceSdk;
 use crate::error::AstarteMessageHubError;
+use crate::error::AstarteMessageHubError::{AstarteError, AstarteInvalidData};
 use crate::proto_message_hub::AstarteMessage;
+use crate::{proto_message_hub, types};
 
 pub struct Astarte {
     pub device_sdk: AstarteDeviceSdk,
@@ -83,6 +86,55 @@ impl AstarteSubscriber for Astarte {
     }
 }
 
+#[async_trait]
+impl AstartePublisher for Astarte {
+    async fn publish(
+        &self,
+        astarte_message: &AstarteMessage,
+    ) -> Result<(), AstarteMessageHubError> {
+        use crate::proto_message_hub::astarte_data_type::Data;
+        use crate::proto_message_hub::astarte_message::Payload;
+
+        match astarte_message
+            .payload
+            .clone()
+            .ok_or(AstarteInvalidData("Invalid payload".to_string()))?
+        {
+            Payload::AstarteData(astarte_data) => {
+                match astarte_data
+                    .data
+                    .ok_or(AstarteInvalidData("Invalid Astarte data type".to_string()))?
+                {
+                    Data::AstarteIndividual(data) => {
+                        self.publish_astarte_individual(
+                            data,
+                            &astarte_message.interface_name,
+                            &astarte_message.path,
+                            astarte_message.timestamp.clone(),
+                        )
+                        .await
+                    }
+                    Data::AstarteObject(object_data) => {
+                        self.publish_astarte_object(
+                            object_data,
+                            &astarte_message.interface_name,
+                            &astarte_message.path,
+                            astarte_message.timestamp.clone(),
+                        )
+                        .await
+                    }
+                }
+            }
+            Payload::AstarteUnset(_) => {
+                self.device_sdk
+                    .unset(&astarte_message.interface_name, &astarte_message.path)
+                    .await
+            }
+            .map_err(|err| AstarteError(err)),
+        }
+    }
+}
+
 impl Astarte {
     #[allow(dead_code)]
     pub async fn run(&mut self) {
@@ -113,22 +165,76 @@ impl Astarte {
             }
         }
     }
+
+    async fn publish_astarte_individual(
+        &self,
+        data: proto_message_hub::AstarteDataTypeIndividual,
+        interface_name: &str,
+        path: &str,
+        timestamp: Option<pbjson_types::Timestamp>,
+    ) -> Result<(), AstarteMessageHubError> {
+        let astarte_type: AstarteType = data
+            .individual_data
+            .ok_or(AstarteInvalidData("Invalid individual data".to_string()))?
+            .try_into()?;
+
+        if let Some(timestamp) = timestamp {
+            self.device_sdk
+                .send_with_timestamp(interface_name, path, astarte_type, timestamp.try_into()?)
+                .await
+        } else {
+            self.device_sdk
+                .send(interface_name, path, astarte_type)
+                .await
+        }
+        .map_err(|err| AstarteError(err))
+    }
+
+    async fn publish_astarte_object(
+        &self,
+        object_data: proto_message_hub::AstarteDataTypeObject,
+        interface_name: &str,
+        path: &str,
+        timestamp: Option<pbjson_types::Timestamp>,
+    ) -> Result<(), AstarteMessageHubError> {
+        use crate::proto_message_hub::AstarteDataTypeIndividual;
+
+        let astarte_data_individual_map: HashMap<String, AstarteDataTypeIndividual> =
+            object_data.object_data.into();
+
+        let aggr = types::map_values_to_astarte_type(astarte_data_individual_map)?;
+        if let Some(timestamp) = timestamp {
+            self.device_sdk
+                .send_object_with_timestamp(interface_name, path, aggr, timestamp.try_into()?)
+                .await
+        } else {
+            self.device_sdk
+                .send_object(interface_name, path, aggr)
+                .await
+        }
+        .map_err(|err| AstarteError(err))
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use astarte_device_sdk::types::AstarteType;
+    use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent, AstarteError};
+    use chrono::Utc;
+    use std::collections::HashMap;
     use std::str::FromStr;
     use std::sync::Arc;
-
-    use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent, AstarteError};
     use tokio::sync::mpsc::Receiver;
     use tonic::Status;
 
     use crate::astarte_message_hub::AstarteNode;
-    use crate::data::astarte::AstarteSubscriber;
+    use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
     use crate::data::astarte_provider::Astarte;
     use crate::data::mock_astarte::MockAstarteDeviceSdk;
     use crate::error::AstarteMessageHubError;
+    use crate::proto_message_hub::astarte_message::Payload;
+    use crate::proto_message_hub::AstarteDataTypeIndividual;
+    use crate::proto_message_hub::AstarteMessage;
 
     const SERV_PROPS_IFACE: &str = r#"
         {
@@ -208,11 +314,7 @@ mod test {
 
     #[tokio::test]
     async fn poll_success() {
-        use crate::data::astarte_provider::Astarte;
         use crate::proto_message_hub::astarte_data_type::Data;
-        use crate::proto_message_hub::astarte_message::Payload;
-        use crate::proto_message_hub::AstarteDataTypeIndividual;
-        use crate::proto_message_hub::AstarteMessage;
 
         let prop_interface = astarte_device_sdk::Interface::from_str(SERV_PROPS_IFACE).unwrap();
         let expected_interface_name = prop_interface.get_name();
@@ -274,7 +376,6 @@ mod test {
         use crate::proto_message_hub::AstarteMessage;
 
         let mut device_sdk = MockAstarteDeviceSdk::new();
-
         let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
 
         let astarte_node = AstarteNode::new(
@@ -300,5 +401,441 @@ mod test {
         astarte.run().await;
 
         assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn publish_failed_with_invalid_payload() {
+        let device_sdk = MockAstarteDeviceSdk::new();
+
+        let expected_interface_name = "io.demo.Properties";
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.to_string(),
+            path: "/test".to_string(),
+            payload: None,
+            timestamp: None,
+        };
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_err());
+
+        let _result_err = result.err().unwrap();
+        assert!(matches!(
+            AstarteMessageHubError::AstarteInvalidData("Invalid payload".to_string()),
+            _result_err
+        ));
+    }
+
+    #[tokio::test]
+    async fn publish_failed_with_invalid_astarte_data() {
+        let device_sdk = MockAstarteDeviceSdk::new();
+
+        let astarte_message = AstarteMessage {
+            interface_name: "io.demo.Properties".to_string(),
+            path: "/test".to_string(),
+            payload: None,
+            timestamp: None,
+        };
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_err());
+
+        let _result_err = result.err().unwrap();
+        assert!(matches!(
+            AstarteMessageHubError::AstarteInvalidData("Invalid Astarte data type".to_string()),
+            _result_err
+        ));
+    }
+
+    #[tokio::test]
+    async fn publish_individual_success() {
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+
+        let expected_interface_name = "io.demo.Properties".to_string();
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.clone(),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteData(5.into())),
+            timestamp: None,
+        };
+
+        device_sdk
+            .expect_send()
+            .withf(move |interface_name: &str, _: &str, _: &AstarteType| {
+                interface_name == expected_interface_name
+            })
+            .returning(|_: &str, _: &str, _: AstarteType| Ok(()));
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn publish_individual_with_timestamp_success() {
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+
+        let expected_interface_name = "io.demo.Properties";
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.to_string(),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteData(5.into())),
+            timestamp: Some(Utc::now().into()),
+        };
+
+        device_sdk
+            .expect_send_with_timestamp()
+            .withf(
+                move |interface_name: &str, _: &str, _: &AstarteType, _: &chrono::DateTime<Utc>| {
+                    interface_name == expected_interface_name
+                },
+            )
+            .returning(|_: &str, _: &str, _: AstarteType, _: chrono::DateTime<Utc>| Ok(()));
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn publish_individual_failed() {
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+
+        let expected_interface_name = "io.demo.Properties";
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.to_string(),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteData(5.into())),
+            timestamp: None,
+        };
+
+        device_sdk
+            .expect_send()
+            .withf(move |interface_name: &str, _: &str, _: &AstarteType| {
+                interface_name == expected_interface_name
+            })
+            .returning(|_: &str, _: &str, _: AstarteType| {
+                Err(AstarteError::SendError(
+                    "Unable to send individual data".to_string(),
+                ))
+            });
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_err());
+
+        let _result_err = result.err().unwrap();
+        assert!(matches!(
+            AstarteError::SendError("Unable to send individual data".to_string()),
+            _result_err
+        ));
+    }
+
+    #[tokio::test]
+    async fn publish_individual_with_timestamp_failed() {
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+
+        let expected_interface_name = "io.demo.Properties";
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.to_string(),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteData(5.into())),
+            timestamp: Some(Utc::now().into()),
+        };
+
+        device_sdk
+            .expect_send_with_timestamp()
+            .withf(
+                move |interface_name: &str, _: &str, _: &AstarteType, _: &chrono::DateTime<Utc>| {
+                    interface_name == expected_interface_name
+                },
+            )
+            .returning(
+                |_: &str, _: &str, _: AstarteType, _: chrono::DateTime<Utc>| {
+                    Err(AstarteError::SendError(
+                        "Unable to send individual data".to_string(),
+                    ))
+                },
+            );
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_err());
+
+        let _result_err = result.err().unwrap();
+        assert!(matches!(
+            AstarteError::SendError("Unable to send individual data".to_string()),
+            _result_err
+        ));
+    }
+
+    #[tokio::test]
+    async fn publish_object_success() {
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+
+        let expected_interface_name = "io.demo.Object";
+
+        let expected_i32 = 5;
+        let expected_f64 = 5.12;
+        let mut map_val: HashMap<String, AstarteDataTypeIndividual> = HashMap::new();
+        map_val.insert("i32".to_owned(), expected_i32.into());
+        map_val.insert("f64".to_owned(), expected_f64.into());
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.to_string(),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteData(map_val.into())),
+            timestamp: None,
+        };
+
+        device_sdk
+            .expect_send_object()
+            .withf(
+                move |interface_name: &str, _: &str, _: &HashMap<String, AstarteType>| {
+                    interface_name == expected_interface_name
+                },
+            )
+            .returning(|_: &str, _: &str, _: HashMap<String, AstarteType>| Ok(()));
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn publish_object_with_timestamp_success() {
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+        let expected_interface_name = "io.demo.Object";
+
+        let expected_i32 = 5;
+        let expected_f64 = 5.12;
+        let mut map_val: HashMap<String, AstarteDataTypeIndividual> = HashMap::new();
+        map_val.insert("i32".to_owned(), expected_i32.into());
+        map_val.insert("f64".to_owned(), expected_f64.into());
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.to_string(),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteData(map_val.into())),
+            timestamp: Some(Utc::now().into()),
+        };
+
+        device_sdk
+            .expect_send_object_with_timestamp()
+            .withf(
+                move |interface_name: &str,
+                      _: &str,
+                      _: &HashMap<String, AstarteType>,
+                      _: &chrono::DateTime<Utc>| {
+                    interface_name == expected_interface_name
+                },
+            )
+            .returning(
+                |_: &str,
+                 _: &str,
+                 _: HashMap<String, AstarteType>,
+                 _: chrono::DateTime<Utc>| Ok(()),
+            );
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn publish_object_failed() {
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+
+        let expected_interface_name = "io.demo.Object";
+
+        let expected_i32 = 5;
+        let expected_f64 = 5.12;
+        let mut map_val: HashMap<String, AstarteDataTypeIndividual> = HashMap::new();
+        map_val.insert("i32".to_owned(), expected_i32.into());
+        map_val.insert("f64".to_owned(), expected_f64.into());
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.to_string(),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteData(map_val.into())),
+            timestamp: None,
+        };
+
+        device_sdk
+            .expect_send_object()
+            .withf(
+                move |interface_name: &str, _: &str, _: &HashMap<String, AstarteType>| {
+                    interface_name == expected_interface_name
+                },
+            )
+            .returning(|_: &str, _: &str, _: HashMap<String, AstarteType>| {
+                Err(AstarteError::SendError("Unable to send object".to_string()))
+            });
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_err());
+
+        let _result_err = result.err().unwrap();
+        assert!(matches!(
+            AstarteError::SendError("Unable to send object".to_string()),
+            _result_err
+        ));
+    }
+
+    #[tokio::test]
+    async fn publish_object_with_timestamp_failed() {
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+
+        let expected_interface_name = "io.demo.Object";
+
+        let expected_i32 = 5;
+        let expected_f64 = 5.12;
+        let mut map_val: HashMap<String, AstarteDataTypeIndividual> = HashMap::new();
+        map_val.insert("i32".to_owned(), expected_i32.into());
+        map_val.insert("f64".to_owned(), expected_f64.into());
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.to_string(),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteData(map_val.into())),
+            timestamp: Some(Utc::now().into()),
+        };
+
+        device_sdk
+            .expect_send_object_with_timestamp()
+            .withf(
+                move |interface_name: &str,
+                      _: &str,
+                      _: &HashMap<String, AstarteType>,
+                      _: &chrono::DateTime<Utc>| {
+                    interface_name == expected_interface_name
+                },
+            )
+            .returning(
+                |_: &str, _: &str, _: HashMap<String, AstarteType>, _: chrono::DateTime<Utc>| {
+                    Err(AstarteError::SendError("Unable to send object".to_string()))
+                },
+            );
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_err());
+
+        let _result_err = result.err().unwrap();
+        assert!(matches!(
+            AstarteError::SendError("Unable to send object".to_string()),
+            _result_err
+        ));
+    }
+
+    #[tokio::test]
+    async fn publish_unset_success() {
+        use crate::proto_message_hub::AstarteUnset;
+
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+        let expected_interface_name = "io.demo.Object";
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.to_string(),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteUnset(AstarteUnset {})),
+            timestamp: None,
+        };
+
+        device_sdk
+            .expect_unset()
+            .withf(move |interface_name: &str, _: &str| interface_name == expected_interface_name)
+            .returning(|_: &str, _: &str| Ok(()));
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn publish_unset_failed() {
+        use crate::proto_message_hub::AstarteUnset;
+
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+        let expected_interface_name = "io.demo.Object";
+
+        let astarte_message = AstarteMessage {
+            interface_name: expected_interface_name.to_string(),
+            path: "/test".to_string(),
+            payload: Some(Payload::AstarteUnset(AstarteUnset {})),
+            timestamp: None,
+        };
+
+        device_sdk
+            .expect_unset()
+            .withf(move |interface_name: &str, _: &str| interface_name == expected_interface_name)
+            .returning(|_: &str, _: &str| {
+                Err(AstarteError::SendError("Unable to unset path".to_string()))
+            });
+
+        let astarte = Astarte {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        };
+
+        let result = astarte.publish(&astarte_message).await;
+        assert!(result.is_err());
+
+        let _result_err = result.err().unwrap();
+        assert!(matches!(
+            AstarteError::SendError("Unable to unset path".to_string()),
+            _result_err
+        ));
     }
 }

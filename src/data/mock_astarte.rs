@@ -63,7 +63,7 @@ impl AstarteDeviceSdk {
         _data: T,
     ) -> Result<(), AstarteError>
     where
-        T: serde::Serialize,
+        T: astarte_device_sdk::AstarteAggregate,
     {
         todo!()
     }
@@ -76,19 +76,16 @@ impl AstarteDeviceSdk {
         _timestamp: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), AstarteError>
     where
-        T: serde::Serialize,
+        T: astarte_device_sdk::AstarteAggregate,
     {
         todo!()
     }
     #[allow(dead_code)]
-    pub async fn unset<D: 'static>(
+    pub async fn unset(
         &self,
         _interface_name: &str,
         _interface_path: &str,
-    ) -> Result<(), AstarteError>
-    where
-        D: Into<AstarteType>,
-    {
+    ) -> Result<(), AstarteError> {
         todo!()
     }
     #[allow(dead_code)]

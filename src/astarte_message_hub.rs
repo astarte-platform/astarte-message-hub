@@ -306,15 +306,17 @@ mod test {
 
     #[tokio::test]
     async fn send_message_reject() {
-        use crate::error::AstarteMessageHubError::IoError;
         use crate::proto_message_hub::astarte_message::Payload;
         use crate::proto_message_hub::message_hub_server::MessageHub;
         use std::io::ErrorKind::InvalidData;
 
         let mut mock_astarte = MockAstarte::new();
-        mock_astarte
-            .expect_publish()
-            .returning(|_| Err(IoError(Error::new(InvalidData, "interface not found"))));
+        mock_astarte.expect_publish().returning(|_| {
+            Err(AstarteMessageHubError::IOError(Error::new(
+                InvalidData,
+                "interface not found",
+            )))
+        });
 
         let astarte_message_hub: AstarteMessageHub<MockAstarte> =
             AstarteMessageHub::new(mock_astarte);
@@ -334,6 +336,6 @@ mod test {
 
         assert!(send_result.is_err());
         let err: Status = send_result.err().unwrap();
-        assert_eq!("Unable to publish astarte message, err: IoError(Custom { kind: InvalidData, error: \"interface not found\" })", err.message())
+        assert_eq!("Unable to publish astarte message, err: IOError(Custom { kind: InvalidData, error: \"interface not found\" })", err.message())
     }
 }
