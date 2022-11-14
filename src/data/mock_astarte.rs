@@ -89,4 +89,7 @@ impl AstarteSdk {
     pub async fn add_interface(&self, _interface: Interface) -> Result<(), AstarteError> {
         todo!()
     }
+    pub async fn remove_interface(&self, _interface: &str) -> Result<(), AstarteError> {
+        todo!()
+    }
 }
