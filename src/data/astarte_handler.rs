@@ -19,7 +19,6 @@
  */
 
 use std::collections::HashMap;
-use std::io::Error;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -82,8 +81,44 @@ impl AstarteSubscriber for AstarteHandler {
         Ok(rx)
     }
 
-    async fn unsubscribe(&self, _astarte_node: &AstarteNode) -> Result<(), Error> {
-        Ok(())
+    async fn unsubscribe(&self, astarte_node: &AstarteNode) -> Result<(), AstarteMessageHubError> {
+        let interfaces_to_remove = {
+            let subscribers_guard = self.subscribers.read().await;
+            astarte_node
+                .introspection
+                .iter()
+                .filter_map(|interface| interface.clone().try_into().ok())
+                .filter(|interface| {
+                    subscribers_guard
+                        .iter()
+                        .filter(|(id, _)| astarte_node.id.ne(id))
+                        .find_map(|(_, subscriber)| {
+                            subscriber.introspection.contains(&interface).then(|| ())
+                        })
+                        .is_none()
+                })
+                .collect::<Vec<astarte_device_sdk::Interface>>()
+        };
+
+        for interface in interfaces_to_remove.iter() {
+            self.device_sdk
+                .remove_interface(&interface.get_name())
+                .await?;
+        }
+
+        if self
+            .subscribers
+            .write()
+            .await
+            .remove(&astarte_node.id)
+            .is_some()
+        {
+            Ok(())
+        } else {
+            Err(AstarteMessageHubError::AstarteInvalidData(
+                "Unable to find AstarteNode".to_string(),
+            ))
+        }
     }
 }
 
@@ -264,6 +299,29 @@ mod test {
             "version_minor": 1,
             "type": "properties",
             "ownership": "server",
+            "mappings": [
+                {
+                    "endpoint": "/button",
+                    "type": "boolean",
+                    "explicit_timestamp": true
+                },
+                {
+                    "endpoint": "/uptimeSeconds",
+                    "type": "integer",
+                    "explicit_timestamp": true
+                }
+            ]
+        }
+        "#;
+
+    const SERV_OBJ_IFACE: &str = r#"
+        {
+            "interface_name": "com.test.object",
+            "version_major": 0,
+            "version_minor": 1,
+            "type": "datastream",
+            "ownership": "server",
+            "aggregation": "object",
             "mappings": [
                 {
                     "endpoint": "/button",
@@ -845,5 +903,54 @@ mod test {
             AstarteError::SendError("Unable to unset path".to_string()),
             _result_err
         ));
+    }
+
+    #[tokio::test]
+    async fn detach_node_success() {
+        let interfaces = vec![
+            SERV_PROPS_IFACE.to_string().into_bytes(),
+            SERV_OBJ_IFACE.to_string().into_bytes(),
+        ];
+
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+        device_sdk.expect_add_interface().returning(|_| Ok(()));
+        device_sdk.expect_remove_interface().returning(|_| Ok(()));
+
+        let astarte_node = AstarteNode::new(
+            "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            interfaces,
+        );
+
+        let astarte_handler = AstarteHandler::new(device_sdk);
+
+        let result = astarte_handler.subscribe(&astarte_node).await;
+        assert!(result.is_ok());
+
+        let detach_result = astarte_handler.unsubscribe(&astarte_node).await;
+        assert!(detach_result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn detach_node_unsubscribe_failed() {
+        let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
+
+        let mut device_sdk = MockAstarteDeviceSdk::new();
+        device_sdk.expect_add_interface().returning(|_| Ok(()));
+        device_sdk.expect_remove_interface().returning(|_| Ok(()));
+
+        let astarte_node = AstarteNode::new(
+            "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            interfaces,
+        );
+
+        let astarte_handler = AstarteHandler::new(device_sdk);
+
+        let detach_result = astarte_handler.unsubscribe(&astarte_node).await;
+
+        assert!(detach_result.is_err());
+        assert!(matches!(
+            detach_result.err().unwrap(),
+            AstarteMessageHubError::AstarteInvalidData(_)
+        ))
     }
 }
