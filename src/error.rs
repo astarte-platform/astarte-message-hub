@@ -20,7 +20,7 @@
 
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug)]
 pub enum AstarteMessageHubError {
     #[error("")]
     Infallible(#[from] std::convert::Infallible),
@@ -30,4 +30,10 @@ pub enum AstarteMessageHubError {
 
     #[error("Unable to convert type")]
     ConversionError,
+
+    #[error(transparent)]
+    AstarteError(#[from] astarte_sdk::AstarteError),
+
+    #[error("{0}")]
+    AstarteInvalidData(String),
 }
