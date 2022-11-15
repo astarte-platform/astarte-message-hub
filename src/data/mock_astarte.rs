@@ -19,7 +19,7 @@
  */
 
 use astarte_sdk::types::AstarteType;
-use astarte_sdk::{AstarteError, Clientbound};
+use astarte_sdk::{AstarteError, Clientbound, Interface};
 use mockall::automock;
 
 pub struct AstarteSdk {}
@@ -83,6 +83,10 @@ impl AstarteSdk {
     where
         D: Into<AstarteType>,
     {
+        todo!()
+    }
+
+    pub async fn add_interface(&self, _interface: Interface) -> Result<(), AstarteError> {
         todo!()
     }
 }

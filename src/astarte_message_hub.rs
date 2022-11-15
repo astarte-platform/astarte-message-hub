@@ -25,12 +25,12 @@ use log::info;
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
-
-use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
 use uuid::Uuid;
 
+use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
 use crate::proto_message_hub::message_hub_server::MessageHub;
-use crate::proto_message_hub::{AstarteMessage, Interface, Node};
+use crate::proto_message_hub::{AstarteMessage, Node};
+use crate::types::InterfaceJson;
 
 pub struct AstarteMessageHub<T: AstartePublisher + AstarteSubscriber> {
     nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
@@ -39,7 +39,19 @@ pub struct AstarteMessageHub<T: AstartePublisher + AstarteSubscriber> {
 
 pub struct AstarteNode {
     pub id: Uuid,
-    pub introspection: Vec<Interface>,
+    pub introspection: Vec<InterfaceJson>,
+}
+
+impl AstarteNode {
+    pub fn new(uuid: Uuid, introspection: Vec<Vec<u8>>) -> Self {
+        AstarteNode {
+            id: uuid,
+            introspection: introspection
+                .into_iter()
+                .map(|json| InterfaceJson(json))
+                .collect(),
+        }
+    }
 }
 
 impl<T> AstarteMessageHub<T>
@@ -69,11 +81,7 @@ impl<T: AstartePublisher + AstarteSubscriber + 'static> MessageHub for AstarteMe
             ))
         })?;
 
-        let astarte_node = AstarteNode {
-            id,
-            introspection: node.introspection,
-        };
-
+        let astarte_node = AstarteNode::new(id, node.interface_jsons);
         let subscribe_result = self.astarte_handler.subscribe(&astarte_node).await;
 
         if let Ok(rx) = subscribe_result {
@@ -105,15 +113,18 @@ impl<T: AstartePublisher + AstarteSubscriber + 'static> MessageHub for AstarteMe
 
 #[cfg(test)]
 mod test {
+    use std::io::Error;
+
     use async_trait::async_trait;
     use mockall::mock;
-    use std::io::{Error, ErrorKind};
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::Receiver;
-    use tonic::{Request, Response, Status};
+    use tonic::{Request, Status};
 
     use crate::astarte_message_hub::AstarteNode;
     use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
+    use crate::error::AstarteMessageHubError;
+    use crate::error::AstarteMessageHubError::AstarteInvalidData;
     use crate::proto_message_hub::AstarteMessage;
     use crate::AstarteMessageHub;
 
@@ -122,22 +133,66 @@ mod test {
 
         #[async_trait]
         impl AstartePublisher for Astarte {
-            async fn publish(&self, data: AstarteMessage) -> Result<(), Error>;
+            async fn publish(&self, data: &AstarteMessage) -> Result<(), AstarteMessageHubError>;
         }
 
         #[async_trait]
         impl AstarteSubscriber for Astarte {
             async fn subscribe(&self, astarte_node: &AstarteNode,
-            ) -> Result<Receiver<Result<AstarteMessage, Status>>, Error>;
+            ) -> Result<Receiver<Result<AstarteMessage, Status>>, AstarteMessageHubError>;
 
             async fn unsubscribe(&self, astarte_node: &AstarteNode) -> Result<(), Error>;
         }
     }
 
+    const SERV_OBJ_IFACE: &str = r#"
+        {
+            "interface_name": "com.test.object",
+            "version_major": 0,
+            "version_minor": 1,
+            "type": "datastream",
+            "ownership": "server",
+            "aggregation": "object",
+            "mappings": [
+                {
+                    "endpoint": "/button",
+                    "type": "boolean",
+                    "explicit_timestamp": true
+                },
+                {
+                    "endpoint": "/uptimeSeconds",
+                    "type": "integer",
+                    "explicit_timestamp": true
+                }
+            ]
+        }
+        "#;
+
+    const SERV_PROPS_IFACE: &str = r#"
+        {
+            "interface_name": "org.astarte-platform.test.test",
+            "version_major": 12,
+            "version_minor": 1,
+            "type": "properties",
+            "ownership": "server",
+            "mappings": [
+                {
+                    "endpoint": "/button",
+                    "type": "boolean",
+                    "explicit_timestamp": true
+                },
+                {
+                    "endpoint": "/uptimeSeconds",
+                    "type": "integer",
+                    "explicit_timestamp": true
+                }
+            ]
+        }
+        "#;
+
     #[tokio::test]
     async fn attach_success_node() {
         use crate::proto_message_hub::message_hub_server::MessageHub;
-        use crate::proto_message_hub::Interface;
         use crate::proto_message_hub::Node;
 
         let mut mock_astarte = MockAstarte::new();
@@ -145,24 +200,17 @@ mod test {
             let (_, rx) = mpsc::channel(2);
             Ok(rx)
         });
+
         let astarte_message: AstarteMessageHub<MockAstarte> = AstarteMessageHub::new(mock_astarte);
 
         let interfaces = vec![
-            Interface {
-                name: "io.demo.ServerProperties".to_owned(),
-                minor: 0,
-                major: 2,
-            },
-            Interface {
-                name: "org.astarteplatform.esp32.DeviceDatastream".to_owned(),
-                minor: 0,
-                major: 2,
-            },
+            SERV_PROPS_IFACE.to_string().into_bytes(),
+            SERV_OBJ_IFACE.to_string().into_bytes(),
         ];
 
         let node_introspection = Node {
             uuid: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
-            introspection: interfaces,
+            interface_jsons: interfaces,
         };
 
         let req_node = Request::new(node_introspection);
@@ -181,7 +229,7 @@ mod test {
 
         let node_introspection = Node {
             uuid: "a1".to_owned(),
-            introspection: vec![],
+            interface_jsons: vec![],
         };
 
         let req_node = Request::new(node_introspection);
@@ -195,25 +243,20 @@ mod test {
     #[tokio::test]
     async fn attach_reject_node() {
         use crate::proto_message_hub::message_hub_server::MessageHub;
-        use crate::proto_message_hub::Interface;
         use crate::proto_message_hub::Node;
 
         let mut mock_astarte = MockAstarte::new();
         mock_astarte
             .expect_subscribe()
-            .returning(|_| Err(Error::new(ErrorKind::InvalidInput, "interface not found")));
+            .returning(|_| Err(AstarteInvalidData("interface not found".to_string())));
 
         let astarte_message: AstarteMessageHub<MockAstarte> = AstarteMessageHub::new(mock_astarte);
 
-        let interfaces = vec![Interface {
-            name: "io.demo.ServerProperties".to_owned(),
-            minor: 0,
-            major: 2,
-        }];
+        let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
 
         let node_introspection = Node {
             uuid: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
-            introspection: interfaces,
+            interface_jsons: interfaces,
         };
 
         let req_node = Request::new(node_introspection);
@@ -221,6 +264,9 @@ mod test {
 
         assert!(attach_result.is_err());
         let err: Status = attach_result.err().unwrap();
-        assert_eq!("Unable to subscribe, err: Some(Custom { kind: InvalidInput, error: \"interface not found\" })", err.message())
+        assert_eq!(
+            "Unable to subscribe, err: Some(AstarteInvalidData(\"interface not found\"))",
+            err.message()
+        )
     }
 }

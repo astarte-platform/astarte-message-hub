@@ -25,11 +25,13 @@ use tokio::sync::mpsc::Receiver;
 use tonic::Status;
 
 use crate::astarte_message_hub::AstarteNode;
+use crate::error::AstarteMessageHubError;
 use crate::proto_message_hub::AstarteMessage;
 
 #[async_trait]
 pub trait AstartePublisher: Send + Sync {
-    async fn publish(&self, astarte_message: AstarteMessage) -> Result<(), Error>;
+    async fn publish(&self, astarte_message: &AstarteMessage)
+        -> Result<(), AstarteMessageHubError>;
 }
 
 #[async_trait]
@@ -37,6 +39,6 @@ pub trait AstarteSubscriber {
     async fn subscribe(
         &self,
         astarte_node: &AstarteNode,
-    ) -> Result<Receiver<Result<AstarteMessage, Status>>, Error>;
+    ) -> Result<Receiver<Result<AstarteMessage, Status>>, AstarteMessageHubError>;
     async fn unsubscribe(&self, astarte_node: &AstarteNode) -> Result<(), Error>;
 }
