@@ -20,6 +20,7 @@
 
 pub mod file;
 pub mod http;
+pub mod protobuff;
 
 use serde::{Deserialize, Serialize};
 
