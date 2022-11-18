@@ -1,5 +1,5 @@
 /*
- * This file is part of Edgehog.
+ * This file is part of Astarte.
  *
  * Copyright 2022 SECO Mind Srl
  *
@@ -18,19 +18,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-pub mod file;
-pub mod http;
+syntax = "proto3";
 
-use serde::{Deserialize, Serialize};
+package astarteplatform.msghub;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MessageHubOptions {
-    pub realm: Option<String>,
-    pub device_id: Option<String>,
-    pub credentials_secret: Option<String>,
-    pub pairing_url: Option<String>,
-    pub pairing_token: Option<String>,
-    pub interfaces_directory: String,
-    pub store_directory: String,
-    pub astarte_ignore_ssl: Option<bool>,
+message Interface {
+  string name = 1;
+  int32 major = 2;
+  int32 minor = 3;
 }
