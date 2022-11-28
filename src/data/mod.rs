@@ -18,11 +18,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+pub(crate) mod astarte;
+pub mod astarte_provider;
 
-    //TODO add MessageHubServer and add Astarte::new() on top of AstarteSDK
-
-    Ok(())
-}
+#[cfg(test)]
+mod mock_astarte;
