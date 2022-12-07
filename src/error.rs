@@ -20,7 +20,7 @@
 
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug)]
 pub enum AstarteMessageHubError {
     #[error("")]
     Infallible(#[from] std::convert::Infallible),
@@ -30,4 +30,13 @@ pub enum AstarteMessageHubError {
 
     #[error("Unable to convert type")]
     ConversionError,
+
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
+
+    #[error("unrecoverable error ({0})")]
+    FatalError(String),
+
+    #[error("configuration file error")]
+    ConfigFileError(#[from] toml::de::Error),
 }

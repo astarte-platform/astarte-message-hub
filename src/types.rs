@@ -701,10 +701,10 @@ mod test {
             expected_data.try_into();
 
         assert!(result.is_err());
-        assert_eq!(
+        assert!(matches!(
             result.err().unwrap(),
             AstarteMessageHubError::ConversionError
-        )
+        ));
     }
 
     #[test]

@@ -18,16 +18,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-pub use crate::astarte_message_hub::AstarteMessageHub;
-pub use crate::proto_message_hub::message_hub_server::MessageHubServer;
+syntax = "proto3";
+package astarteplatform.msghub;
 
-mod astarte_message_hub;
-mod astarte_sdk_types;
-mod config;
-mod data;
-mod error;
-mod types;
+import "google/protobuf/empty.proto";
 
-pub mod proto_message_hub {
-    tonic::include_proto!("astarteplatform.msghub");
+message ConfigMessage {
+  string realm = 1;
+  string device_id = 2;
+  optional string credentials_secret = 3;
+  string pairing_url = 4;
+  optional string pairing_token = 5;
+}
+
+service MessageHubConfig {
+  rpc SetConfig (ConfigMessage) returns (google.protobuf.Empty);
 }
