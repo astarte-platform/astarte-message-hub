@@ -22,7 +22,6 @@ fn main() {
     let proto_files = &[
         "proto/astarteplatform/msghub/message_hub_service.proto",
         "proto/astarteplatform/msghub/node.proto",
-        "proto/astarteplatform/msghub/interface.proto",
         "proto/astarteplatform/msghub/astarte_message.proto",
         "proto/astarteplatform/msghub/astarte_type.proto",
     ];

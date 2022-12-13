@@ -18,12 +18,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use astarte_sdk::types::AstarteType;
-use astarte_sdk::{Aggregation, Clientbound};
-use std::collections::HashMap;
-
 use crate::error::AstarteMessageHubError;
+use astarte_sdk::types::AstarteType;
+use astarte_sdk::{Aggregation, Clientbound, Interface};
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 
 use crate::proto_message_hub::astarte_data_type::Data::{AstarteIndividual, AstarteObject};
 use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
@@ -89,6 +88,9 @@ impl_array_type_conversion_traits!({
     (Vec<String>, AstarteStringArray),
     (Vec<Vec<u8>>, AstarteBinaryBlobArray),
 });
+
+#[derive(Clone)]
+pub struct InterfaceJson(pub Vec<u8>);
 
 impl From<DateTime<Utc>> for AstarteDataTypeIndividual {
     fn from(value: DateTime<Utc>) -> Self {
@@ -173,7 +175,6 @@ impl TryFrom<Clientbound> for AstarteMessage {
     fn try_from(value: Clientbound) -> Result<Self, Self::Error> {
         use crate::proto_message_hub::astarte_message::Payload;
         use crate::proto_message_hub::AstarteUnset;
-        use crate::proto_message_hub::Interface;
 
         let payload: Payload = match value.data {
             Aggregation::Individual(astarte_type) => {
@@ -198,14 +199,23 @@ impl TryFrom<Clientbound> for AstarteMessage {
         };
 
         Ok(AstarteMessage {
-            interface: Some(Interface {
-                name: value.interface.clone(),
-                major: 0,
-                minor: 0,
-            }),
+            interface_name: value.interface.clone(),
             path: value.path.clone(),
             timestamp: None,
             payload: Some(payload),
+        })
+    }
+}
+
+impl TryFrom<InterfaceJson> for astarte_sdk::Interface {
+    type Error = AstarteMessageHubError;
+
+    fn try_from(interface: InterfaceJson) -> Result<Self, Self::Error> {
+        use std::str::FromStr;
+
+        let interface_str = String::from_utf8_lossy(&interface.0);
+        Interface::from_str(interface_str.as_ref()).map_err(|err| {
+            AstarteMessageHubError::AstarteError(astarte_sdk::AstarteError::InterfaceError(err))
         })
     }
 }
@@ -214,7 +224,7 @@ impl TryFrom<Clientbound> for AstarteMessage {
 mod test {
     use crate::error::AstarteMessageHubError;
     use astarte_sdk::types::AstarteType;
-    use astarte_sdk::{Aggregation, Clientbound};
+    use astarte_sdk::{Aggregation, Clientbound, Interface};
     use chrono::{DateTime, Utc};
     use std::collections::HashMap;
 
@@ -224,6 +234,7 @@ mod test {
     use crate::proto_message_hub::AstarteDataType;
     use crate::proto_message_hub::AstarteDataTypeIndividual;
     use crate::proto_message_hub::AstarteMessage;
+    use crate::types::InterfaceJson;
 
     #[test]
     fn from_double_to_astarte_individual_type_success() {
@@ -701,10 +712,10 @@ mod test {
             expected_data.try_into();
 
         assert!(result.is_err());
-        assert_eq!(
+        assert!(matches!(
             result.err().unwrap(),
             AstarteMessageHubError::ConversionError
-        )
+        ))
     }
 
     #[test]
@@ -719,10 +730,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         assert_eq!(
             Payload::AstarteUnset(AstarteUnset {}),
@@ -757,10 +765,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -777,10 +782,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -797,10 +799,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -817,10 +816,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -837,10 +833,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -857,10 +850,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -877,10 +867,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -897,10 +884,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -917,10 +901,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -937,10 +918,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -957,10 +935,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -978,10 +953,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -998,10 +970,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         assert_eq!(client_bound.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
@@ -1018,10 +987,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
@@ -1044,10 +1010,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
 
         if let Payload::AstarteData(astarte_data) = astarte_message.payload.unwrap() {
             if let AstarteObject(astarte_object) = astarte_data.data.unwrap() {
@@ -1092,10 +1055,7 @@ mod test {
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(
-            client_bound.interface,
-            astarte_message.interface.unwrap().name
-        );
+        assert_eq!(client_bound.interface, astarte_message.interface_name);
 
         if let Payload::AstarteData(astarte_data) = astarte_message.payload.unwrap() {
             if let AstarteObject(astarte_object) = astarte_data.data.unwrap() {
@@ -1117,5 +1077,83 @@ mod test {
         } else {
             panic!()
         }
+    }
+
+    #[test]
+    fn convert_proto_interface_to_astarte_interface() {
+        const SERV_PROPS_IFACE: &str = r#"
+        {
+            "interface_name": "org.astarte-platform.test.test",
+            "version_major": 1,
+            "version_minor": 1,
+            "type": "properties",
+            "ownership": "server",
+            "mappings": [
+                {
+                    "endpoint": "/button",
+                    "type": "boolean",
+                    "explicit_timestamp": true
+                },
+                {
+                    "endpoint": "/uptimeSeconds",
+                    "type": "integer",
+                    "explicit_timestamp": true
+                }
+            ]
+        }
+        "#;
+
+        let interface = InterfaceJson(SERV_PROPS_IFACE.into());
+
+        let astarte_interface: Interface = interface.try_into().unwrap();
+
+        assert_eq!(
+            astarte_interface.get_name(),
+            "org.astarte-platform.test.test"
+        );
+        assert_eq!(astarte_interface.get_version_major(), 1);
+    }
+
+    #[tokio::test]
+    async fn convert_proto_interface_with_special_chars_to_astarte_interface() {
+        const IFACE_SPECIAL_CHARS: &str = r#"
+        {
+            "interface_name": "org.astarte-platform.test.test",
+            "version_major": 1,
+            "version_minor": 1,
+            "type": "properties",
+            "ownership": "server",
+            "mappings": [
+                {
+                    "endpoint": "/uptimeSeconds",
+                    "type": "integer",
+                    "explicit_timestamp": true,
+                    "description": "Hello 你好 안녕하세요"
+                }
+            ]
+        }
+        "#;
+
+        let interface = InterfaceJson(IFACE_SPECIAL_CHARS.into());
+
+        let astarte_interface: Interface = interface.try_into().unwrap();
+
+        assert_eq!(
+            astarte_interface.get_name(),
+            "org.astarte-platform.test.test"
+        );
+        assert_eq!(astarte_interface.get_version_major(), 1);
+    }
+
+    #[tokio::test]
+    async fn convert_bad_proto_interface_to_astarte_interface() {
+        const IFACE_BAD: &str = r#"{"#;
+
+        let interface = InterfaceJson(IFACE_BAD.into());
+
+        let astarte_interface_bad_result: Result<Interface, AstarteMessageHubError> =
+            interface.try_into();
+
+        assert!(astarte_interface_bad_result.is_err());
     }
 }

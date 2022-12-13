@@ -26,7 +26,6 @@ import "google/protobuf/empty.proto";
 
 import "astarteplatform/msghub/astarte_message.proto";
 import "astarteplatform/msghub/astarte_type.proto";
-import "astarteplatform/msghub/interface.proto";
 import "astarteplatform/msghub/node.proto";
 
 service MessageHub {

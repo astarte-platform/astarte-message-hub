@@ -47,22 +47,12 @@ flowchart LR
 ## GRPC MessageHub Service
 ### Node
 A node is an entity connected to Astarte Message Hub, it can receive/send messages from/to Astarte via the Message Hub.
-A node is uniquely identified by its Node UUID and has an Introspection that is a list of Interfaces used by it for exchanging data with Astarte. 
+A node is uniquely identified by its Node UUID and has an Introspection that is a list of Json Interfaces used by it for exchanging data with Astarte. 
 
 ``` protobuf
 message Node {
   string uuid = 1;
-  repeated Interface introspection = 2;
-}
-```
-### Interface 
-[Interfaces](https://docs.astarte-platform.org/snapshot/030-interface.html) are a core concept of Astarte which defines how data is exchanged between Astarte and its peers.
-
-``` protobuf
-message Interface {
-  string name = 1;
-  int32 major = 2;
-  int32 minor = 3;
+  repeated bytes interface_jsons = 2;
 }
 ```
 
@@ -108,7 +98,7 @@ service MessageHub {
 
 ``` protobuf
 message AstarteMessage{
-  Interface interface = 1;
+  string interface_name = 1;
   string path = 2;
   oneof payload {
     AstarteDataType astarte_data = 3;
