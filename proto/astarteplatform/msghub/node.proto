@@ -22,9 +22,7 @@ syntax = "proto3";
 
 package astarteplatform.msghub;
 
-import "astarteplatform/msghub/interface.proto";
-
 message Node {
   string uuid = 1;
-  repeated Interface introspection = 2;
+  repeated bytes interface_jsons = 2;
 }
