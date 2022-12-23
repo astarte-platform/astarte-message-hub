@@ -76,13 +76,13 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
- "uuid 1.2.1",
+ "uuid",
 ]
 
 [[package]]
 name = "astarte_sdk"
 version = "0.1.0"
-source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust.git#f393bab42f00c4ad218975aab7395c63cf2a3beb"
+source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust.git#f80b51c6a0284be21481c0aad8153ac1e41b2b90"
 dependencies = [
  "async-trait",
  "base64",
@@ -97,14 +97,14 @@ dependencies = [
  "rumqttc",
  "rustls 0.20.6",
  "rustls-native-certs",
- "rustls-pemfile 0.3.0",
+ "rustls-pemfile 1.0.1",
  "serde",
  "serde_json",
  "sqlx",
  "thiserror",
  "tokio",
  "url",
- "uuid 0.8.2",
+ "uuid",
  "webpki 0.22.0",
 ]
 
@@ -260,7 +260,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "time 0.3.13",
- "uuid 1.2.1",
+ "uuid",
 ]
 
 [[package]]
@@ -1695,15 +1695,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sha1"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1da05c97445caa12d05e848c4a4fcbbea29e748ac28f7e80e9b010392063770"
-dependencies = [
- "sha1_smol",
-]
-
-[[package]]
 name = "sha1_smol"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2288,22 +2279,13 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "0.8.2"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
-dependencies = [
- "getrandom",
- "sha1",
-]
-
-[[package]]
-name = "uuid"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "feb41e78f93363bb2df8b0e86a2ca30eed7806ea16ea0c790d757cf93f79be83"
+checksum = "422ee0de9031b5b948b97a8fc04e3aa35230001a722ddd27943e0be31564ce4c"
 dependencies = [
  "getrandom",
  "serde",
+ "sha1_smol",
 ]
 
 [[package]]
