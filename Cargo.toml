@@ -14,7 +14,7 @@ edition = "2021"
 
 [dependencies]
 tonic = "0.8.2"
-prost = "0.11.0"
+prost = "0.11.3"
 pbjson-types = "0.5"
 chrono = "0.4.22"
 thiserror = "1.0"
