@@ -18,11 +18,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+use astarte_device_sdk::options::AstarteOptions;
+use astarte_device_sdk::registration::register_device;
+use astarte_device_sdk::AstarteDeviceSdk;
 use astarte_message_hub::config::MessageHubOptions;
 use astarte_message_hub::error::AstarteMessageHubError;
-use astarte_sdk::builder::AstarteOptions;
-use astarte_sdk::registration::register_device;
-use astarte_sdk::AstarteSdk;
 
 #[tokio::main]
 async fn main() -> Result<(), AstarteMessageHubError> {
@@ -31,7 +31,7 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     //TODO add MessageHubServer and add Astarte::new() on top of AstarteSDK
     let options = MessageHubOptions::get().await?;
     let astarte_options = astarte_map_options(&options).await;
-    let _astarte_sdk = AstarteSdk::new(&astarte_options).await?;
+    let _astarte_sdk = AstarteDeviceSdk::new(&astarte_options).await?;
 
     Ok(())
 }

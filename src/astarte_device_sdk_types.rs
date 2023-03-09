@@ -19,7 +19,7 @@
  */
 
 use crate::error::AstarteMessageHubError;
-use astarte_sdk::types::AstarteType;
+use astarte_device_sdk::types::AstarteType;
 use chrono::DateTime;
 
 use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
@@ -69,13 +69,13 @@ impl_individual_data_to_astarte_type_conversion_traits!(
 
 #[cfg(test)]
 mod test {
-    use astarte_sdk::types::AstarteType;
+    use astarte_device_sdk::types::AstarteType;
     use chrono::{DateTime, Utc};
 
     use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
 
     #[test]
-    fn proto_astarte_double_into_astarte_sdk_type_success() {
+    fn proto_astarte_double_into_astarte_device_sdk_type_success() {
         let value: f64 = 15.5;
         let expected_double_value = IndividualData::AstarteDouble(value);
         let astarte_type: AstarteType = expected_double_value.try_into().unwrap();
@@ -88,7 +88,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_integer_into_astarte_sdk_type_success() {
+    fn proto_astarte_integer_into_astarte_device_sdk_type_success() {
         let value: i32 = 15;
         let expected_integer_value = IndividualData::AstarteInteger(value);
         let astarte_type: AstarteType = expected_integer_value.try_into().unwrap();
@@ -101,7 +101,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_boolean_into_astarte_sdk_type_success() {
+    fn proto_astarte_boolean_into_astarte_device_sdk_type_success() {
         let value: bool = true;
         let expected_boolean_value = IndividualData::AstarteBoolean(value);
         let astarte_type: AstarteType = expected_boolean_value.try_into().unwrap();
@@ -114,7 +114,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_long_integer_into_astarte_sdk_type_success() {
+    fn proto_astarte_long_integer_into_astarte_device_sdk_type_success() {
         let value: i64 = 154;
         let expected_long_integer_value = IndividualData::AstarteLongInteger(value);
         let astarte_type: AstarteType = expected_long_integer_value.try_into().unwrap();
@@ -127,7 +127,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_string_into_astarte_sdk_type_success() {
+    fn proto_astarte_string_into_astarte_device_sdk_type_success() {
         let value: String = "test".to_owned();
         let expected_string_value = IndividualData::AstarteString(value.clone());
         let astarte_type: AstarteType = expected_string_value.try_into().unwrap();
@@ -140,7 +140,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_binary_blob_into_astarte_sdk_type_success() {
+    fn proto_astarte_binary_blob_into_astarte_device_sdk_type_success() {
         let value: Vec<u8> = vec![10, 34];
         let expected_binary_blob_value = IndividualData::AstarteBinaryBlob(value.clone());
         let astarte_type: AstarteType = expected_binary_blob_value.try_into().unwrap();
@@ -153,7 +153,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_date_time_into_astarte_sdk_type_success() {
+    fn proto_astarte_date_time_into_astarte_device_sdk_type_success() {
         let value: DateTime<Utc> = Utc::now();
         let expected_date_time_value = IndividualData::AstarteDateTime(value.into());
         let astarte_type: AstarteType = expected_date_time_value.try_into().unwrap();
@@ -166,7 +166,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_double_array_into_astarte_sdk_type_success() {
+    fn proto_astarte_double_array_into_astarte_device_sdk_type_success() {
         let value: Vec<f64> = vec![15.5, 18.7];
         use crate::proto_message_hub::AstarteDoubleArray;
         let expected_double_array_value = IndividualData::AstarteDoubleArray(AstarteDoubleArray {
@@ -182,7 +182,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_integer_array_into_astarte_sdk_type_success() {
+    fn proto_astarte_integer_array_into_astarte_device_sdk_type_success() {
         let value: Vec<i32> = vec![15, 18];
         use crate::proto_message_hub::AstarteIntegerArray;
         let expected_integer_array_value =
@@ -199,7 +199,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_boolean_array_into_astarte_sdk_type_success() {
+    fn proto_astarte_boolean_array_into_astarte_device_sdk_type_success() {
         let value: Vec<bool> = vec![false, true];
         use crate::proto_message_hub::AstarteBooleanArray;
         let expected_boolean_array_value =
@@ -216,7 +216,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_long_integer_array_into_astarte_sdk_type_success() {
+    fn proto_astarte_long_integer_array_into_astarte_device_sdk_type_success() {
         let value: Vec<i64> = vec![1543, 18];
         use crate::proto_message_hub::AstarteLongIntegerArray;
         let expected_long_integer_array_value =
@@ -233,7 +233,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_string_array_into_astarte_sdk_type_success() {
+    fn proto_astarte_string_array_into_astarte_device_sdk_type_success() {
         let value: Vec<String> = vec!["test1".to_owned(), "test2".to_owned()];
         use crate::proto_message_hub::AstarteStringArray;
         let expected_string_array_value = IndividualData::AstarteStringArray(AstarteStringArray {
@@ -249,7 +249,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_binary_blob_array_into_astarte_sdk_type_success() {
+    fn proto_astarte_binary_blob_array_into_astarte_device_sdk_type_success() {
         let value: Vec<Vec<u8>> = vec![vec![11, 201], vec![1, 241]];
         use crate::proto_message_hub::AstarteBinaryBlobArray;
         let expected_binary_blob_array_value =
@@ -266,7 +266,7 @@ mod test {
     }
 
     #[test]
-    fn proto_astarte_date_time_array_into_astarte_sdk_type_success() {
+    fn proto_astarte_date_time_array_into_astarte_device_sdk_type_success() {
         use crate::proto_message_hub::AstarteDateTimeArray;
         use pbjson_types::Timestamp;
 

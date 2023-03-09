@@ -23,8 +23,8 @@ use std::io::Error;
 use std::sync::Arc;
 
 #[cfg(not(test))]
-use astarte_sdk::AstarteSdk;
-use astarte_sdk::Interface;
+use astarte_device_sdk::AstarteDeviceSdk;
+use astarte_device_sdk::Interface;
 use async_trait::async_trait;
 use log::warn;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -35,12 +35,12 @@ use uuid::Uuid;
 use crate::astarte_message_hub::AstarteNode;
 use crate::data::astarte::AstarteSubscriber;
 #[cfg(test)]
-use crate::data::mock_astarte::MockAstarteSdk as AstarteSdk;
+use crate::data::mock_astarte::MockAstarteDeviceSdk as AstarteDeviceSdk;
 use crate::error::AstarteMessageHubError;
 use crate::proto_message_hub::AstarteMessage;
 
 pub struct Astarte {
-    pub device_sdk: AstarteSdk,
+    pub device_sdk: AstarteDeviceSdk,
     subscribers: Arc<RwLock<HashMap<Uuid, Subscriber>>>,
 }
 
@@ -86,10 +86,10 @@ impl AstarteSubscriber for Astarte {
 impl Astarte {
     #[allow(dead_code)]
     pub async fn run(&mut self) {
-        if let Ok(clientbound) = self.device_sdk.poll().await {
-            println!("incoming: {:?}", clientbound);
+        if let Ok(astarte_data_event) = self.device_sdk.handle_events().await {
+            println!("incoming: {:?}", astarte_data_event);
 
-            if let Ok(astarte_message) = AstarteMessage::try_from(clientbound.clone()) {
+            if let Ok(astarte_message) = AstarteMessage::try_from(astarte_data_event.clone()) {
                 let subscribers_guard = self.subscribers.read().await;
                 let subscribers = subscribers_guard
                     .iter()
@@ -99,7 +99,7 @@ impl Astarte {
                             .iter()
                             .map(|iface| iface.get_name())
                             .collect::<String>()
-                            .contains(&clientbound.interface)
+                            .contains(&astarte_data_event.interface)
                     })
                     .map(|(_, subscriber)| subscriber);
                 for subscriber in subscribers {
@@ -107,8 +107,8 @@ impl Astarte {
                 }
             } else {
                 warn!(
-                    "Unable to convert clientbound to AstarteMessage: {:?}",
-                    clientbound
+                    "Unable to convert astarte_data_event to AstarteMessage: {:?}",
+                    astarte_data_event
                 );
             }
         }
@@ -120,14 +120,14 @@ mod test {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use astarte_sdk::{Aggregation, AstarteError, Clientbound};
+    use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent, AstarteError};
     use tokio::sync::mpsc::Receiver;
     use tonic::Status;
 
     use crate::astarte_message_hub::AstarteNode;
     use crate::data::astarte::AstarteSubscriber;
     use crate::data::astarte_provider::Astarte;
-    use crate::data::mock_astarte::MockAstarteSdk;
+    use crate::data::mock_astarte::MockAstarteDeviceSdk;
     use crate::error::AstarteMessageHubError;
 
     const SERV_PROPS_IFACE: &str = r#"
@@ -156,7 +156,7 @@ mod test {
     async fn subscribe_success() {
         use crate::data::astarte_provider::Astarte;
 
-        let mut device_sdk = MockAstarteSdk::new();
+        let mut device_sdk = MockAstarteDeviceSdk::new();
 
         device_sdk.expect_add_interface().returning(|_| Ok(()));
 
@@ -178,7 +178,7 @@ mod test {
 
     #[tokio::test]
     async fn subscribe_failed_invalid_interface() {
-        let mut device_sdk = MockAstarteSdk::new();
+        let mut device_sdk = MockAstarteDeviceSdk::new();
         let interfaces = vec!["".to_string().into_bytes()];
 
         device_sdk
@@ -200,7 +200,9 @@ mod test {
 
         assert!(matches!(
             result.err().unwrap(),
-            AstarteMessageHubError::AstarteError(astarte_sdk::AstarteError::InterfaceError(_))
+            AstarteMessageHubError::AstarteError(astarte_device_sdk::AstarteError::InterfaceError(
+                _
+            ))
         ))
     }
 
@@ -212,12 +214,12 @@ mod test {
         use crate::proto_message_hub::AstarteDataTypeIndividual;
         use crate::proto_message_hub::AstarteMessage;
 
-        let prop_interface = astarte_sdk::Interface::from_str(SERV_PROPS_IFACE).unwrap();
+        let prop_interface = astarte_device_sdk::Interface::from_str(SERV_PROPS_IFACE).unwrap();
         let expected_interface_name = prop_interface.get_name();
         let path = "test";
         let value: i32 = 5;
 
-        let mut device_sdk = MockAstarteSdk::new();
+        let mut device_sdk = MockAstarteDeviceSdk::new();
 
         let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
 
@@ -227,8 +229,8 @@ mod test {
         );
 
         let interface_cloned = expected_interface_name.clone();
-        device_sdk.expect_poll().returning(move || {
-            Ok(Clientbound {
+        device_sdk.expect_handle_events().returning(move || {
+            Ok(AstarteDeviceDataEvent {
                 interface: interface_cloned.to_string(),
                 path: path.to_string(),
                 data: Aggregation::Individual(value.into()),
@@ -271,7 +273,7 @@ mod test {
         use crate::data::astarte_provider::Astarte;
         use crate::proto_message_hub::AstarteMessage;
 
-        let mut device_sdk = MockAstarteSdk::new();
+        let mut device_sdk = MockAstarteDeviceSdk::new();
 
         let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
 
@@ -281,7 +283,7 @@ mod test {
         );
 
         device_sdk
-            .expect_poll()
+            .expect_handle_events()
             .returning(move || Err(AstarteError::DeserializationError));
 
         device_sdk.expect_add_interface().returning(|_| Ok(()));

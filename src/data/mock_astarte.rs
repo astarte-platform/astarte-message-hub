@@ -18,16 +18,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use astarte_sdk::types::AstarteType;
-use astarte_sdk::{AstarteError, Clientbound, Interface};
+use astarte_device_sdk::types::AstarteType;
+use astarte_device_sdk::{AstarteDeviceDataEvent, AstarteError, Interface};
 use mockall::automock;
 
-pub struct AstarteSdk {}
+pub struct AstarteDeviceSdk {}
 
 #[cfg_attr(test, automock)]
-impl AstarteSdk {
+impl AstarteDeviceSdk {
     #[allow(dead_code)]
-    pub async fn poll(&mut self) -> Result<Clientbound, AstarteError> {
+    pub async fn handle_events(&mut self) -> Result<AstarteDeviceDataEvent, AstarteError> {
         todo!()
     }
     #[allow(dead_code)]
