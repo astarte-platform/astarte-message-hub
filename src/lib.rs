@@ -23,9 +23,9 @@ pub use crate::proto_message_hub::message_hub_server::MessageHubServer;
 
 mod astarte_message_hub;
 mod astarte_sdk_types;
-mod config;
+pub mod config;
 mod data;
-mod error;
+pub mod error;
 mod types;
 
 pub mod proto_message_hub {

@@ -207,3 +207,6 @@ sequenceDiagram
     end
 ```
 
+## Requirements
+protobuf >= 3.15
+
