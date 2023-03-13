@@ -220,6 +220,9 @@ impl TryFrom<InterfaceJson> for astarte_device_sdk::Interface {
     }
 }
 
+/// This function can be used to convert a map of (String, AstarteDataTypeIndividual) into a
+/// map of (String, astarte_device_sdk::types::AstarteType).
+/// It can be useful when a method accept an astarte_device_sdk::AstarteAggregate.
 pub fn map_values_to_astarte_type(
     value: HashMap<String, AstarteDataTypeIndividual>,
 ) -> Result<HashMap<String, astarte_device_sdk::types::AstarteType>, AstarteMessageHubError> {

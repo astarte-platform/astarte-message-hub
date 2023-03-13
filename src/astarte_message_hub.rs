@@ -67,6 +67,38 @@ where
 impl<T: AstartePublisher + AstarteSubscriber + 'static> MessageHub for AstarteMessageHub<T> {
     type AttachStream = ReceiverStream<Result<AstarteMessage, Status>>;
 
+    /// Attach a node to the Message hub. If the node was successfully attached,
+    /// the method returns a gRPC stream into which the events received
+    /// from Astarte(based on the declared Introspection) will be redirected.
+    ///
+    /// ```no_run
+    /// use astarte_message_hub::proto_message_hub::message_hub_client::MessageHubClient;
+    /// use astarte_message_hub::proto_message_hub::Node;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), tonic::Status> {
+    ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
+    ///
+    ///     let interface_json = std::fs::read("/tmp/org.astarteplatform.esp32.examples.DeviceDatastream.json")
+    ///         .unwrap();
+    ///
+    ///     let node = Node {
+    ///             uuid: "a2d4769f-0338-4f7f-b71d-9f81b41ae13f".to_string(),
+    ///             interface_jsons: vec![interface_json],
+    ///     };
+    ///
+    ///     let mut stream = message_hub_client
+    ///         .attach(tonic::Request::new(node))
+    ///         .await?
+    ///         .into_inner();
+    ///
+    ///     loop {
+    ///         if let Some(astarte_message) = stream.message().await?{
+    ///             println!("AstarteMessage = {:?}", astarte_message);
+    ///         }
+    ///     }
+    /// }
+    /// ```
     async fn attach(&self, request: Request<Node>) -> Result<Response<Self::AttachStream>, Status> {
         info!("Node Attach Request => {:?}", request);
         let node = request.into_inner();
@@ -93,6 +125,44 @@ impl<T: AstartePublisher + AstarteSubscriber + 'static> MessageHub for AstarteMe
         }
     }
 
+    /// Send a message to Astarte for a node attached to the Astarte Message Hub.
+    ///
+    /// ```no_run
+    /// use astarte_message_hub::proto_message_hub::message_hub_client::MessageHubClient;
+    /// use astarte_message_hub::proto_message_hub::Node;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), tonic::Status> {
+    /// use astarte_message_hub::proto_message_hub::astarte_message::Payload;
+    /// use astarte_message_hub::proto_message_hub::AstarteMessage;
+    ///
+    ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
+    ///
+    ///     let interface_json = std::fs::read("/tmp/org.astarteplatform.esp32.examples.DeviceDatastream.json")
+    ///         .unwrap();
+    ///
+    ///     let node = Node {
+    ///             uuid: "a2d4769f-0338-4f7f-b71d-9f81b41ae13f".to_string(),
+    ///             interface_jsons: vec![interface_json],
+    ///     };
+    ///
+    ///     let stream = message_hub_client
+    ///         .attach(tonic::Request::new(node))
+    ///         .await?
+    ///         .into_inner();
+    ///
+    ///     let astarte_message = AstarteMessage {
+    ///         interface_name: "org.astarteplatform.esp32.examples.DeviceDatastream".to_string(),
+    ///         path: "uptimeSeconds".to_string(),
+    ///         timestamp: None,
+    ///         payload: Some(Payload::AstarteData(100.into()))
+    ///     };
+    ///
+    ///     let  _ = message_hub_client.send(astarte_message).await;
+    ///
+    ///     Ok(())
+    ///
+    /// }
     async fn send(
         &self,
         request: Request<AstarteMessage>,
@@ -102,10 +172,8 @@ impl<T: AstartePublisher + AstarteSubscriber + 'static> MessageHub for AstarteMe
         let astarte_message = request.into_inner();
 
         if let Err(err) = self.astarte_handler.publish(&astarte_message).await {
-            Err(Status::internal(format!(
-                "Unable to publish astarte message, err: {:?}",
-                err
-            )))
+            let err_msg = format!("Unable to publish astarte message, err: {:?}", err);
+            Err(Status::internal(err_msg))
         } else {
             Ok(Response::new(pbjson_types::Empty {}))
         }

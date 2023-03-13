@@ -38,9 +38,7 @@ use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
 #[cfg(test)]
 use crate::data::mock_astarte::MockAstarteDeviceSdk as AstarteDeviceSdk;
 use crate::error::AstarteMessageHubError;
-use crate::error::AstarteMessageHubError::{AstarteError, AstarteInvalidData};
-use crate::proto_message_hub::AstarteMessage;
-use crate::{proto_message_hub, types};
+use crate::proto_message_hub;
 
 pub struct Astarte {
     pub device_sdk: AstarteDeviceSdk,
@@ -49,7 +47,7 @@ pub struct Astarte {
 
 struct Subscriber {
     introspection: Vec<Interface>,
-    sender: Sender<Result<AstarteMessage, Status>>,
+    sender: Sender<Result<proto_message_hub::AstarteMessage, Status>>,
 }
 
 #[async_trait]
@@ -57,7 +55,8 @@ impl AstarteSubscriber for Astarte {
     async fn subscribe(
         &self,
         astarte_node: &AstarteNode,
-    ) -> Result<Receiver<Result<AstarteMessage, Status>>, AstarteMessageHubError> {
+    ) -> Result<Receiver<Result<proto_message_hub::AstarteMessage, Status>>, AstarteMessageHubError>
+    {
         let (tx, rx) = channel(32);
 
         let mut astarte_interfaces: Vec<Interface> = vec![];
@@ -90,22 +89,21 @@ impl AstarteSubscriber for Astarte {
 impl AstartePublisher for Astarte {
     async fn publish(
         &self,
-        astarte_message: &AstarteMessage,
+        astarte_message: &proto_message_hub::AstarteMessage,
     ) -> Result<(), AstarteMessageHubError> {
-        use crate::proto_message_hub::astarte_data_type::Data;
-        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::astarte_data_type;
+        use crate::proto_message_hub::astarte_message;
 
-        match astarte_message
-            .payload
-            .clone()
-            .ok_or(AstarteInvalidData("Invalid payload".to_string()))?
-        {
-            Payload::AstarteData(astarte_data) => {
-                match astarte_data
-                    .data
-                    .ok_or(AstarteInvalidData("Invalid Astarte data type".to_string()))?
-                {
-                    Data::AstarteIndividual(data) => {
+        match astarte_message.payload.clone().ok_or_else(|| {
+            AstarteMessageHubError::AstarteInvalidData("Invalid payload".to_string())
+        })? {
+            astarte_message::Payload::AstarteData(astarte_data) => {
+                match astarte_data.data.ok_or_else(|| {
+                    AstarteMessageHubError::AstarteInvalidData(
+                        "Invalid Astarte data type".to_string(),
+                    )
+                })? {
+                    astarte_data_type::Data::AstarteIndividual(data) => {
                         self.publish_astarte_individual(
                             data,
                             &astarte_message.interface_name,
@@ -114,7 +112,7 @@ impl AstartePublisher for Astarte {
                         )
                         .await
                     }
-                    Data::AstarteObject(object_data) => {
+                    astarte_data_type::Data::AstarteObject(object_data) => {
                         self.publish_astarte_object(
                             object_data,
                             &astarte_message.interface_name,
@@ -125,12 +123,12 @@ impl AstartePublisher for Astarte {
                     }
                 }
             }
-            Payload::AstarteUnset(_) => {
+            astarte_message::Payload::AstarteUnset(_) => {
                 self.device_sdk
                     .unset(&astarte_message.interface_name, &astarte_message.path)
                     .await
             }
-            .map_err(|err| AstarteError(err)),
+            .map_err(AstarteMessageHubError::AstarteError),
         }
     }
 }
@@ -141,7 +139,9 @@ impl Astarte {
         if let Ok(astarte_data_event) = self.device_sdk.handle_events().await {
             println!("incoming: {:?}", astarte_data_event);
 
-            if let Ok(astarte_message) = AstarteMessage::try_from(astarte_data_event.clone()) {
+            if let Ok(astarte_message) =
+                proto_message_hub::AstarteMessage::try_from(astarte_data_event.clone())
+            {
                 let subscribers_guard = self.subscribers.read().await;
                 let subscribers = subscribers_guard
                     .iter()
@@ -166,6 +166,9 @@ impl Astarte {
         }
     }
 
+    /// Publish an AstarteDataTypeIndividual on specific interface and path.
+    ///
+    /// The AstarteDataTypeIndividual are defined in the `astarte_type.proto` file.
     async fn publish_astarte_individual(
         &self,
         data: proto_message_hub::AstarteDataTypeIndividual,
@@ -175,7 +178,9 @@ impl Astarte {
     ) -> Result<(), AstarteMessageHubError> {
         let astarte_type: AstarteType = data
             .individual_data
-            .ok_or(AstarteInvalidData("Invalid individual data".to_string()))?
+            .ok_or_else(|| {
+                AstarteMessageHubError::AstarteInvalidData("Invalid individual data".to_string())
+            })?
             .try_into()?;
 
         if let Some(timestamp) = timestamp {
@@ -187,9 +192,12 @@ impl Astarte {
                 .send(interface_name, path, astarte_type)
                 .await
         }
-        .map_err(|err| AstarteError(err))
+        .map_err(AstarteMessageHubError::AstarteError)
     }
 
+    /// Publish an AstarteDataTypeObject on specific interface and path.
+    ///
+    /// The AstarteDataTypeObject is defined in the `astarte_type.proto` file.
     async fn publish_astarte_object(
         &self,
         object_data: proto_message_hub::AstarteDataTypeObject,
@@ -200,9 +208,9 @@ impl Astarte {
         use crate::proto_message_hub::AstarteDataTypeIndividual;
 
         let astarte_data_individual_map: HashMap<String, AstarteDataTypeIndividual> =
-            object_data.object_data.into();
+            object_data.object_data;
 
-        let aggr = types::map_values_to_astarte_type(astarte_data_individual_map)?;
+        let aggr = crate::types::map_values_to_astarte_type(astarte_data_individual_map)?;
         if let Some(timestamp) = timestamp {
             self.device_sdk
                 .send_object_with_timestamp(interface_name, path, aggr, timestamp.try_into()?)
@@ -212,7 +220,7 @@ impl Astarte {
                 .send_object(interface_name, path, aggr)
                 .await
         }
-        .map_err(|err| AstarteError(err))
+        .map_err(AstarteMessageHubError::AstarteError)
     }
 }
 
