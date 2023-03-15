@@ -24,6 +24,7 @@ use std::panic;
 use std::path::Path;
 use std::str::FromStr;
 
+use crate::config;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -84,9 +85,8 @@ impl HttpConfigProvider {
             astarte_ignore_ssl: None,
         };
 
-        let result = std::fs::File::create(
-            Path::new(&state.store_directory).join("message-hub-config.toml"),
-        );
+        let result =
+            std::fs::File::create(Path::new(&state.store_directory).join(config::CONFIG_FILE_NAME));
         if let Err(_) = result {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,

@@ -21,6 +21,7 @@
 use std::io::Write;
 use std::path::Path;
 
+use crate::config;
 use tokio::sync::mpsc::{channel, Sender};
 use tonic::transport::Server;
 use tonic::{Code, Request, Response, Status};
@@ -61,9 +62,8 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             astarte_ignore_ssl: None,
         };
 
-        let mut file = std::fs::File::create(
-            Path::new(&self.store_directory).join("message-hub-config.toml"),
-        )?;
+        let mut file =
+            std::fs::File::create(Path::new(&self.store_directory).join(config::CONFIG_FILE_NAME))?;
 
         let result = toml::to_string(&message_hub_options);
         if let Err(e) = result {
