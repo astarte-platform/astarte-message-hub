@@ -1,5 +1,5 @@
 /*
- * This file is part of Astarte.
+ * This file is part of Edgehog.
  *
  * Copyright 2022 SECO Mind Srl
  *
@@ -18,16 +18,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-pub use crate::astarte_message_hub::AstarteMessageHub;
-pub use crate::proto_message_hub::message_hub_server::MessageHubServer;
+use crate::{config::MessageHubOptions, error::AstarteMessageHubError};
+use std::path::Path;
 
-mod astarte_message_hub;
-mod astarte_sdk_types;
-mod config;
-mod data;
-mod error;
-mod types;
-
-pub mod proto_message_hub {
-    tonic::include_proto!("astarteplatform.msghub");
+pub(crate) fn read_options(path: &Path) -> Result<MessageHubOptions, AstarteMessageHubError> {
+    let config_raw = std::fs::read_to_string(path)?;
+    let config = toml::from_str::<MessageHubOptions>(&config_raw)?;
+    Ok(config)
 }

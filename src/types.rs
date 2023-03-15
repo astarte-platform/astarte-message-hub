@@ -715,7 +715,7 @@ mod test {
         assert!(matches!(
             result.err().unwrap(),
             AstarteMessageHubError::ConversionError
-        ))
+        ));
     }
 
     #[test]

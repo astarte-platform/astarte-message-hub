@@ -36,4 +36,13 @@ pub enum AstarteMessageHubError {
 
     #[error("{0}")]
     AstarteInvalidData(String),
+
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
+
+    #[error("unrecoverable error ({0})")]
+    FatalError(String),
+
+    #[error("configuration file error")]
+    ConfigFileError(#[from] toml::de::Error),
 }
