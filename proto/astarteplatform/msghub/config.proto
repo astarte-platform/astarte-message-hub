@@ -19,11 +19,18 @@
  */
 
 syntax = "proto3";
-
 package astarteplatform.msghub;
 
-message Interface {
-  string name = 1;
-  int32 major = 2;
-  int32 minor = 3;
+import "google/protobuf/empty.proto";
+
+message ConfigMessage {
+  string realm = 1;
+  string device_id = 2;
+  optional string credentials_secret = 3;
+  string pairing_url = 4;
+  optional string pairing_token = 5;
+}
+
+service MessageHubConfig {
+  rpc SetConfig (ConfigMessage) returns (google.protobuf.Empty);
 }

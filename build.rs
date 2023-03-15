@@ -24,6 +24,7 @@ fn main() {
         "proto/astarteplatform/msghub/node.proto",
         "proto/astarteplatform/msghub/astarte_message.proto",
         "proto/astarteplatform/msghub/astarte_type.proto",
+        "proto/astarteplatform/msghub/config.proto",
     ];
 
     tonic_build::configure()
