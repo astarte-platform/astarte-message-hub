@@ -46,10 +46,7 @@ impl AstarteNode {
     pub fn new(uuid: Uuid, introspection: Vec<Vec<u8>>) -> Self {
         AstarteNode {
             id: uuid,
-            introspection: introspection
-                .into_iter()
-                .map(|json| InterfaceJson(json))
-                .collect(),
+            introspection: introspection.into_iter().map(InterfaceJson).collect(),
         }
     }
 }

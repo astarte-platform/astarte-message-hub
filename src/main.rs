@@ -39,19 +39,19 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 pub async fn astarte_map_options(opts: &MessageHubOptions) -> AstarteOptions {
     let credentials_secret = match &opts.credentials_secret {
         None => register_device(
-            &opts.pairing_token.as_ref().unwrap(),
-            &opts.pairing_url.as_ref().unwrap(),
-            &opts.realm.as_ref().unwrap(),
-            &opts.device_id.as_ref().unwrap(),
+            opts.pairing_token.as_ref().unwrap(),
+            opts.pairing_url.as_ref().unwrap(),
+            opts.realm.as_ref().unwrap(),
+            opts.device_id.as_ref().unwrap(),
         )
         .await
         .unwrap(),
         Some(secret) => secret.clone(),
     };
     AstarteOptions::new(
-        &opts.realm.as_ref().unwrap(),
-        &opts.device_id.as_ref().unwrap(),
+        opts.realm.as_ref().unwrap(),
+        opts.device_id.as_ref().unwrap(),
         &credentials_secret,
-        &opts.pairing_url.as_ref().unwrap(),
+        opts.pairing_url.as_ref().unwrap(),
     )
 }

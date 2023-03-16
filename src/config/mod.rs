@@ -72,11 +72,11 @@ impl MessageHubOptions {
         let protobuf_server =
             ProtobufConfigProvider::new("[::1]:50051", store_directory.clone(), tx.clone()).await;
 
-        let _ = rx.recv().await.unwrap();
+        rx.recv().await.unwrap();
 
         web_server.stop().await;
         protobuf_server.stop().await;
-        return file::read_options(&path);
+        file::read_options(&path)
     }
 
     fn is_valid(&self) -> bool {
@@ -96,7 +96,7 @@ fn read_options_from_base_locations() -> Result<MessageHubOptions, AstarteMessag
 
     if let Some(path) = paths.into_iter().next() {
         info!("Found configuration file {path}");
-        file::read_options(&Path::new(&path))
+        file::read_options(Path::new(&path))
     } else {
         Err(AstarteMessageHubError::FatalError(
             "Configuration file not found".to_string(),
