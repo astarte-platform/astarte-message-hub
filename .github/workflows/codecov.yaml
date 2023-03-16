@@ -26,30 +26,26 @@ on:
   pull_request:
 
 jobs:
-  codecov:
-    name: cargo test
+  code_coverage:
+    name: Code coverage
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        toolchain:
-          - stable
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-      - name: Install Protoc
+      - name: Install protoc
         uses: arduino/setup-protoc@v1
-      - name: Install toolchain
+      - name: Install rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ matrix.toolchain }}
+          toolchain: stable
           override: true
-      - name: Run cargo-tarpaulin
-        uses: actions-rs/tarpaulin@v0.1
-        with:
-          version: '0.20.1'
-          args: '--ignore-tests --lib -- --test-threads 1'
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Run cargo-tarpaulin with xml output
+        run: cargo tarpaulin --engine llvm --ignore-tests --lib --out Xml -- --test-threads 1
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v3
         with:
           token: ${{secrets.CODECOV_TOKEN}}
+          fail_ci_if_error: true
