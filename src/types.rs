@@ -472,7 +472,7 @@ mod test {
 
         let expected_datetime_value = Utc::now();
 
-        let datetime_astarte_data_type: AstarteDataType = expected_datetime_value.clone().into();
+        let datetime_astarte_data_type: AstarteDataType = expected_datetime_value.into();
 
         if let AstarteIndividual(data) = datetime_astarte_data_type.data.unwrap() {
             if let IndividualData::AstarteDateTime(date_time_value) = data.individual_data.unwrap()
@@ -726,7 +726,7 @@ mod test {
         let client_bound = Clientbound {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
-            data: Aggregation::Individual(expected_data.clone()),
+            data: Aggregation::Individual(expected_data),
         };
 
         let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();

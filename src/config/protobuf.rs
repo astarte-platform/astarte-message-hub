@@ -39,7 +39,6 @@ struct AstarteMessageHubConfig {
 }
 
 pub struct ProtobufConfigProvider {
-    store_directory: String,
     shutdown_channel: Sender<()>,
 }
 
@@ -89,7 +88,7 @@ impl ProtobufConfigProvider {
     ) -> ProtobufConfigProvider {
         let addr = address.parse().unwrap();
         let service = AstarteMessageHubConfig {
-            store_directory: store_directory.clone(),
+            store_directory,
             configuration_ready_channel,
         };
         let (tx, mut rx) = channel::<()>(1);
@@ -101,7 +100,6 @@ impl ProtobufConfigProvider {
                 .unwrap_or_else(|e| panic!("Unable to start protobuf service: {}", e));
         });
         ProtobufConfigProvider {
-            store_directory,
             shutdown_channel: tx,
         }
     }
@@ -143,9 +141,6 @@ mod test {
 
     #[tokio::test]
     async fn server_test() {
-        pub mod proto_message_hub {
-            tonic::include_proto!("astarteplatform.msghub");
-        }
         let (tx, mut rx) = mpsc::channel(1);
         let server = ProtobufConfigProvider::new("127.0.0.1:1400", "./".to_string(), tx).await;
         let channel = Endpoint::from_static("http://localhost:1400")

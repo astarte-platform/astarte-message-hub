@@ -87,7 +87,7 @@ impl HttpConfigProvider {
 
         let result =
             std::fs::File::create(Path::new(&state.store_directory).join(config::CONFIG_FILE_NAME));
-        if let Err(_) = result {
+        if result.is_err() {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ConfigResponse {
@@ -103,7 +103,7 @@ impl HttpConfigProvider {
         let mut file = result.unwrap();
 
         let result = toml::to_string(&message_hub_options);
-        if let Err(_) = result {
+        if result.is_err() {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ConfigResponse {
@@ -115,7 +115,7 @@ impl HttpConfigProvider {
 
         let cfg = result.unwrap();
 
-        if let Err(_) = write!(file, "{cfg}") {
+        if write!(file, "{cfg}").is_err() {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ConfigResponse {
@@ -183,9 +183,7 @@ mod test {
 
     use tokio::sync::mpsc::channel;
 
-    use crate::config::http::{
-        ConfigPayload, ConfigResponse, ConfigServerExtension, HttpConfigProvider,
-    };
+    use crate::config::http::{ConfigResponse, HttpConfigProvider};
 
     #[tokio::test]
     async fn server_test() {
@@ -206,7 +204,7 @@ mod test {
             .await
             .unwrap();
 
-        let status = resp.status().clone();
+        let status = resp.status();
         let json: ConfigResponse = resp.json().await.unwrap();
         assert!(status.is_success());
         assert_eq!(json.result, "OK".to_string());
@@ -234,7 +232,7 @@ mod test {
             .await
             .unwrap();
 
-        let status = resp.status().clone();
+        let status = resp.status();
         assert!(!status.is_success());
         server.stop().await;
         tokio::time::sleep(Duration::from_secs(2)).await;

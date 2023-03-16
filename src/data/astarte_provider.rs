@@ -69,7 +69,7 @@ impl AstarteSubscriber for Astarte {
         }
 
         self.subscribers.write().await.insert(
-            astarte_node.id.clone(),
+            astarte_node.id,
             Subscriber {
                 introspection: astarte_interfaces,
                 sender: tx,
@@ -84,6 +84,7 @@ impl AstarteSubscriber for Astarte {
 }
 
 impl Astarte {
+    #[allow(dead_code)]
     pub async fn run(&mut self) {
         if let Ok(clientbound) = self.device_sdk.poll().await {
             println!("incoming: {:?}", clientbound);
@@ -96,7 +97,7 @@ impl Astarte {
                         subscriber
                             .introspection
                             .iter()
-                            .map(|iface| iface.get_name().clone())
+                            .map(|iface| iface.get_name())
                             .collect::<String>()
                             .contains(&clientbound.interface)
                     })

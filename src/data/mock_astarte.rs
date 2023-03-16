@@ -26,9 +26,11 @@ pub struct AstarteSdk {}
 
 #[cfg_attr(test, automock)]
 impl AstarteSdk {
+    #[allow(dead_code)]
     pub async fn poll(&mut self) -> Result<Clientbound, AstarteError> {
         todo!()
     }
+    #[allow(dead_code)]
     pub async fn send<D: 'static>(
         &self,
         _interface_name: &str,
@@ -40,6 +42,7 @@ impl AstarteSdk {
     {
         todo!()
     }
+    #[allow(dead_code)]
     pub async fn send_with_timestamp<D: 'static>(
         &self,
         _interface_name: &str,
@@ -52,6 +55,7 @@ impl AstarteSdk {
     {
         todo!()
     }
+    #[allow(dead_code)]
     pub async fn send_object<T: 'static>(
         &self,
         _interface_name: &str,
@@ -63,6 +67,7 @@ impl AstarteSdk {
     {
         todo!()
     }
+    #[allow(dead_code)]
     pub async fn send_object_with_timestamp<T: 'static>(
         &self,
         _interface_name: &str,
@@ -75,6 +80,7 @@ impl AstarteSdk {
     {
         todo!()
     }
+    #[allow(dead_code)]
     pub async fn unset<D: 'static>(
         &self,
         _interface_name: &str,
@@ -85,7 +91,7 @@ impl AstarteSdk {
     {
         todo!()
     }
-
+    #[allow(dead_code)]
     pub async fn add_interface(&self, _interface: Interface) -> Result<(), AstarteError> {
         todo!()
     }

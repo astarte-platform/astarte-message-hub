@@ -250,7 +250,7 @@ mod test {
 
     #[test]
     fn proto_astarte_binary_blob_array_into_astarte_sdk_type_success() {
-        let value: Vec<Vec<u8>> = vec![vec![11, 201], vec![01, 241]];
+        let value: Vec<Vec<u8>> = vec![vec![11, 201], vec![1, 241]];
         use crate::proto_message_hub::AstarteBinaryBlobArray;
         let expected_binary_blob_array_value =
             IndividualData::AstarteBinaryBlobArray(AstarteBinaryBlobArray {
