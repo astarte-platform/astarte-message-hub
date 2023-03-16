@@ -32,7 +32,7 @@ pub enum AstarteMessageHubError {
     ConversionError,
 
     #[error(transparent)]
-    AstarteError(#[from] astarte_sdk::AstarteError),
+    AstarteError(#[from] astarte_device_sdk::AstarteError),
 
     #[error("{0}")]
     AstarteInvalidData(String),

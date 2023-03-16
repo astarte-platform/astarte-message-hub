@@ -19,8 +19,8 @@
  */
 
 use crate::error::AstarteMessageHubError;
-use astarte_sdk::types::AstarteType;
-use astarte_sdk::{Aggregation, Clientbound, Interface};
+use astarte_device_sdk::types::AstarteType;
+use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent, Interface};
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
@@ -169,10 +169,10 @@ impl_astarte_type_to_individual_data_conversion_traits!(
     DateTimeArray
 );
 
-impl TryFrom<Clientbound> for AstarteMessage {
+impl TryFrom<AstarteDeviceDataEvent> for AstarteMessage {
     type Error = AstarteMessageHubError;
 
-    fn try_from(value: Clientbound) -> Result<Self, Self::Error> {
+    fn try_from(value: AstarteDeviceDataEvent) -> Result<Self, Self::Error> {
         use crate::proto_message_hub::astarte_message::Payload;
         use crate::proto_message_hub::AstarteUnset;
 
@@ -207,7 +207,7 @@ impl TryFrom<Clientbound> for AstarteMessage {
     }
 }
 
-impl TryFrom<InterfaceJson> for astarte_sdk::Interface {
+impl TryFrom<InterfaceJson> for astarte_device_sdk::Interface {
     type Error = AstarteMessageHubError;
 
     fn try_from(interface: InterfaceJson) -> Result<Self, Self::Error> {
@@ -215,7 +215,9 @@ impl TryFrom<InterfaceJson> for astarte_sdk::Interface {
 
         let interface_str = String::from_utf8_lossy(&interface.0);
         Interface::from_str(interface_str.as_ref()).map_err(|err| {
-            AstarteMessageHubError::AstarteError(astarte_sdk::AstarteError::InterfaceError(err))
+            AstarteMessageHubError::AstarteError(astarte_device_sdk::AstarteError::InterfaceError(
+                err,
+            ))
         })
     }
 }
@@ -223,8 +225,8 @@ impl TryFrom<InterfaceJson> for astarte_sdk::Interface {
 #[cfg(test)]
 mod test {
     use crate::error::AstarteMessageHubError;
-    use astarte_sdk::types::AstarteType;
-    use astarte_sdk::{Aggregation, Clientbound, Interface};
+    use astarte_device_sdk::types::AstarteType;
+    use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent, Interface};
     use chrono::{DateTime, Utc};
     use std::collections::HashMap;
 
@@ -719,19 +721,22 @@ mod test {
     }
 
     #[test]
-    fn convert_client_bound_unset_to_astarte_message() {
+    fn convert_astarte_device_data_event_unset_to_astarte_message() {
         use crate::proto_message_hub::AstarteUnset;
         let expected_data = AstarteType::Unset;
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         assert_eq!(
             Payload::AstarteUnset(AstarteUnset {}),
             astarte_message.payload.unwrap()
@@ -755,245 +760,287 @@ mod test {
     }
 
     #[test]
-    fn convert_client_bound_individual_f64_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_f64_to_astarte_message() {
         let expected_data = AstarteType::Double(10.1);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_i32_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_i32_to_astarte_message() {
         let expected_data = AstarteType::Integer(10);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_bool_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_bool_to_astarte_message() {
         let expected_data = AstarteType::Boolean(true);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_i64_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_i64_to_astarte_message() {
         let expected_data = AstarteType::LongInteger(45);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_string_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_string_to_astarte_message() {
         let expected_data = AstarteType::String("test".to_owned());
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_bytes_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_bytes_to_astarte_message() {
         let expected_data = AstarteType::BinaryBlob(vec![12, 48]);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_date_time_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_date_time_to_astarte_message() {
         let expected_data = AstarteType::DateTime(Utc::now());
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_f64_array_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_f64_array_to_astarte_message() {
         let expected_data = AstarteType::DoubleArray(vec![13.5, 487.35]);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_i32_array_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_i32_array_to_astarte_message() {
         let expected_data = AstarteType::IntegerArray(vec![78, 45]);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_bool_array_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_bool_array_to_astarte_message() {
         let expected_data = AstarteType::BooleanArray(vec![true, false, true]);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_i64_array_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_i64_array_to_astarte_message() {
         let expected_data = AstarteType::LongIntegerArray(vec![658, 77845, 4444]);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_string_array_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_string_array_to_astarte_message() {
         let expected_data =
             AstarteType::StringArray(vec!["test1".to_owned(), "test_098".to_string()]);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_bytes_array_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_bytes_array_to_astarte_message() {
         let expected_data = AstarteType::BinaryBlobArray(vec![vec![12, 48], vec![47, 55], vec![9]]);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
-        assert_eq!(client_bound.path, astarte_message.path);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
+        assert_eq!(astarte_device_data_event.path, astarte_message.path);
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_individual_date_time_array_to_astarte_message() {
+    fn convert_astarte_device_data_event_individual_date_time_array_to_astarte_message() {
         let expected_data = AstarteType::DateTimeArray(vec![Utc::now(), Utc::now()]);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Individual(expected_data.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
         let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
-    fn convert_client_bound_object_to_astarte_message() {
+    fn convert_astarte_device_data_event_object_to_astarte_message() {
         use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
 
         let expected_map = HashMap::from([
@@ -1003,14 +1050,17 @@ mod test {
             ("Mars".to_owned(), AstarteType::Double(1.5)),
         ]);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Object(expected_map.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
 
         if let Payload::AstarteData(astarte_data) = astarte_message.payload.unwrap() {
             if let AstarteObject(astarte_object) = astarte_data.data.unwrap() {
@@ -1035,7 +1085,7 @@ mod test {
     }
 
     #[test]
-    fn convert_client_bound_object2_to_astarte_message() {
+    fn convert_astarte_device_data_event_object2_to_astarte_message() {
         use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
 
         let expected_map = HashMap::from([
@@ -1048,14 +1098,17 @@ mod test {
             ("a".to_owned(), AstarteType::Boolean(false)),
         ]);
 
-        let client_bound = Clientbound {
+        let astarte_device_data_event = AstarteDeviceDataEvent {
             interface: "test.name.json".to_owned(),
             path: "test".to_owned(),
             data: Aggregation::Object(expected_map.clone()),
         };
 
-        let astarte_message: AstarteMessage = client_bound.clone().try_into().unwrap();
-        assert_eq!(client_bound.interface, astarte_message.interface_name);
+        let astarte_message: AstarteMessage = astarte_device_data_event.clone().try_into().unwrap();
+        assert_eq!(
+            astarte_device_data_event.interface,
+            astarte_message.interface_name
+        );
 
         if let Payload::AstarteData(astarte_data) = astarte_message.payload.unwrap() {
             if let AstarteObject(astarte_object) = astarte_data.data.unwrap() {
