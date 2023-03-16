@@ -18,31 +18,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use thiserror::Error;
+syntax = "proto3";
+package astarteplatform.msghub;
 
-#[derive(Error, Debug)]
-pub enum AstarteMessageHubError {
-    #[error("")]
-    Infallible(#[from] std::convert::Infallible),
+import "google/protobuf/empty.proto";
 
-    #[error("")]
-    TryFromIntError(#[from] core::num::TryFromIntError),
+message ConfigMessage {
+  string realm = 1;
+  string device_id = 2;
+  optional string credentials_secret = 3;
+  string pairing_url = 4;
+  optional string pairing_token = 5;
+}
 
-    #[error("Unable to convert type")]
-    ConversionError,
-
-    #[error(transparent)]
-    AstarteError(#[from] astarte_sdk::AstarteError),
-
-    #[error("{0}")]
-    AstarteInvalidData(String),
-
-    #[error(transparent)]
-    IOError(#[from] std::io::Error),
-
-    #[error("unrecoverable error ({0})")]
-    FatalError(String),
-
-    #[error("configuration file error")]
-    ConfigFileError(#[from] toml::de::Error),
+service MessageHubConfig {
+  rpc SetConfig (ConfigMessage) returns (google.protobuf.Empty);
 }
