@@ -190,6 +190,7 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
         }
     }
 
+    /// Remove an existing Node from Astarte Message Hub.
     async fn detach(
         &self,
         request: Request<proto_message_hub::Node>,
@@ -198,20 +199,16 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
         let node = request.into_inner();
 
         let id = Uuid::parse_str(&node.uuid).map_err(|err| {
-            Status::invalid_argument(format!(
-                "Unable to parse UUID value, err {:?}",
-                err.to_string()
-            ))
+            let err_msg = format!("Unable to parse UUID value, err {:?}", err);
+            Status::invalid_argument(err_msg)
         })?;
 
         let mut nodes = self.nodes.write().await;
 
         if let Some(astarte_node) = nodes.remove(&id) {
             if let Err(err) = self.astarte_handler.unsubscribe(&astarte_node).await {
-                Err(Status::internal(format!(
-                    "Unable to unsubscribe, err: {:?}",
-                    err
-                )))
+                let err_msg = format!("Unable to unsubscribe, err: {err:?}");
+                Err(Status::internal(err_msg))
             } else {
                 Ok(Response::new(pbjson_types::Empty {}))
             }
@@ -515,7 +512,6 @@ mod test {
         use crate::proto_message_hub::Node;
 
         let mut mock_astarte = MockAstarteHandler::new();
-
         mock_astarte
             .expect_clone()
             .returning(MockAstarteHandler::new);
@@ -533,7 +529,10 @@ mod test {
 
         assert!(detach_result.is_err());
         let err: Status = detach_result.err().unwrap();
-        assert_eq!("Unable to parse UUID value, err \"invalid length: expected length 32 for simple format, found 2\"", err.message())
+        assert_eq!(
+            "Unable to parse UUID value, err Error(SimpleLength { len: 2 })",
+            err.message()
+        )
     }
 
     #[tokio::test]
@@ -546,7 +545,6 @@ mod test {
                 "invalid node".to_string(),
             ))
         });
-
         mock_astarte
             .expect_clone()
             .returning(MockAstarteHandler::new);
@@ -584,12 +582,12 @@ mod test {
             let (_, rx) = mpsc::channel(2);
             Ok(rx)
         });
-
         mock_astarte.expect_unsubscribe().returning(|_| {
             Err(AstarteMessageHubError::AstarteInvalidData(
                 "invalid node".to_string(),
             ))
         });
+
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte);
 

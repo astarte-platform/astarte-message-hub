@@ -81,6 +81,9 @@ impl AstarteSubscriber for AstarteHandler {
         Ok(rx)
     }
 
+    /// Unsubscribe an existing Node and its introspection from Astarte Message Hub.
+    ///
+    /// All the interfaces in this node introspection that are not in the introspection of any other node will be removed.
     async fn unsubscribe(&self, astarte_node: &AstarteNode) -> Result<(), AstarteMessageHubError> {
         let interfaces_to_remove = {
             let subscribers_guard = self.subscribers.read().await;
@@ -93,7 +96,7 @@ impl AstarteSubscriber for AstarteHandler {
                         .iter()
                         .filter(|(id, _)| astarte_node.id.ne(id))
                         .find_map(|(_, subscriber)| {
-                            subscriber.introspection.contains(&interface).then(|| ())
+                            subscriber.introspection.contains(interface).then(|| ())
                         })
                         .is_none()
                 })
