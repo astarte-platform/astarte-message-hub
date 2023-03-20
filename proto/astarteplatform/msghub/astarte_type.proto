@@ -24,38 +24,65 @@ package astarteplatform.msghub;
 
 import "google/protobuf/timestamp.proto";
 
+/* An array of doubles for transmission with protobuf.
+ * To be used nested inside an `AstarteDataTypeIndividual`.
+ */
 message AstarteDoubleArray {
   repeated double values = 1;
 }
 
+/* An array of int32 for transmission with protobuf.
+ * To be used nested inside an `AstarteDataTypeIndividual`.
+ */
 message AstarteIntegerArray {
   repeated int32 values = 1;
 }
 
+/* An array of booleans for transmission with protobuf.
+ * To be used nested inside an `AstarteDataTypeIndividual`.
+ */
 message AstarteBooleanArray {
   repeated bool values = 1;
 }
 
+/* An array of int64 for transmission with protobuf.
+ * To be used nested inside an `AstarteDataTypeIndividual`.
+ */
 message AstarteLongIntegerArray {
   repeated int64 values = 1;
 }
 
+/* An array of strings for transmission with protobuf.
+ * To be used nested inside an `AstarteDataTypeIndividual`.
+ */
 message AstarteStringArray {
   repeated string values = 1;
 }
 
+/* An array of bytes for transmission with protobuf.
+ * To be used nested inside an `AstarteDataTypeIndividual`.
+ */
 message AstarteBinaryBlobArray {
   repeated bytes values = 1;
 }
 
+/* An array of timestamps for transmission with protobuf.
+ * To be used nested inside an `AstarteDataTypeIndividual`.
+ */
 message AstarteDateTimeArray{
   repeated google.protobuf.Timestamp values = 1;
 }
 
+/* An aggregated object data type for transmission with protobuf.
+ * To be used nested inside an `AstarteDataType`.
+ */
 message AstarteDataTypeObject {
   map<string, AstarteDataTypeIndividual> object_data = 1;
 }
 
+/* An individual data type for transmission with protobuf.
+ * To be used nested inside an `AstarteDataType`.
+ */
 message AstarteDataTypeIndividual {
   oneof individual_data {
     double astarte_double = 1;
@@ -76,9 +103,10 @@ message AstarteDataTypeIndividual {
   }
 }
 
+/* A generic data type to be used nested in an `AstarteMessage`. */
 message AstarteDataType {
-  oneof data {
-    AstarteDataTypeIndividual astarte_individual = 1;
-    AstarteDataTypeObject astarte_object = 2;
+  oneof data {                                        // Content for an `AstarteDataType`.
+    AstarteDataTypeIndividual astarte_individual = 1; // An individual data type.
+    AstarteDataTypeObject astarte_object = 2;         // An aggregated data type.
   }
 }

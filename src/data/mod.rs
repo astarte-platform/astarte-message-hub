@@ -17,6 +17,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Contains functionality related to the Astarte handlers:
+//! - the required traits to implement an Astarte handler
+//! - a ready-to-use implementation of an Astarte handler
 
 pub(crate) mod astarte;
 pub mod astarte_handler;

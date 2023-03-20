@@ -17,6 +17,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Contains conversion traits to convert the Astarte types in the protobuf format to the
+//! Astarte types from the Astarte device SDK.
 
 use std::collections::HashMap;
 
@@ -25,6 +27,8 @@ use chrono::DateTime;
 use crate::error::AstarteMessageHubError;
 use crate::proto_message_hub;
 
+/// This macro can be used to implement the TryFrom trait for the AstarteType from one or more of
+/// the protobuf types.
 macro_rules! impl_individual_data_to_astarte_type_conversion_traits {
     (scalar $($typ:ident, $astartedatatype:ident),*; vector $($arraytyp:ident, $astartearraydatatype:ident),*) => {
         impl TryFrom<proto_message_hub::astarte_data_type_individual::IndividualData> for astarte_device_sdk::types::AstarteType {

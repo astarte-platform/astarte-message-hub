@@ -17,7 +17,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-//! Option parsing and configuration loading.
+//! Helper module to retreive the configuration of the Astarte message hub.
 
 use std::path::{Path, PathBuf};
 use std::{fs, io};
@@ -47,7 +47,7 @@ macro_rules! ensure {
     };
 }
 
-/// The configuration of the Message Hub.
+/// Struct containing all the configuration options for the Astarte message hub.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct MessageHubOptions {
     /// The Astarte realm the device belongs to.

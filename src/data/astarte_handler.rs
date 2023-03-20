@@ -18,6 +18,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+//! Contains an implementation of an Astarte handler.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -38,13 +40,15 @@ use crate::data::mock_astarte_sdk::MockAstarteDeviceSdk as AstarteDeviceSdk;
 #[cfg(not(test))]
 use astarte_device_sdk::AstarteDeviceSdk;
 
-/// Astarte Handler for the device SDK.
+/// An Astarte Device SDK based implementation of an Astarte handler.
+/// Uses the Astarte Device SDK to provide subscribe and publish functionality.
 #[derive(Clone)]
 pub struct AstarteHandler {
     device_sdk: AstarteDeviceSdk,
     subscribers: Arc<RwLock<HashMap<Uuid, Subscriber>>>,
 }
 
+/// A subscriber for the Astarte handler.
 struct Subscriber {
     introspection: Vec<astarte_device_sdk::Interface>,
     sender: Sender<Result<proto_message_hub::AstarteMessage, Status>>,
@@ -176,6 +180,15 @@ impl AstartePublisher for AstarteHandler {
 
 #[async_trait]
 impl AstarteRunner for AstarteHandler {
+    /// Runner function for the Astarte handler.
+    ///
+    /// Polls the Astarte Device SDK for received messages. When the received message interface
+    /// matches with one or more of the subscribers interface it forwards the message to each
+    /// subscriber queue.
+    ///
+    /// This function should be run periodically.
+    /// N.B. the Astarte SDK `poll()` function is blocking and as a consequence so will be this
+    /// function.
     #[allow(dead_code)]
     async fn run(&mut self) {
         use crate::proto_message_hub::AstarteMessage;

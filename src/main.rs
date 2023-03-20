@@ -17,6 +17,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Contains the main application runner for the Astarte message hub.
 
 //! A central service that runs on (Linux) devices for collecting and delivering messages from N
 //! apps using 1 MQTT connection to Astarte.

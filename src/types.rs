@@ -25,6 +25,8 @@ use std::collections::HashMap;
 
 use crate::proto_message_hub;
 
+/// This macro can be used to implement the from trait for an AstarteDataTypeIndividual from a
+/// generic type that is not an array.
 macro_rules! impl_type_conversion_traits {
     ( {$( ($typ:ty, $astartedatatype:ident) ,)*}) => {
 
@@ -54,6 +56,8 @@ macro_rules! impl_type_conversion_traits {
     };
 }
 
+/// This macro can be used to implement the from trait for an AstarteDataTypeIndividual from a
+/// generic type that is an array.
 macro_rules! impl_array_type_conversion_traits {
     ( {$( ($typ:ty, $astartedatatype:ident) ,)*}) => {
 
@@ -95,6 +99,7 @@ impl_array_type_conversion_traits!({
     (Vec<Vec<u8>>, AstarteBinaryBlobArray),
 });
 
+/// This struct can be used to store the content of a `.json` file.
 #[derive(Clone)]
 pub struct InterfaceJson(pub Vec<u8>);
 
@@ -157,6 +162,7 @@ impl From<HashMap<String, proto_message_hub::AstarteDataTypeIndividual>>
     }
 }
 
+/// Implements the TryFrom trait for the AstarteDataTypeIndividual for any AstarteType.
 macro_rules! impl_astarte_type_to_individual_data_conversion_traits {
     ($($typ:ident),*) => {
         impl TryFrom<astarte_device_sdk::types::AstarteType> for proto_message_hub::AstarteDataTypeIndividual {
