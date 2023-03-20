@@ -279,10 +279,10 @@ impl TryFrom<astarte_device_sdk::types::AstarteType>
     fn try_from(
         astarte_device_sdk_type: astarte_device_sdk::types::AstarteType,
     ) -> Result<Self, Self::Error> {
-        use crate::proto_message_hub::astarte_message::Payload;
-        use crate::proto_message_hub::AstarteDataTypeIndividual;
-        use crate::proto_message_hub::AstarteDataType;
         use crate::proto_message_hub::astarte_data_type::Data::AstarteIndividual;
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteDataType;
+        use crate::proto_message_hub::AstarteDataTypeIndividual;
 
         let payload = if let astarte_device_sdk::types::AstarteType::Unset = astarte_device_sdk_type
         {
