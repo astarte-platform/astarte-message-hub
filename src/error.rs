@@ -20,12 +20,13 @@
 
 use thiserror::Error;
 
+/// A list specifying general categories of Astarte Message Hub error.
 #[derive(Error, Debug)]
 pub enum AstarteMessageHubError {
-    #[error("")]
+    #[error(transparent)]
     Infallible(#[from] std::convert::Infallible),
 
-    #[error("")]
+    #[error(transparent)]
     TryFromIntError(#[from] core::num::TryFromIntError),
 
     #[error("Unable to convert type")]
