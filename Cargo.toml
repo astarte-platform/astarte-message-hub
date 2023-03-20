@@ -9,6 +9,10 @@
 name = "astarte-message-hub"
 version = "0.1.0"
 edition = "2021"
+# The minimum supported Rust version.
+# One of the effects of this flag is to disable lints pertaining to newer features.
+# See: https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field
+rust-version = "1.59"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
