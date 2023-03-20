@@ -17,10 +17,12 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Contains a mock version of the Astarte Device SDK to be used for unit testing.
+
+use mockall::automock;
 
 use astarte_device_sdk::types::AstarteType;
 use astarte_device_sdk::{AstarteDeviceDataEvent, AstarteError, Interface};
-use mockall::automock;
 
 pub struct AstarteDeviceSdk {}
 

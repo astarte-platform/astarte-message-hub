@@ -21,11 +21,11 @@
 use std::io::Write;
 use std::path::Path;
 
-use crate::config;
 use tokio::sync::mpsc::{channel, Sender};
 use tonic::transport::Server;
 use tonic::{Code, Request, Response, Status};
 
+use crate::config;
 use crate::config::MessageHubOptions;
 use crate::proto_message_hub::message_hub_config_server::{
     MessageHubConfig, MessageHubConfigServer,

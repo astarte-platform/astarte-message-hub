@@ -29,7 +29,12 @@ import "astarteplatform/msghub/astarte_type.proto";
 import "astarteplatform/msghub/node.proto";
 
 service MessageHub {
+  /* This function should be used to attach a node to an instance of the Astarte message hub.
+   * Returns a data stream from the Astarte message hub.
+   */
   rpc Attach(Node) returns (stream AstarteMessage) {}
+  /* This function should be used to send an `AstarteMessage` to Astarte. */
   rpc Send(AstarteMessage) returns (google.protobuf.Empty){}
+  /* This function should be used to detach a node from an instance of the Astarte message hub. */
   rpc Detach(Node) returns (google.protobuf.Empty){}
 }

@@ -17,21 +17,23 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Contains an implementation of an Astarte handler.
 
 use std::collections::HashMap;
 use std::io::Error;
 use std::sync::Arc;
 
-use astarte_device_sdk::types::AstarteType;
-#[cfg(not(test))]
-use astarte_device_sdk::AstarteDeviceSdk;
-use astarte_device_sdk::Interface;
 use async_trait::async_trait;
 use log::warn;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tonic::Status;
 use uuid::Uuid;
+
+use astarte_device_sdk::types::AstarteType;
+#[cfg(not(test))]
+use astarte_device_sdk::AstarteDeviceSdk;
+use astarte_device_sdk::Interface;
 
 use crate::astarte_message_hub::AstarteNode;
 use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
@@ -40,11 +42,14 @@ use crate::data::mock_astarte::MockAstarteDeviceSdk as AstarteDeviceSdk;
 use crate::error::AstarteMessageHubError;
 use crate::proto_message_hub;
 
+/// An Astarte Device SDK based implementation of an Astarte handler.
+/// Uses the Astarte Device SDK to provide subscribe and publish functionality.
 pub struct Astarte {
     pub device_sdk: AstarteDeviceSdk,
     subscribers: Arc<RwLock<HashMap<Uuid, Subscriber>>>,
 }
 
+/// A subscriber for the Astarte handler.
 struct Subscriber {
     introspection: Vec<Interface>,
     sender: Sender<Result<proto_message_hub::AstarteMessage, Status>>,
@@ -134,6 +139,15 @@ impl AstartePublisher for Astarte {
 }
 
 impl Astarte {
+    /// Runner function for the Astarte handler.
+    ///
+    /// Polls the Astarte Device SDK for received messages. When the received message interface
+    /// matches with one or more of the subscribers interface it forwards the message to each
+    /// subscriber queue.
+    ///
+    /// This function should be run periodically.
+    /// N.B. the Astarte SDK `poll()` function is blocking and as a consequence so will be this
+    /// function.
     #[allow(dead_code)]
     pub async fn run(&mut self) {
         if let Ok(astarte_data_event) = self.device_sdk.handle_events().await {

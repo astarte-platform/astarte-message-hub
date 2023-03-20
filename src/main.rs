@@ -17,6 +17,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Contains the main application runner for the Astarte message hub.
 
 use astarte_device_sdk::options::AstarteOptions;
 use astarte_device_sdk::registration::register_device;
@@ -28,10 +29,11 @@ use astarte_message_hub::error::AstarteMessageHubError;
 async fn main() -> Result<(), AstarteMessageHubError> {
     env_logger::init();
 
-    //TODO add MessageHubServer and add Astarte::new() on top of AstarteSDK
     let options = MessageHubOptions::get().await?;
     let astarte_options = astarte_map_options(&options).await;
-    let _astarte_sdk = AstarteDeviceSdk::new(&astarte_options).await?;
+    let _astarte_device_sdk = AstarteDeviceSdk::new(&astarte_options).await?;
+
+    //TODO add MessageHubServer
 
     Ok(())
 }

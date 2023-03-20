@@ -18,9 +18,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use crate::{config::MessageHubOptions, error::AstarteMessageHubError};
 use std::path::Path;
 
+use crate::{config::MessageHubOptions, error::AstarteMessageHubError};
+
+/// Read the message hub configuration options from a provided `.toml` configuration file.
+///
+/// On example of a correctly formatted `.toml` file is as follows:
+/// ```text
+///realm = ""
+///device_id = ""
+///credentials_secret = ""
+///pairing_url = ""
+///pairing_token = ""
+///interfaces_directory = ""
+///store_directory = ""
+///astarte_ignore_ssl = false
+/// ```
+///
+/// The `path` parameter refers to the path to the file to read.
 pub(crate) fn read_options(path: &Path) -> Result<MessageHubOptions, AstarteMessageHubError> {
     let config_raw = std::fs::read_to_string(path)?;
     let config = toml::from_str::<MessageHubOptions>(&config_raw)?;

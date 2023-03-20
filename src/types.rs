@@ -18,10 +18,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use crate::error::AstarteMessageHubError;
-use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
+
+use crate::error::AstarteMessageHubError;
 use crate::proto_message_hub::astarte_data_type::Data::{AstarteIndividual, AstarteObject};
 use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
 use crate::proto_message_hub::{
@@ -30,6 +31,8 @@ use crate::proto_message_hub::{
     AstarteLongIntegerArray, AstarteMessage, AstarteStringArray,
 };
 
+/// This macro can be used to implement the from trait for an AstarteDataTypeIndividual from a
+/// generic type that is not an array.
 macro_rules! impl_type_conversion_traits {
     ( {$( ($typ:ty, $astartedatatype:ident) ,)*}) => {
 
@@ -53,6 +56,8 @@ macro_rules! impl_type_conversion_traits {
     };
 }
 
+/// This macro can be used to implement the from trait for an AstarteDataTypeIndividual from a
+/// generic type that is an array.
 macro_rules! impl_array_type_conversion_traits {
     ( {$( ($typ:ty, $astartedatatype:ident) ,)*}) => {
 
@@ -86,9 +91,6 @@ impl_array_type_conversion_traits!({
     (Vec<String>, AstarteStringArray),
     (Vec<Vec<u8>>, AstarteBinaryBlobArray),
 });
-
-#[derive(Clone)]
-pub struct InterfaceJson(pub Vec<u8>);
 
 impl From<DateTime<Utc>> for AstarteDataTypeIndividual {
     fn from(value: DateTime<Utc>) -> Self {
@@ -132,6 +134,7 @@ impl From<HashMap<String, AstarteDataTypeIndividual>> for AstarteDataType {
     }
 }
 
+/// Implements the TryFrom trait for the AstarteDataTypeIndividual for any AstarteType.
 macro_rules! impl_astarte_type_to_individual_data_conversion_traits {
     ($($typ:ident),*) => {
         impl TryFrom<astarte_device_sdk::types::AstarteType> for AstarteDataTypeIndividual {
@@ -204,6 +207,10 @@ impl TryFrom<astarte_device_sdk::AstarteDeviceDataEvent> for AstarteMessage {
         })
     }
 }
+
+/// This struct can be used to store the content of a `.json` file.
+#[derive(Clone)]
+pub struct InterfaceJson(pub Vec<u8>);
 
 impl TryFrom<InterfaceJson> for astarte_device_sdk::Interface {
     type Error = AstarteMessageHubError;

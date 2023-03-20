@@ -17,6 +17,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Contains the error types used in this crate.
 
 use thiserror::Error;
 

@@ -24,7 +24,6 @@ use std::panic;
 use std::path::Path;
 use std::str::FromStr;
 
-use crate::config;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -32,6 +31,7 @@ use axum::{Extension, Json, Router, Server};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{channel, Sender};
 
+use crate::config;
 use crate::config::MessageHubOptions;
 
 #[derive(Deserialize, Serialize)]

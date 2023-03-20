@@ -23,6 +23,7 @@ package astarteplatform.msghub;
 
 import "google/protobuf/empty.proto";
 
+/* Configuration message to be used to send configuration to the Astarte message hub. */
 message ConfigMessage {
   string realm = 1;
   string device_id = 2;
@@ -32,5 +33,6 @@ message ConfigMessage {
 }
 
 service MessageHubConfig {
+  /* Set the configuration for the Astarte message hub. */
   rpc SetConfig (ConfigMessage) returns (google.protobuf.Empty);
 }

@@ -17,10 +17,11 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Helper module to retreive the configuration of the Astarte message hub.
 
-use log::info;
 use std::path::Path;
 
+use log::info;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::channel;
 
@@ -34,6 +35,7 @@ pub mod protobuf;
 
 const CONFIG_FILE_NAME: &str = "message-hub-config.toml";
 
+/// Struct containing all the configuration options for the Astarte message hub.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MessageHubOptions {
     pub realm: Option<String>,
@@ -47,11 +49,14 @@ pub struct MessageHubOptions {
 }
 
 impl MessageHubOptions {
-    /// Function that get the configurations needed by the Message Hub.
-    /// The configuration file is first retrieved from one of two known locations where at least
-    /// the position of the actual file can be found. If no valid configuration file is found
-    /// in either of these locations, HTTP and Protobuf APIs are exposed to provide a valid
-    /// configuration.
+    /// Getter function for the configuration options of the Message Hub.
+    ///
+    /// Expects a configuration file to be present in one of the base locations.
+    /// The configuration file present in the base locations might be missing some key information.
+    /// If the configuration file contains at least a correct path to another configuration file,
+    /// this fallback configuration file is used.
+    /// When this fallback configuration file is not present, HTTP and Protobuf APIs are exposed
+    /// waiting for a valid configuration on either of them.
     pub async fn get() -> Result<MessageHubOptions, AstarteMessageHubError> {
         let base_config = read_options_from_base_locations()?;
         if base_config.is_valid() {
@@ -79,6 +84,7 @@ impl MessageHubOptions {
         file::read_options(&path)
     }
 
+    /// Checks if the MessageHubOptions object contains a valid configuration.
     fn is_valid(&self) -> bool {
         self.device_id.is_some()
             && self.realm.is_some()
@@ -87,8 +93,8 @@ impl MessageHubOptions {
     }
 }
 
-/// Function that retrieves the base configurations, the minimal amount necessary to run the
-/// configuration module. The base configuration is retrieved from two standard known locations.
+/// Function that retrieves the configuration options from a `.toml` file in
+/// one of the base locations.
 fn read_options_from_base_locations() -> Result<MessageHubOptions, AstarteMessageHubError> {
     let paths = ["message-hub-config.toml", "/etc/message-hub/config.toml"]
         .iter()
