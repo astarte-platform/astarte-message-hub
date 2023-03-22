@@ -19,7 +19,7 @@
  */
 
 pub(crate) mod astarte;
-pub mod astarte_provider;
+pub mod astarte_handler;
 
 #[cfg(test)]
-mod mock_astarte;
+mod mock_astarte_sdk;

@@ -18,17 +18,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use astarte_device_sdk::options::AstarteOptions;
-use astarte_device_sdk::registration::register_device;
-use astarte_device_sdk::AstarteDeviceSdk;
 use astarte_message_hub::config::MessageHubOptions;
 use astarte_message_hub::error::AstarteMessageHubError;
 
 #[tokio::main]
 async fn main() -> Result<(), AstarteMessageHubError> {
+    use astarte_device_sdk::AstarteDeviceSdk;
+
     env_logger::init();
 
-    //TODO add MessageHubServer and add Astarte::new() on top of AstarteSDK
+    //TODO add MessageHubServer and add AstarteHandler::new() on top of AstarteSDK
     let options = MessageHubOptions::get().await?;
     let astarte_options = astarte_map_options(&options).await;
     let _astarte_sdk = AstarteDeviceSdk::new(&astarte_options).await?;
@@ -36,9 +35,14 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     Ok(())
 }
 
-pub async fn astarte_map_options(opts: &MessageHubOptions) -> AstarteOptions {
+pub async fn astarte_map_options(
+    opts: &MessageHubOptions,
+) -> astarte_device_sdk::options::AstarteOptions {
+    use astarte_device_sdk::options::AstarteOptions;
+    use astarte_device_sdk::registration;
+
     let credentials_secret = match &opts.credentials_secret {
-        None => register_device(
+        None => registration::register_device(
             opts.pairing_token.as_ref().unwrap(),
             opts.pairing_url.as_ref().unwrap(),
             opts.realm.as_ref().unwrap(),
