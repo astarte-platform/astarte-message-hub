@@ -19,9 +19,10 @@
  */
 
 use crate::error::AstarteMessageHubError;
-use chrono::DateTime;
-
 use crate::proto_message_hub;
+
+use chrono::DateTime;
+use std::collections::HashMap;
 
 macro_rules! impl_individual_data_to_astarte_type_conversion_traits {
     (scalar $($typ:ident, $astartedatatype:ident),*; vector $($arraytyp:ident, $astartearraydatatype:ident),*) => {
@@ -120,8 +121,21 @@ impl TryFrom<proto_message_hub::AstarteMessage> for astarte_device_sdk::AstarteD
     }
 }
 
+/// This function can be used to convert a map of (String, astarte_device_sdk::types::AstarteType) into a
+/// map of (String,  AstarteDataTypeIndividual).
+pub fn map_values_to_astarte_data_type_individual(
+    value: HashMap<String, astarte_device_sdk::types::AstarteType>,
+) -> Result<HashMap<String, proto_message_hub::AstarteDataTypeIndividual>, AstarteMessageHubError> {
+    let mut map: HashMap<String, proto_message_hub::AstarteDataTypeIndividual> = Default::default();
+    for (key, astarte_type) in value.into_iter() {
+        map.insert(key, astarte_type.try_into()?);
+    }
+    Ok(map)
+}
+
 #[cfg(test)]
 mod test {
+    use crate::astarte_device_sdk_types::map_values_to_astarte_data_type_individual;
     use astarte_device_sdk::types::AstarteType;
     use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent};
     use chrono::{DateTime, Utc};
@@ -444,6 +458,33 @@ mod test {
             Aggregation::Object(_) => {
                 panic!()
             }
+        }
+    }
+
+    #[test]
+    fn convert_map_values_to_astarte_astarte_data_type_individual_success() {
+        let expected_data: f64 = 15.5;
+        use std::collections::HashMap;
+        let astarte_type_map = HashMap::from([(
+            "key1".to_string(),
+            astarte_device_sdk::types::AstarteType::Double(expected_data),
+        )]);
+
+        let conversion_map_result = map_values_to_astarte_data_type_individual(astarte_type_map);
+        assert!(conversion_map_result.is_ok());
+
+        let astarte_individual_map = conversion_map_result.unwrap();
+
+        if let IndividualData::AstarteDouble(double_data) = astarte_individual_map
+            .get("key1")
+            .unwrap()
+            .individual_data
+            .clone()
+            .unwrap()
+        {
+            assert_eq!(expected_data, double_data)
+        } else {
+            panic!()
         }
     }
 }
