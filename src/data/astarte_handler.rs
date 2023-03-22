@@ -34,11 +34,13 @@ use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
 use crate::error::AstarteMessageHubError;
 use crate::proto_message_hub;
 
+#[cfg(test)]
+use crate::data::mock_astarte_sdk::MockAstarteDeviceSdk as AstarteDeviceSdk;
+#[cfg(not(test))]
+use astarte_device_sdk::AstarteDeviceSdk;
+
 pub struct AstarteHandler {
-    #[cfg(not(test))]
-    pub device_sdk: astarte_device_sdk::AstarteDeviceSdk,
-    #[cfg(test)]
-    pub device_sdk: crate::data::mock_astarte_sdk::MockAstarteDeviceSdk,
+    device_sdk: AstarteDeviceSdk,
     subscribers: Arc<RwLock<HashMap<Uuid, Subscriber>>>,
 }
 
@@ -134,6 +136,14 @@ impl AstartePublisher for AstarteHandler {
 
 impl AstarteHandler {
     #[allow(dead_code)]
+    pub fn new(device_sdk: AstarteDeviceSdk) -> Self {
+        AstarteHandler {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
+        }
+    }
+
+    #[allow(dead_code)]
     pub async fn run(&mut self) {
         use crate::proto_message_hub::AstarteMessage;
 
@@ -227,23 +237,21 @@ impl AstarteHandler {
 
 #[cfg(test)]
 mod test {
+    use super::AstarteHandler;
+
+    use std::collections::HashMap;
+    use std::str::FromStr;
+
     use astarte_device_sdk::types::AstarteType;
     use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent, AstarteError};
     use chrono::Utc;
-    use std::collections::HashMap;
-    use std::str::FromStr;
-    use std::sync::Arc;
     use tokio::sync::mpsc::Receiver;
     use tonic::Status;
 
     use crate::astarte_message_hub::AstarteNode;
     use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
-    use crate::data::astarte_handler::AstarteHandler;
     use crate::data::mock_astarte_sdk::MockAstarteDeviceSdk;
     use crate::error::AstarteMessageHubError;
-    use crate::proto_message_hub::astarte_message::Payload;
-    use crate::proto_message_hub::AstarteDataTypeIndividual;
-    use crate::proto_message_hub::AstarteMessage;
 
     const SERV_PROPS_IFACE: &str = r#"
         {
@@ -269,8 +277,6 @@ mod test {
 
     #[tokio::test]
     async fn subscribe_success() {
-        use crate::data::astarte_handler::AstarteHandler;
-
         let mut device_sdk = MockAstarteDeviceSdk::new();
 
         device_sdk.expect_add_interface().returning(|_| Ok(()));
@@ -282,12 +288,9 @@ mod test {
             interfaces,
         );
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.subscribe(&astarte_node).await;
+        let result = astarte_handler.subscribe(&astarte_node).await;
         assert!(result.is_ok())
     }
 
@@ -305,12 +308,9 @@ mod test {
             interfaces,
         );
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.subscribe(&astarte_node).await;
+        let result = astarte_handler.subscribe(&astarte_node).await;
         assert!(result.is_err());
 
         assert!(matches!(
@@ -324,6 +324,9 @@ mod test {
     #[tokio::test]
     async fn poll_success() {
         use crate::proto_message_hub::astarte_data_type::Data;
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteDataTypeIndividual;
+        use crate::proto_message_hub::AstarteMessage;
 
         let prop_interface = astarte_device_sdk::Interface::from_str(SERV_PROPS_IFACE).unwrap();
         let expected_interface_name = prop_interface.get_name();
@@ -350,16 +353,13 @@ mod test {
 
         device_sdk.expect_add_interface().returning(|_| Ok(()));
 
-        let mut astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let mut astarte_handler = AstarteHandler::new(device_sdk);
 
-        let subscribe_result = astarte.subscribe(&astarte_node).await;
+        let subscribe_result = astarte_handler.subscribe(&astarte_node).await;
         assert!(subscribe_result.is_ok());
 
         let mut rx: Receiver<Result<AstarteMessage, Status>> = subscribe_result.unwrap();
-        astarte.run().await;
+        astarte_handler.run().await;
 
         let astarte_message_result = rx.recv().await.unwrap();
         assert!(astarte_message_result.is_ok());
@@ -381,7 +381,6 @@ mod test {
 
     #[tokio::test]
     async fn poll_failed_with_astarte_error() {
-        use crate::data::astarte_handler::AstarteHandler;
         use crate::proto_message_hub::AstarteMessage;
 
         let mut device_sdk = MockAstarteDeviceSdk::new();
@@ -398,22 +397,21 @@ mod test {
 
         device_sdk.expect_add_interface().returning(|_| Ok(()));
 
-        let mut astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let mut astarte_handler = AstarteHandler::new(device_sdk);
 
-        let subscribe_result = astarte.subscribe(&astarte_node).await;
+        let subscribe_result = astarte_handler.subscribe(&astarte_node).await;
         assert!(subscribe_result.is_ok());
 
         let mut rx: Receiver<Result<AstarteMessage, Status>> = subscribe_result.unwrap();
-        astarte.run().await;
+        astarte_handler.run().await;
 
         assert!(rx.try_recv().is_err());
     }
 
     #[tokio::test]
     async fn publish_failed_with_invalid_payload() {
+        use crate::proto_message_hub::AstarteMessage;
+
         let device_sdk = MockAstarteDeviceSdk::new();
 
         let expected_interface_name = "io.demo.Properties";
@@ -425,12 +423,9 @@ mod test {
             timestamp: None,
         };
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let _result_err = result.err().unwrap();
@@ -442,6 +437,8 @@ mod test {
 
     #[tokio::test]
     async fn publish_failed_with_invalid_astarte_data() {
+        use crate::proto_message_hub::AstarteMessage;
+
         let device_sdk = MockAstarteDeviceSdk::new();
 
         let astarte_message = AstarteMessage {
@@ -451,12 +448,9 @@ mod test {
             timestamp: None,
         };
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let _result_err = result.err().unwrap();
@@ -468,6 +462,9 @@ mod test {
 
     #[tokio::test]
     async fn publish_individual_success() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteMessage;
+
         let mut device_sdk = MockAstarteDeviceSdk::new();
 
         let expected_interface_name = "io.demo.Properties".to_string();
@@ -486,17 +483,17 @@ mod test {
             })
             .returning(|_: &str, _: &str, _: AstarteType| Ok(()));
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
     #[tokio::test]
     async fn publish_individual_with_timestamp_success() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteMessage;
+
         let mut device_sdk = MockAstarteDeviceSdk::new();
 
         let expected_interface_name = "io.demo.Properties";
@@ -517,17 +514,17 @@ mod test {
             )
             .returning(|_: &str, _: &str, _: AstarteType, _: chrono::DateTime<Utc>| Ok(()));
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
     #[tokio::test]
     async fn publish_individual_failed() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteMessage;
+
         let mut device_sdk = MockAstarteDeviceSdk::new();
 
         let expected_interface_name = "io.demo.Properties";
@@ -550,12 +547,9 @@ mod test {
                 ))
             });
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let _result_err = result.err().unwrap();
@@ -567,6 +561,9 @@ mod test {
 
     #[tokio::test]
     async fn publish_individual_with_timestamp_failed() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteMessage;
+
         let mut device_sdk = MockAstarteDeviceSdk::new();
 
         let expected_interface_name = "io.demo.Properties";
@@ -593,12 +590,9 @@ mod test {
                 },
             );
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let _result_err = result.err().unwrap();
@@ -610,6 +604,10 @@ mod test {
 
     #[tokio::test]
     async fn publish_object_success() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteDataTypeIndividual;
+        use crate::proto_message_hub::AstarteMessage;
+
         let mut device_sdk = MockAstarteDeviceSdk::new();
 
         let expected_interface_name = "io.demo.Object";
@@ -636,17 +634,18 @@ mod test {
             )
             .returning(|_: &str, _: &str, _: HashMap<String, AstarteType>| Ok(()));
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
     #[tokio::test]
     async fn publish_object_with_timestamp_success() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteDataTypeIndividual;
+        use crate::proto_message_hub::AstarteMessage;
+
         let mut device_sdk = MockAstarteDeviceSdk::new();
         let expected_interface_name = "io.demo.Object";
 
@@ -680,17 +679,18 @@ mod test {
                  _: chrono::DateTime<Utc>| Ok(()),
             );
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
     #[tokio::test]
     async fn publish_object_failed() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteDataTypeIndividual;
+        use crate::proto_message_hub::AstarteMessage;
+
         let mut device_sdk = MockAstarteDeviceSdk::new();
 
         let expected_interface_name = "io.demo.Object";
@@ -719,12 +719,9 @@ mod test {
                 Err(AstarteError::SendError("Unable to send object".to_string()))
             });
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let _result_err = result.err().unwrap();
@@ -736,6 +733,10 @@ mod test {
 
     #[tokio::test]
     async fn publish_object_with_timestamp_failed() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteDataTypeIndividual;
+        use crate::proto_message_hub::AstarteMessage;
+
         let mut device_sdk = MockAstarteDeviceSdk::new();
 
         let expected_interface_name = "io.demo.Object";
@@ -769,12 +770,9 @@ mod test {
                 },
             );
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let _result_err = result.err().unwrap();
@@ -786,6 +784,8 @@ mod test {
 
     #[tokio::test]
     async fn publish_unset_success() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteMessage;
         use crate::proto_message_hub::AstarteUnset;
 
         let mut device_sdk = MockAstarteDeviceSdk::new();
@@ -803,17 +803,15 @@ mod test {
             .withf(move |interface_name: &str, _: &str| interface_name == expected_interface_name)
             .returning(|_: &str, _: &str| Ok(()));
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
-
-        let result = astarte.publish(&astarte_message).await;
+        let astarte_handler = AstarteHandler::new(device_sdk);
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
     #[tokio::test]
     async fn publish_unset_failed() {
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteMessage;
         use crate::proto_message_hub::AstarteUnset;
 
         let mut device_sdk = MockAstarteDeviceSdk::new();
@@ -833,12 +831,9 @@ mod test {
                 Err(AstarteError::SendError("Unable to unset path".to_string()))
             });
 
-        let astarte = AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        };
+        let astarte_handler = AstarteHandler::new(device_sdk);
 
-        let result = astarte.publish(&astarte_message).await;
+        let result = astarte_handler.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let _result_err = result.err().unwrap();
