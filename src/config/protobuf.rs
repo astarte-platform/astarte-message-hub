@@ -27,10 +27,7 @@ use tonic::transport::Server;
 use tonic::{Code, Request, Response, Status};
 
 use crate::config::MessageHubOptions;
-use crate::proto_message_hub::message_hub_config_server::{
-    MessageHubConfig, MessageHubConfigServer,
-};
-use crate::proto_message_hub::ConfigMessage;
+use crate::proto_message_hub;
 
 #[derive(Debug)]
 struct AstarteMessageHubConfig {
@@ -43,11 +40,11 @@ pub struct ProtobufConfigProvider {
 }
 
 #[tonic::async_trait]
-impl MessageHubConfig for AstarteMessageHubConfig {
+impl proto_message_hub::message_hub_config_server::MessageHubConfig for AstarteMessageHubConfig {
     /// Protobuf API that allows to set The Message Hub configurations
     async fn set_config(
         &self,
-        request: Request<ConfigMessage>,
+        request: Request<proto_message_hub::ConfigMessage>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
         let req = request.into_inner();
         let message_hub_options = MessageHubOptions {
@@ -86,6 +83,8 @@ impl ProtobufConfigProvider {
         store_directory: String,
         configuration_ready_channel: Sender<()>,
     ) -> ProtobufConfigProvider {
+        use crate::proto_message_hub::message_hub_config_server::MessageHubConfigServer;
+
         let addr = address.parse().unwrap();
         let service = AstarteMessageHubConfig {
             store_directory,

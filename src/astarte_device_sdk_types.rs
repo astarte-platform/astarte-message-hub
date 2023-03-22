@@ -19,22 +19,30 @@
  */
 
 use crate::error::AstarteMessageHubError;
-use astarte_device_sdk::types::AstarteType;
 use chrono::DateTime;
 
-use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
+use crate::proto_message_hub;
 
 macro_rules! impl_individual_data_to_astarte_type_conversion_traits {
     (scalar $($typ:ident, $astartedatatype:ident),*; vector $($arraytyp:ident, $astartearraydatatype:ident),*) => {
-        impl TryFrom<IndividualData> for AstarteType {
+        impl TryFrom<proto_message_hub::astarte_data_type_individual::IndividualData> for astarte_device_sdk::types::AstarteType {
             type Error = AstarteMessageHubError;
-            fn try_from(d: IndividualData) -> Result<Self, Self::Error> {
+            fn try_from(
+                d: proto_message_hub::astarte_data_type_individual::IndividualData
+            ) -> Result<Self, Self::Error> {
+                use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
+                use astarte_device_sdk::types::AstarteType;
+
                 match d {
                     $(
-                    IndividualData::$typ(val) => Ok(AstarteType::$astartedatatype(val.try_into()?)),
+                    IndividualData::$typ(val) => {
+                        Ok(AstarteType::$astartedatatype(val.try_into()?))
+                    }
                     )?
                     $(
-                    IndividualData::$arraytyp(val) => Ok(AstarteType::$astartearraydatatype(val.values.try_into()?)),
+                    IndividualData::$arraytyp(val) => {
+                        Ok(AstarteType::$astartearraydatatype(val.values.try_into()?))
+                    }
                     )?
                     IndividualData::AstarteDateTimeArray(val) => {
                         let mut times: Vec<DateTime<chrono::Utc>> = vec![];

@@ -23,6 +23,5 @@ use std::path::Path;
 
 pub(crate) fn read_options(path: &Path) -> Result<MessageHubOptions, AstarteMessageHubError> {
     let config_raw = std::fs::read_to_string(path)?;
-    let config = toml::from_str::<MessageHubOptions>(&config_raw)?;
-    Ok(config)
+    Ok(toml::from_str::<MessageHubOptions>(&config_raw)?)
 }

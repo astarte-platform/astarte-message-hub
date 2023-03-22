@@ -22,28 +22,28 @@ use crate::error::AstarteMessageHubError;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
-use crate::proto_message_hub::astarte_data_type::Data::{AstarteIndividual, AstarteObject};
-use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
-use crate::proto_message_hub::{
-    AstarteBinaryBlobArray, AstarteBooleanArray, AstarteDataType, AstarteDataTypeIndividual,
-    AstarteDataTypeObject, AstarteDateTimeArray, AstarteDoubleArray, AstarteIntegerArray,
-    AstarteLongIntegerArray, AstarteMessage, AstarteStringArray,
-};
+use crate::proto_message_hub;
 
 macro_rules! impl_type_conversion_traits {
     ( {$( ($typ:ty, $astartedatatype:ident) ,)*}) => {
 
         $(
-               impl From<$typ> for AstarteDataTypeIndividual {
+               impl From<$typ> for proto_message_hub::AstarteDataTypeIndividual {
                     fn from(d: $typ) -> Self {
+                        use proto_message_hub::AstarteDataTypeIndividual;
+                        use proto_message_hub::astarte_data_type_individual::IndividualData;
+
                         AstarteDataTypeIndividual {
                             individual_data: Some(IndividualData::$astartedatatype(d.into())),
                         }
                     }
                 }
 
-                impl From<&$typ> for AstarteDataTypeIndividual {
+                impl From<&$typ> for proto_message_hub::AstarteDataTypeIndividual {
                     fn from(d: &$typ) -> Self {
+                        use proto_message_hub::AstarteDataTypeIndividual;
+                        use proto_message_hub::astarte_data_type_individual::IndividualData;
+
                         AstarteDataTypeIndividual {
                             individual_data: Some(IndividualData::$astartedatatype(d.clone().into())),
                         }
@@ -57,10 +57,17 @@ macro_rules! impl_array_type_conversion_traits {
     ( {$( ($typ:ty, $astartedatatype:ident) ,)*}) => {
 
         $(
-               impl From<$typ> for AstarteDataTypeIndividual {
+               impl From<$typ> for proto_message_hub::AstarteDataTypeIndividual {
                     fn from(values: $typ) -> Self {
+                        use proto_message_hub::AstarteDataTypeIndividual;
+                        use proto_message_hub::astarte_data_type_individual::IndividualData;
+
                         AstarteDataTypeIndividual {
-                            individual_data: Some(IndividualData::$astartedatatype($astartedatatype{values}))
+                            individual_data: Some(
+                                IndividualData::$astartedatatype(
+                                    proto_message_hub::$astartedatatype { values },
+                                ),
+                            ),
                         }
                     }
                 }
@@ -90,17 +97,23 @@ impl_array_type_conversion_traits!({
 #[derive(Clone)]
 pub struct InterfaceJson(pub Vec<u8>);
 
-impl From<DateTime<Utc>> for AstarteDataTypeIndividual {
+impl From<DateTime<Utc>> for proto_message_hub::AstarteDataTypeIndividual {
     fn from(value: DateTime<Utc>) -> Self {
+        use proto_message_hub::astarte_data_type_individual::IndividualData;
+        use proto_message_hub::AstarteDataTypeIndividual;
+
         AstarteDataTypeIndividual {
             individual_data: Some(IndividualData::AstarteDateTime(value.into())),
         }
     }
 }
 
-impl From<Vec<DateTime<Utc>>> for AstarteDataTypeIndividual {
+impl From<Vec<DateTime<Utc>>> for proto_message_hub::AstarteDataTypeIndividual {
     fn from(values: Vec<DateTime<Utc>>) -> Self {
         use pbjson_types::Timestamp;
+        use proto_message_hub::astarte_data_type_individual::IndividualData;
+        use proto_message_hub::AstarteDataTypeIndividual;
+        use proto_message_hub::AstarteDateTimeArray;
 
         AstarteDataTypeIndividual {
             individual_data: Some(IndividualData::AstarteDateTimeArray(AstarteDateTimeArray {
@@ -113,37 +126,49 @@ impl From<Vec<DateTime<Utc>>> for AstarteDataTypeIndividual {
     }
 }
 
-impl<T> From<T> for AstarteDataType
+impl<T> From<T> for proto_message_hub::AstarteDataType
 where
-    T: Into<AstarteDataTypeIndividual>,
+    T: Into<proto_message_hub::AstarteDataTypeIndividual>,
 {
     fn from(value: T) -> Self {
+        use proto_message_hub::astarte_data_type::Data;
+        use proto_message_hub::AstarteDataType;
+
         AstarteDataType {
-            data: Some(AstarteIndividual(value.into())),
+            data: Some(Data::AstarteIndividual(value.into())),
         }
     }
 }
 
-impl From<HashMap<String, AstarteDataTypeIndividual>> for AstarteDataType {
-    fn from(value: HashMap<String, AstarteDataTypeIndividual>) -> Self {
+impl From<HashMap<String, proto_message_hub::AstarteDataTypeIndividual>>
+    for proto_message_hub::AstarteDataType
+{
+    fn from(value: HashMap<String, proto_message_hub::AstarteDataTypeIndividual>) -> Self {
+        use proto_message_hub::astarte_data_type::Data;
+        use proto_message_hub::AstarteDataType;
+        use proto_message_hub::AstarteDataTypeObject;
+
         AstarteDataType {
-            data: Some(AstarteObject(AstarteDataTypeObject { object_data: value })),
+            data: Some(Data::AstarteObject(AstarteDataTypeObject {
+                object_data: value,
+            })),
         }
     }
 }
 
 macro_rules! impl_astarte_type_to_individual_data_conversion_traits {
     ($($typ:ident),*) => {
-        impl TryFrom<astarte_device_sdk::types::AstarteType> for AstarteDataTypeIndividual {
+        impl TryFrom<astarte_device_sdk::types::AstarteType> for proto_message_hub::AstarteDataTypeIndividual {
             type Error = AstarteMessageHubError;
             fn try_from(d: astarte_device_sdk::types::AstarteType) -> Result<Self, Self::Error> {
                 use crate::types::AstarteMessageHubError::ConversionError;
+                use astarte_device_sdk::types::AstarteType;
 
                 match d {
                     $(
-                    astarte_device_sdk::types::AstarteType::$typ(val) => Ok(val.into()),
+                    AstarteType::$typ(val) => Ok(val.into()),
                     )*
-                    astarte_device_sdk::types::AstarteType::Unset => Err(ConversionError)
+                    AstarteType::Unset => Err(ConversionError)
                 }
             }
         }
@@ -167,25 +192,31 @@ impl_astarte_type_to_individual_data_conversion_traits!(
     DateTimeArray
 );
 
-impl TryFrom<astarte_device_sdk::AstarteDeviceDataEvent> for AstarteMessage {
+impl TryFrom<astarte_device_sdk::AstarteDeviceDataEvent> for proto_message_hub::AstarteMessage {
     type Error = AstarteMessageHubError;
 
     fn try_from(value: astarte_device_sdk::AstarteDeviceDataEvent) -> Result<Self, Self::Error> {
+        use crate::proto_message_hub::astarte_data_type::Data;
         use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteDataType;
+        use crate::proto_message_hub::AstarteDataTypeIndividual;
+        use crate::proto_message_hub::AstarteMessage;
         use crate::proto_message_hub::AstarteUnset;
+        use astarte_device_sdk::types::AstarteType;
+        use astarte_device_sdk::Aggregation;
 
         let payload: Payload = match value.data {
-            astarte_device_sdk::Aggregation::Individual(astarte_type) => {
-                if let astarte_device_sdk::types::AstarteType::Unset = astarte_type {
+            Aggregation::Individual(astarte_type) => {
+                if let AstarteType::Unset = astarte_type {
                     Payload::AstarteUnset(AstarteUnset {})
                 } else {
                     let individual_type: AstarteDataTypeIndividual = astarte_type.try_into()?;
                     Payload::AstarteData(AstarteDataType {
-                        data: Some(AstarteIndividual(individual_type)),
+                        data: Some(Data::AstarteIndividual(individual_type)),
                     })
                 }
             }
-            astarte_device_sdk::Aggregation::Object(astarte_map) => {
+            Aggregation::Object(astarte_map) => {
                 let astarte_data: AstarteDataType = astarte_map
                     .into_iter()
                     .map(|(k, v)| (k, v.try_into().unwrap()))
@@ -209,14 +240,13 @@ impl TryFrom<InterfaceJson> for astarte_device_sdk::Interface {
     type Error = AstarteMessageHubError;
 
     fn try_from(interface: InterfaceJson) -> Result<Self, Self::Error> {
+        use astarte_device_sdk::AstarteError;
+        use astarte_device_sdk::Interface;
         use std::str::FromStr;
 
         let interface_str = String::from_utf8_lossy(&interface.0);
-        astarte_device_sdk::Interface::from_str(interface_str.as_ref()).map_err(|err| {
-            AstarteMessageHubError::AstarteError(astarte_device_sdk::AstarteError::InterfaceError(
-                err,
-            ))
-        })
+        Interface::from_str(interface_str.as_ref())
+            .map_err(|err| AstarteMessageHubError::AstarteError(AstarteError::InterfaceError(err)))
     }
 }
 
@@ -224,9 +254,11 @@ impl TryFrom<InterfaceJson> for astarte_device_sdk::Interface {
 /// map of (String, astarte_device_sdk::types::AstarteType).
 /// It can be useful when a method accept an astarte_device_sdk::AstarteAggregate.
 pub fn map_values_to_astarte_type(
-    value: HashMap<String, AstarteDataTypeIndividual>,
+    value: HashMap<String, proto_message_hub::AstarteDataTypeIndividual>,
 ) -> Result<HashMap<String, astarte_device_sdk::types::AstarteType>, AstarteMessageHubError> {
-    let mut map: HashMap<String, astarte_device_sdk::types::AstarteType> = Default::default();
+    use astarte_device_sdk::types::AstarteType;
+
+    let mut map: HashMap<String, AstarteType> = Default::default();
     for (key, astarte_data) in value.into_iter() {
         map.insert(
             key,
