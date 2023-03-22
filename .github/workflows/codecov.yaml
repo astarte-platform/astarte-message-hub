@@ -16,14 +16,17 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-
 name: Astarte Message Hub Codecoverage upload
+
 on:
   # Run when pushing to stable branches
   push:
     branches:
       - 'master'
   pull_request:
+
+env:
+  PB_REL: https://github.com/protocolbuffers/protobuf/releases
 
 jobs:
   code_coverage:
@@ -32,8 +35,11 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-      - name: Install protoc
-        uses: arduino/setup-protoc@v1
+      - name: Install Protoc
+        run: |
+          curl -LO $PB_REL/download/v22.2/protoc-22.2-linux-x86_64.zip
+          unzip protoc-22.2-linux-x86_64.zip -d $HOME/.local
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Install rust toolchain
         uses: actions-rs/toolchain@v1
         with:
