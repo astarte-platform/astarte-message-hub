@@ -16,14 +16,17 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-
 name: Astarte Message Hub build
+
 on:
   # Run when pushing to stable branches
   push:
     branches:
       - 'master'
   pull_request:
+
+env:
+  PB_REL: https://github.com/protocolbuffers/protobuf/releases
 
 jobs:
   check:
@@ -38,7 +41,10 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
       - name: Install Protoc
-        uses: arduino/setup-protoc@v1
+        run: |
+          curl -LO $PB_REL/download/v22.2/protoc-22.2-linux-x86_64.zip
+          unzip protoc-22.2-linux-x86_64.zip -d $HOME/.local
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -62,7 +68,10 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
       - name: Install Protoc
-        uses: arduino/setup-protoc@v1
+        run: |
+          curl -LO $PB_REL/download/v22.2/protoc-22.2-linux-x86_64.zip
+          unzip protoc-22.2-linux-x86_64.zip -d $HOME/.local
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -87,7 +96,10 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
       - name: Install Protoc
-        uses: arduino/setup-protoc@v1
+        run: |
+          curl -LO $PB_REL/download/v22.2/protoc-22.2-linux-x86_64.zip
+          unzip protoc-22.2-linux-x86_64.zip -d $HOME/.local
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
