@@ -29,6 +29,11 @@ use crate::error::AstarteMessageHubError;
 use crate::proto_message_hub;
 
 #[async_trait]
+pub trait AstarteRunner {
+    async fn run(&mut self);
+}
+
+#[async_trait]
 pub trait AstartePublisher: Send + Sync {
     async fn publish(
         &self,

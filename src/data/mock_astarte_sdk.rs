@@ -20,76 +20,56 @@
 
 use astarte_device_sdk::types::AstarteType;
 use astarte_device_sdk::{AstarteDeviceDataEvent, AstarteError, Interface};
-use mockall::automock;
+use mockall::mock;
 
+#[derive(Clone)]
 pub struct AstarteDeviceSdk {}
 
-#[cfg_attr(test, automock)]
-impl AstarteDeviceSdk {
-    #[allow(dead_code)]
-    pub async fn handle_events(&mut self) -> Result<AstarteDeviceDataEvent, AstarteError> {
-        todo!()
+mock! {
+    pub AstarteDeviceSdk {
+        pub async fn handle_events(&mut self) -> Result<AstarteDeviceDataEvent, AstarteError>;
+        pub async fn send<D: 'static>(
+            &self,
+            _interface_name: &str,
+            _interface_path: &str,
+            _data: D
+        ) -> Result<(), AstarteError>
+        where
+            D: Into<AstarteType>;
+        pub async fn send_with_timestamp<D: 'static>(
+            &self,
+            _interface_name: &str,
+            _interface_path: &str,
+            _data: D,
+            _timestamp: chrono::DateTime<chrono::Utc>
+        ) -> Result<(), AstarteError>
+        where
+            D: Into<AstarteType>;
+        pub async fn send_object<T: 'static>(
+            &self,
+            _interface_name: &str,
+            _interface_path: &str,
+            _data: T,
+        ) -> Result<(), AstarteError>
+        where
+            T: astarte_device_sdk::AstarteAggregate;
+        pub async fn send_object_with_timestamp<T: 'static>(
+            &self,
+            _interface_name: &str,
+            _interface_path: &str,
+            _data: T,
+            _timestamp: chrono::DateTime<chrono::Utc>,
+        ) -> Result<(), AstarteError>
+        where
+            T: astarte_device_sdk::AstarteAggregate;
+        pub async fn unset(
+            &self,
+            _interface_name: &str,
+            _interface_path: &str,
+        ) -> Result<(), AstarteError>;
+        pub async fn add_interface(&self, _interface: Interface) -> Result<(), AstarteError>;
     }
-    #[allow(dead_code)]
-    pub async fn send<D: 'static>(
-        &self,
-        _interface_name: &str,
-        _interface_path: &str,
-        _data: D,
-    ) -> Result<(), AstarteError>
-    where
-        D: Into<AstarteType>,
-    {
-        todo!()
-    }
-    #[allow(dead_code)]
-    pub async fn send_with_timestamp<D: 'static>(
-        &self,
-        _interface_name: &str,
-        _interface_path: &str,
-        _data: D,
-        _timestamp: chrono::DateTime<chrono::Utc>,
-    ) -> Result<(), AstarteError>
-    where
-        D: Into<AstarteType>,
-    {
-        todo!()
-    }
-    #[allow(dead_code)]
-    pub async fn send_object<T: 'static>(
-        &self,
-        _interface_name: &str,
-        _interface_path: &str,
-        _data: T,
-    ) -> Result<(), AstarteError>
-    where
-        T: astarte_device_sdk::AstarteAggregate,
-    {
-        todo!()
-    }
-    #[allow(dead_code)]
-    pub async fn send_object_with_timestamp<T: 'static>(
-        &self,
-        _interface_name: &str,
-        _interface_path: &str,
-        _data: T,
-        _timestamp: chrono::DateTime<chrono::Utc>,
-    ) -> Result<(), AstarteError>
-    where
-        T: astarte_device_sdk::AstarteAggregate,
-    {
-        todo!()
-    }
-    #[allow(dead_code)]
-    pub async fn unset(
-        &self,
-        _interface_name: &str,
-        _interface_path: &str,
-    ) -> Result<(), AstarteError> {
-        todo!()
-    }
-    #[allow(dead_code)]
-    pub async fn add_interface(&self, _interface: Interface) -> Result<(), AstarteError> {
-        todo!()
+    impl Clone for AstarteDeviceSdk {
+        fn clone(&self) -> Self;
     }
 }

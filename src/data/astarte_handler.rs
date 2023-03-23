@@ -30,7 +30,7 @@ use tonic::Status;
 use uuid::Uuid;
 
 use crate::astarte_message_hub::AstarteNode;
-use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
+use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
 use crate::error::AstarteMessageHubError;
 use crate::proto_message_hub;
 
@@ -39,6 +39,7 @@ use crate::data::mock_astarte_sdk::MockAstarteDeviceSdk as AstarteDeviceSdk;
 #[cfg(not(test))]
 use astarte_device_sdk::AstarteDeviceSdk;
 
+#[derive(Clone)]
 pub struct AstarteHandler {
     device_sdk: AstarteDeviceSdk,
     subscribers: Arc<RwLock<HashMap<Uuid, Subscriber>>>,
@@ -134,17 +135,10 @@ impl AstartePublisher for AstarteHandler {
     }
 }
 
-impl AstarteHandler {
+#[async_trait]
+impl AstarteRunner for AstarteHandler {
     #[allow(dead_code)]
-    pub fn new(device_sdk: AstarteDeviceSdk) -> Self {
-        AstarteHandler {
-            device_sdk,
-            subscribers: Arc::new(Default::default()),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub async fn run(&mut self) {
+    async fn run(&mut self) {
         use crate::proto_message_hub::AstarteMessage;
 
         if let Ok(astarte_data_event) = self.device_sdk.handle_events().await {
@@ -172,6 +166,16 @@ impl AstarteHandler {
                     astarte_data_event
                 );
             }
+        }
+    }
+}
+
+impl AstarteHandler {
+    #[allow(dead_code)]
+    pub fn new(device_sdk: AstarteDeviceSdk) -> Self {
+        AstarteHandler {
+            device_sdk,
+            subscribers: Arc::new(Default::default()),
         }
     }
 
@@ -249,7 +253,7 @@ mod test {
     use tonic::Status;
 
     use crate::astarte_message_hub::AstarteNode;
-    use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
+    use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
     use crate::data::mock_astarte_sdk::MockAstarteDeviceSdk;
     use crate::error::AstarteMessageHubError;
 
