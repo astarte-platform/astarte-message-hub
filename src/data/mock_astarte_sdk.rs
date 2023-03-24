@@ -68,6 +68,7 @@ mock! {
             _interface_path: &str,
         ) -> Result<(), AstarteError>;
         pub async fn add_interface(&self, _interface: Interface) -> Result<(), AstarteError>;
+        pub async fn remove_interface(&self, _interface: &str) -> Result<(), AstarteError>;
     }
     impl Clone for AstarteDeviceSdk {
         fn clone(&self) -> Self;

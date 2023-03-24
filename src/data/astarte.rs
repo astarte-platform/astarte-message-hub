@@ -18,8 +18,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use std::io::Error;
-
 use async_trait::async_trait;
 use tokio::sync::mpsc::Receiver;
 use tonic::Status;
@@ -47,5 +45,5 @@ pub trait AstarteSubscriber {
         &self,
         astarte_node: &AstarteNode,
     ) -> Result<Receiver<Result<proto_message_hub::AstarteMessage, Status>>, AstarteMessageHubError>;
-    async fn unsubscribe(&self, astarte_node: &AstarteNode) -> Result<(), Error>;
+    async fn unsubscribe(&self, astarte_node: &AstarteNode) -> Result<(), AstarteMessageHubError>;
 }
