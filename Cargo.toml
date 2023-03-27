@@ -23,7 +23,7 @@ pbjson-types = "0.5"
 chrono = "0.4.23"
 thiserror = "1.0"
 astarte-device-sdk = {version = "0.5.1" , features = ["derive"]}
-serde = "1.0.152"
+serde = "1.0.157"
 tokio = { version = "1.26.0", features = ["rt-multi-thread", "sync", "macros"] }
 tokio-stream = { version = "0.1.12", features = ["net"] }
 log = "0.4.17"
