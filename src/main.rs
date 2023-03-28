@@ -39,29 +39,26 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 async fn initialize_astarte_device_sdk(
     mut msg_hub_opts: MessageHubOptions,
 ) -> Result<AstarteDeviceSdk, AstarteMessageHubError> {
-    let realm = &msg_hub_opts.realm;
-    let device_id = &msg_hub_opts.device_id;
-    let pairing_url = &msg_hub_opts.pairing_url;
     // If no credential secret is present, register a new device using the Astarte device SDK
     if msg_hub_opts.credentials_secret.is_none() {
-        let err_msg = "Missing pairing token for Astarte device SDK.".to_string();
-        let pairing_token = &msg_hub_opts
-            .pairing_token
-            .as_ref()
-            .ok_or(AstarteMessageHubError::FatalError(err_msg))?;
-        msg_hub_opts.credentials_secret =
-            registration::register_device(pairing_token, pairing_url, realm, device_id)
-                .await
-                .ok();
+        msg_hub_opts.credentials_secret = Some(
+            registration::register_device(
+                msg_hub_opts.pairing_token.as_ref().unwrap(),
+                &msg_hub_opts.pairing_url,
+                &msg_hub_opts.realm,
+                &msg_hub_opts.device_id,
+            )
+            .await
+            .map_err(|err| AstarteMessageHubError::FatalError(err.to_string()))?,
+        );
     }
     // Create the configuration options for the device and then instantiate a new device
-    let err_msg = "Missing credentials secret for Astarte device SDK.".to_string();
-    let credentials_secret = &msg_hub_opts
-        .credentials_secret
-        .clone()
-        .ok_or(AstarteMessageHubError::FatalError(err_msg))?;
-    let mut device_sdk_opts =
-        AstarteOptions::new(realm, device_id, credentials_secret, pairing_url);
+    let mut device_sdk_opts = AstarteOptions::new(
+        &msg_hub_opts.realm,
+        &msg_hub_opts.device_id,
+        msg_hub_opts.credentials_secret.as_ref().unwrap(),
+        &msg_hub_opts.pairing_url,
+    );
     if msg_hub_opts.astarte_ignore_ssl {
         device_sdk_opts = device_sdk_opts.ignore_ssl_errors();
     }
