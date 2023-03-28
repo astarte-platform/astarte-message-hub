@@ -236,20 +236,6 @@ impl TryFrom<astarte_device_sdk::AstarteDeviceDataEvent> for proto_message_hub::
     }
 }
 
-impl TryFrom<InterfaceJson> for astarte_device_sdk::Interface {
-    type Error = AstarteMessageHubError;
-
-    fn try_from(interface: InterfaceJson) -> Result<Self, Self::Error> {
-        use astarte_device_sdk::AstarteError;
-        use astarte_device_sdk::Interface;
-        use std::str::FromStr;
-
-        let interface_str = String::from_utf8_lossy(&interface.0);
-        Interface::from_str(interface_str.as_ref())
-            .map_err(|err| AstarteMessageHubError::AstarteError(AstarteError::InterfaceError(err)))
-    }
-}
-
 /// This function can be used to convert a map of (String, AstarteDataTypeIndividual) into a
 /// map of (String, astarte_device_sdk::types::AstarteType).
 /// It can be useful when a method accept an astarte_device_sdk::AstarteAggregate.
@@ -324,9 +310,8 @@ mod test {
     use crate::proto_message_hub::AstarteDataType;
     use crate::proto_message_hub::AstarteDataTypeIndividual;
     use crate::proto_message_hub::AstarteMessage;
-    use crate::types::InterfaceJson;
     use astarte_device_sdk::types::AstarteType;
-    use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent, Interface};
+    use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent};
     use chrono::{DateTime, Utc};
     use std::collections::HashMap;
 
@@ -1229,84 +1214,6 @@ mod test {
         } else {
             panic!()
         }
-    }
-
-    #[test]
-    fn convert_proto_interface_to_astarte_interface() {
-        const SERV_PROPS_IFACE: &str = r#"
-        {
-            "interface_name": "org.astarte-platform.test.test",
-            "version_major": 1,
-            "version_minor": 1,
-            "type": "properties",
-            "ownership": "server",
-            "mappings": [
-                {
-                    "endpoint": "/button",
-                    "type": "boolean",
-                    "explicit_timestamp": true
-                },
-                {
-                    "endpoint": "/uptimeSeconds",
-                    "type": "integer",
-                    "explicit_timestamp": true
-                }
-            ]
-        }
-        "#;
-
-        let interface = InterfaceJson(SERV_PROPS_IFACE.into());
-
-        let astarte_interface: Interface = interface.try_into().unwrap();
-
-        assert_eq!(
-            astarte_interface.get_name(),
-            "org.astarte-platform.test.test"
-        );
-        assert_eq!(astarte_interface.get_version_major(), 1);
-    }
-
-    #[tokio::test]
-    async fn convert_proto_interface_with_special_chars_to_astarte_interface() {
-        const IFACE_SPECIAL_CHARS: &str = r#"
-        {
-            "interface_name": "org.astarte-platform.test.test",
-            "version_major": 1,
-            "version_minor": 1,
-            "type": "properties",
-            "ownership": "server",
-            "mappings": [
-                {
-                    "endpoint": "/uptimeSeconds",
-                    "type": "integer",
-                    "explicit_timestamp": true,
-                    "description": "Hello 你好 안녕하세요"
-                }
-            ]
-        }
-        "#;
-
-        let interface = InterfaceJson(IFACE_SPECIAL_CHARS.into());
-
-        let astarte_interface: Interface = interface.try_into().unwrap();
-
-        assert_eq!(
-            astarte_interface.get_name(),
-            "org.astarte-platform.test.test"
-        );
-        assert_eq!(astarte_interface.get_version_major(), 1);
-    }
-
-    #[tokio::test]
-    async fn convert_bad_proto_interface_to_astarte_interface() {
-        const IFACE_BAD: &str = r#"{"#;
-
-        let interface = InterfaceJson(IFACE_BAD.into());
-
-        let astarte_interface_bad_result: Result<Interface, AstarteMessageHubError> =
-            interface.try_into();
-
-        assert!(astarte_interface_bad_result.is_err());
     }
 
     #[test]

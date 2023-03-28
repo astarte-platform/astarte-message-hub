@@ -18,11 +18,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use crate::error::AstarteMessageHubError;
-use crate::proto_message_hub;
+use std::collections::HashMap;
 
 use chrono::DateTime;
-use std::collections::HashMap;
+
+use crate::error::AstarteMessageHubError;
+use crate::proto_message_hub;
 
 macro_rules! impl_individual_data_to_astarte_type_conversion_traits {
     (scalar $($typ:ident, $astartedatatype:ident),*; vector $($arraytyp:ident, $astartearraydatatype:ident),*) => {
@@ -131,6 +132,20 @@ pub fn map_values_to_astarte_data_type_individual(
         map.insert(key, astarte_type.try_into()?);
     }
     Ok(map)
+}
+
+impl TryFrom<crate::types::InterfaceJson> for astarte_device_sdk::Interface {
+    type Error = AstarteMessageHubError;
+
+    fn try_from(interface: crate::types::InterfaceJson) -> Result<Self, Self::Error> {
+        use astarte_device_sdk::AstarteError;
+        use astarte_device_sdk::Interface;
+        use std::str::FromStr;
+
+        let interface_str = String::from_utf8_lossy(&interface.0);
+        Interface::from_str(interface_str.as_ref())
+            .map_err(|err| AstarteMessageHubError::AstarteError(AstarteError::InterfaceError(err)))
+    }
 }
 
 #[cfg(test)]
@@ -486,5 +501,96 @@ mod test {
         } else {
             panic!()
         }
+    }
+
+    #[test]
+    fn convert_proto_interface_to_astarte_interface() {
+        use astarte_device_sdk::Interface;
+
+        use crate::types::InterfaceJson;
+
+        const SERV_PROPS_IFACE: &str = r#"
+        {
+            "interface_name": "org.astarte-platform.test.test",
+            "version_major": 1,
+            "version_minor": 1,
+            "type": "properties",
+            "ownership": "server",
+            "mappings": [
+                {
+                    "endpoint": "/button",
+                    "type": "boolean",
+                    "explicit_timestamp": true
+                },
+                {
+                    "endpoint": "/uptimeSeconds",
+                    "type": "integer",
+                    "explicit_timestamp": true
+                }
+            ]
+        }
+        "#;
+
+        let interface = InterfaceJson(SERV_PROPS_IFACE.into());
+
+        let astarte_interface: Interface = interface.try_into().unwrap();
+
+        assert_eq!(
+            astarte_interface.get_name(),
+            "org.astarte-platform.test.test"
+        );
+        assert_eq!(astarte_interface.get_version_major(), 1);
+    }
+
+    #[tokio::test]
+    async fn convert_proto_interface_with_special_chars_to_astarte_interface() {
+        use astarte_device_sdk::Interface;
+
+        use crate::types::InterfaceJson;
+
+        const IFACE_SPECIAL_CHARS: &str = r#"
+        {
+            "interface_name": "org.astarte-platform.test.test",
+            "version_major": 1,
+            "version_minor": 1,
+            "type": "properties",
+            "ownership": "server",
+            "mappings": [
+                {
+                    "endpoint": "/uptimeSeconds",
+                    "type": "integer",
+                    "explicit_timestamp": true,
+                    "description": "Hello 你好 안녕하세요"
+                }
+            ]
+        }
+        "#;
+
+        let interface = InterfaceJson(IFACE_SPECIAL_CHARS.into());
+
+        let astarte_interface: Interface = interface.try_into().unwrap();
+
+        assert_eq!(
+            astarte_interface.get_name(),
+            "org.astarte-platform.test.test"
+        );
+        assert_eq!(astarte_interface.get_version_major(), 1);
+    }
+
+    #[tokio::test]
+    async fn convert_bad_proto_interface_to_astarte_interface() {
+        use astarte_device_sdk::Interface;
+
+        use crate::error::AstarteMessageHubError;
+        use crate::types::InterfaceJson;
+
+        const IFACE_BAD: &str = r#"{"#;
+
+        let interface = InterfaceJson(IFACE_BAD.into());
+
+        let astarte_interface_bad_result: Result<Interface, AstarteMessageHubError> =
+            interface.try_into();
+
+        assert!(astarte_interface_bad_result.is_err());
     }
 }
