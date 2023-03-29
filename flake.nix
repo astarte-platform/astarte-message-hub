@@ -60,6 +60,7 @@
             pkg-config
             protobuf
           ];
+          OPENSSL_NO_VENDOR = 1;
         };
       }
     );
