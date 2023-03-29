@@ -30,6 +30,7 @@ mod types;
 
 #[allow(clippy::all)]
 pub mod proto_message_hub {
+    use self::astarte_data_type::Data;
 
     tonic::include_proto!("astarteplatform.msghub");
 
@@ -88,12 +89,60 @@ pub mod proto_message_hub {
             }
         }
     }
+
+    impl AstarteDataType {
+        pub fn individual(&self) -> Option<&AstarteDataTypeIndividual> {
+            match self.data {
+                Some(Data::AstarteIndividual(ref individual)) => Some(individual),
+                _ => None,
+            }
+        }
+
+        pub fn individual_mut(&mut self) -> Option<&mut AstarteDataTypeIndividual> {
+            match self.data {
+                Some(Data::AstarteIndividual(ref mut individual)) => Some(individual),
+                _ => None,
+            }
+        }
+
+        pub fn take_individual(self) -> Option<AstarteDataTypeIndividual> {
+            match self.data {
+                Some(Data::AstarteIndividual(individual)) => Some(individual),
+                _ => None,
+            }
+        }
+
+        pub fn object(&self) -> Option<&AstarteDataTypeObject> {
+            match self.data {
+                Some(Data::AstarteObject(ref object)) => Some(object),
+                _ => None,
+            }
+        }
+
+        pub fn object_mut(&mut self) -> Option<&mut AstarteDataTypeObject> {
+            match self.data {
+                Some(Data::AstarteObject(ref mut object)) => Some(object),
+                _ => None,
+            }
+        }
+
+        pub fn take_object(self) -> Option<AstarteDataTypeObject> {
+            match self.data {
+                Some(Data::AstarteObject(object)) => Some(object),
+                _ => None,
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
     use crate::proto_message_hub::{
-        astarte_message::Payload, AstarteDataType, AstarteMessage, AstarteUnset,
+        astarte_data_type::Data, astarte_data_type_individual::IndividualData,
+        astarte_message::Payload, AstarteDataType, AstarteDataTypeIndividual,
+        AstarteDataTypeObject, AstarteMessage, AstarteUnset,
     };
 
     #[test]
@@ -136,5 +185,53 @@ mod test {
         let res = message.take_unset();
 
         assert_eq!(res, Some(unset));
+    }
+
+    #[test]
+    fn test_astarte_data_type_object() {
+        let individual = AstarteDataTypeIndividual {
+            individual_data: Some(IndividualData::AstarteDouble(42.)),
+        };
+        let mut object_data = HashMap::new();
+        object_data.insert("foo".to_string(), individual);
+
+        let object = AstarteDataTypeObject { object_data };
+        let mut data = AstarteDataType {
+            data: Some(Data::AstarteObject(object.clone())),
+        };
+
+        // This test also the ergonomics of the methods
+        assert!(data.object().is_some());
+        assert!(data.object_mut().is_some());
+        assert!(data.clone().take_object().is_some());
+        assert!(data.individual().is_none());
+        assert!(data.individual_mut().is_none());
+        assert!(data.clone().take_individual().is_none());
+
+        let res = data.take_object();
+
+        assert_eq!(res, Some(object));
+    }
+
+    #[test]
+    fn test_astarte_data_type_individual() {
+        let individual = AstarteDataTypeIndividual {
+            individual_data: Some(IndividualData::AstarteDouble(42.)),
+        };
+        let mut data = AstarteDataType {
+            data: Some(Data::AstarteIndividual(individual.clone())),
+        };
+
+        // This test also the ergonomics of the methods
+        assert!(data.object().is_none());
+        assert!(data.object_mut().is_none());
+        assert!(data.clone().take_object().is_none());
+        assert!(data.individual().is_some());
+        assert!(data.individual_mut().is_some());
+        assert!(data.clone().take_individual().is_some());
+
+        let res = data.take_individual();
+
+        assert_eq!(res, Some(individual));
     }
 }
