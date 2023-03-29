@@ -39,8 +39,7 @@
           rustc = toolchain;
         };
       in
-      with pkgs;
-      {
+      rec {
         packages.default = naersk'.buildPackage {
           src = ./.;
           nativeBuildInputs = with pkgs; [
@@ -53,13 +52,8 @@
           # This is required to disable vendoring, we do not need vendoring since we are using nix.
           OPENSSL_NO_VENDOR = 1;
         };
-        devShells.default = mkShell {
-          packages = [
-            toolchain
-            openssl
-            pkg-config
-            protobuf
-          ];
+        devShells.default = pkgs.mkShell {
+          inputsFrom = [ packages.default ];
           OPENSSL_NO_VENDOR = 1;
         };
       }
