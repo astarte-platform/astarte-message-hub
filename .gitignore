@@ -12,3 +12,5 @@ target/
 *.pdb
 
 .idea/
+/.direnv/
+/result
