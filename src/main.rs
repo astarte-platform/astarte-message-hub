@@ -17,45 +17,56 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+use astarte_device_sdk::options::AstarteOptions;
+use astarte_device_sdk::registration;
+use astarte_device_sdk::AstarteDeviceSdk;
 
 use astarte_message_hub::config::MessageHubOptions;
 use astarte_message_hub::error::AstarteMessageHubError;
 
 #[tokio::main]
 async fn main() -> Result<(), AstarteMessageHubError> {
-    use astarte_device_sdk::AstarteDeviceSdk;
-
     env_logger::init();
 
-    //TODO add MessageHubServer and add AstarteHandler::new() on top of AstarteSDK
     let options = MessageHubOptions::get().await?;
-    let astarte_options = astarte_map_options(&options).await;
-    let _astarte_sdk = AstarteDeviceSdk::new(&astarte_options).await?;
+    let _astarte_sdk = initialize_astarte_device_sdk(options).await?;
+
+    //TODO add MessageHubServer and add AstarteHandler::new() on top of AstarteSDK
 
     Ok(())
 }
 
-pub async fn astarte_map_options(
-    opts: &MessageHubOptions,
-) -> astarte_device_sdk::options::AstarteOptions {
-    use astarte_device_sdk::options::AstarteOptions;
-    use astarte_device_sdk::registration;
-
-    let credentials_secret = match &opts.credentials_secret {
-        None => registration::register_device(
-            opts.pairing_token.as_ref().unwrap(),
-            opts.pairing_url.as_ref().unwrap(),
-            opts.realm.as_ref().unwrap(),
-            opts.device_id.as_ref().unwrap(),
-        )
-        .await
-        .unwrap(),
-        Some(secret) => secret.clone(),
-    };
-    AstarteOptions::new(
-        opts.realm.as_ref().unwrap(),
-        opts.device_id.as_ref().unwrap(),
-        &credentials_secret,
-        opts.pairing_url.as_ref().unwrap(),
-    )
+async fn initialize_astarte_device_sdk(
+    mut msg_hub_opts: MessageHubOptions,
+) -> Result<AstarteDeviceSdk, AstarteMessageHubError> {
+    let realm = &msg_hub_opts.realm;
+    let device_id = &msg_hub_opts.device_id;
+    let pairing_url = &msg_hub_opts.pairing_url;
+    // If no credential secret is present, register a new device using the Astarte device SDK
+    if msg_hub_opts.credentials_secret.is_none() {
+        let err_msg = "Missing pairing token for Astarte device SDK.".to_string();
+        let pairing_token = &msg_hub_opts
+            .pairing_token
+            .as_ref()
+            .ok_or(AstarteMessageHubError::FatalError(err_msg))?;
+        msg_hub_opts.credentials_secret =
+            registration::register_device(pairing_token, pairing_url, realm, device_id)
+                .await
+                .ok();
+    }
+    // Create the configuration options for the device and then instantiate a new device
+    let err_msg = "Missing credentials secret for Astarte device SDK.".to_string();
+    let credentials_secret = &msg_hub_opts
+        .credentials_secret
+        .clone()
+        .ok_or(AstarteMessageHubError::FatalError(err_msg))?;
+    let mut device_sdk_opts =
+        AstarteOptions::new(realm, device_id, credentials_secret, pairing_url);
+    if msg_hub_opts.astarte_ignore_ssl {
+        device_sdk_opts = device_sdk_opts.ignore_ssl_errors();
+    }
+    if let Some(int_dir) = &msg_hub_opts.interfaces_directory {
+        device_sdk_opts = device_sdk_opts.interface_directory(int_dir)?;
+    }
+    Ok(AstarteDeviceSdk::new(&device_sdk_opts).await?)
 }

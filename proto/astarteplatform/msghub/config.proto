@@ -29,6 +29,7 @@ message ConfigMessage {
   optional string credentials_secret = 3;
   string pairing_url = 4;
   optional string pairing_token = 5;
+  uint32 grpc_socket_port = 6;
 }
 
 service MessageHubConfig {

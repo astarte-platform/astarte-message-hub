@@ -87,7 +87,7 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
     /// async fn main() -> Result<(), tonic::Status> {
     ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
     ///
-    ///     let interface_json = std::fs::read("/tmp/org.astarteplatform.esp32.examples.DeviceDatastream.json")
+    ///     let interface_json = std::fs::read("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json")
     ///         .unwrap();
     ///
     ///     let node = Node {
@@ -149,7 +149,7 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
     ///
     ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
     ///
-    ///     let interface_json = std::fs::read("/tmp/org.astarteplatform.esp32.examples.DeviceDatastream.json")
+    ///     let interface_json = std::fs::read("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json")
     ///         .unwrap();
     ///
     ///     let node = Node {

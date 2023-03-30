@@ -21,11 +21,11 @@
 use std::io::Write;
 use std::path::Path;
 
-use crate::config;
 use tokio::sync::mpsc::{channel, Sender};
 use tonic::transport::Server;
 use tonic::{Code, Request, Response, Status};
 
+use crate::config::file::CONFIG_FILE_NAME;
 use crate::config::MessageHubOptions;
 use crate::proto_message_hub;
 
@@ -48,18 +48,25 @@ impl proto_message_hub::message_hub_config_server::MessageHubConfig for AstarteM
     ) -> Result<Response<pbjson_types::Empty>, Status> {
         let req = request.into_inner();
         let message_hub_options = MessageHubOptions {
-            realm: Some(req.realm),
-            device_id: Some(req.device_id),
+            realm: req.realm,
+            device_id: req.device_id,
             credentials_secret: req.credentials_secret,
-            pairing_url: Some(req.pairing_url),
+            pairing_url: req.pairing_url,
             pairing_token: req.pairing_token,
-            interfaces_directory: "".to_string(),
-            store_directory: "".to_string(),
-            astarte_ignore_ssl: None,
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: req.grpc_socket_port,
         };
 
+        if !message_hub_options.is_valid() {
+            return Err(Status::new(
+                Code::InvalidArgument,
+                "Invalid configuration.".to_string(),
+            ));
+        }
+
         let mut file =
-            std::fs::File::create(Path::new(&self.store_directory).join(config::CONFIG_FILE_NAME))?;
+            std::fs::File::create(Path::new(&self.store_directory).join(CONFIG_FILE_NAME))?;
 
         let result = toml::to_string(&message_hub_options);
         if let Err(e) = result {
@@ -133,9 +140,29 @@ mod test {
             credentials_secret: None,
             pairing_url: "rpc_pairing_url".to_string(),
             pairing_token: Some("rpc_pairing_token".to_string()),
+            grpc_socket_port: 42,
         };
         let result = config_server.set_config(Request::new(msg)).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_set_config_invalid_config() {
+        let (tx, _) = mpsc::channel(1);
+        let config_server = AstarteMessageHubConfig {
+            store_directory: "./".to_string(),
+            configuration_ready_channel: tx,
+        };
+        let msg = ConfigMessage {
+            realm: "".to_string(),
+            device_id: "rpc_device_id".to_string(),
+            credentials_secret: None,
+            pairing_url: "rpc_pairing_url".to_string(),
+            pairing_token: Some("rpc_pairing_token".to_string()),
+            grpc_socket_port: 42,
+        };
+        let result = config_server.set_config(Request::new(msg)).await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -153,6 +180,7 @@ mod test {
             credentials_secret: None,
             pairing_url: "rpc_pairing_url".to_string(),
             pairing_token: Some("rpc_pairing_token".to_string()),
+            grpc_socket_port: 42,
         };
         let response = client.set_config(msg).await;
         assert!(response.is_ok());
