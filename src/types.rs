@@ -19,6 +19,7 @@
  */
 
 use crate::error::AstarteMessageHubError;
+use astarte_device_sdk::types::AstarteType;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
@@ -202,7 +203,6 @@ impl TryFrom<astarte_device_sdk::AstarteDeviceDataEvent> for proto_message_hub::
         use crate::proto_message_hub::AstarteDataTypeIndividual;
         use crate::proto_message_hub::AstarteMessage;
         use crate::proto_message_hub::AstarteUnset;
-        use astarte_device_sdk::types::AstarteType;
         use astarte_device_sdk::Aggregation;
 
         let payload: Payload = match value.data {
@@ -236,28 +236,12 @@ impl TryFrom<astarte_device_sdk::AstarteDeviceDataEvent> for proto_message_hub::
     }
 }
 
-impl TryFrom<InterfaceJson> for astarte_device_sdk::Interface {
-    type Error = AstarteMessageHubError;
-
-    fn try_from(interface: InterfaceJson) -> Result<Self, Self::Error> {
-        use astarte_device_sdk::AstarteError;
-        use astarte_device_sdk::Interface;
-        use std::str::FromStr;
-
-        let interface_str = String::from_utf8_lossy(&interface.0);
-        Interface::from_str(interface_str.as_ref())
-            .map_err(|err| AstarteMessageHubError::AstarteError(AstarteError::InterfaceError(err)))
-    }
-}
-
 /// This function can be used to convert a map of (String, AstarteDataTypeIndividual) into a
 /// map of (String, astarte_device_sdk::types::AstarteType).
 /// It can be useful when a method accept an astarte_device_sdk::AstarteAggregate.
 pub fn map_values_to_astarte_type(
     value: HashMap<String, proto_message_hub::AstarteDataTypeIndividual>,
 ) -> Result<HashMap<String, astarte_device_sdk::types::AstarteType>, AstarteMessageHubError> {
-    use astarte_device_sdk::types::AstarteType;
-
     let mut map: HashMap<String, AstarteType> = Default::default();
     for (key, astarte_data) in value.into_iter() {
         map.insert(
@@ -271,21 +255,65 @@ pub fn map_values_to_astarte_type(
     Ok(map)
 }
 
+impl TryFrom<astarte_device_sdk::types::AstarteType>
+    for proto_message_hub::astarte_message::Payload
+{
+    type Error = AstarteMessageHubError;
+
+    fn try_from(
+        astarte_device_sdk_type: astarte_device_sdk::types::AstarteType,
+    ) -> Result<Self, Self::Error> {
+        use crate::proto_message_hub::astarte_data_type::Data::AstarteIndividual;
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteDataType;
+        use crate::proto_message_hub::AstarteDataTypeIndividual;
+
+        let payload = if let astarte_device_sdk::types::AstarteType::Unset = astarte_device_sdk_type
+        {
+            Payload::AstarteUnset(proto_message_hub::AstarteUnset {})
+        } else {
+            let individual_type: AstarteDataTypeIndividual = astarte_device_sdk_type.try_into()?;
+            Payload::AstarteData(AstarteDataType {
+                data: Some(AstarteIndividual(individual_type)),
+            })
+        };
+        Ok(payload)
+    }
+}
+
+impl TryFrom<HashMap<String, AstarteType>> for proto_message_hub::astarte_message::Payload {
+    type Error = AstarteMessageHubError;
+
+    fn try_from(value: HashMap<String, AstarteType>) -> Result<Self, Self::Error> {
+        use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
+        use crate::proto_message_hub::astarte_message::Payload;
+        use crate::proto_message_hub::AstarteDataType;
+        use crate::proto_message_hub::AstarteDataTypeObject;
+
+        let astarte_individual_type_map =
+            crate::astarte_device_sdk_types::map_values_to_astarte_data_type_individual(value)?;
+        let payload = Payload::AstarteData(AstarteDataType {
+            data: Some(AstarteObject(AstarteDataTypeObject {
+                object_data: astarte_individual_type_map,
+            })),
+        });
+        Ok(payload)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::error::AstarteMessageHubError;
-    use astarte_device_sdk::types::AstarteType;
-    use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent, Interface};
-    use chrono::{DateTime, Utc};
-    use std::collections::HashMap;
-
-    use crate::proto_message_hub::astarte_data_type::Data::AstarteIndividual;
+    use crate::proto_message_hub;
+    use crate::proto_message_hub::astarte_data_type::Data::{AstarteIndividual, AstarteObject};
     use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
-    use crate::proto_message_hub::astarte_message::Payload;
     use crate::proto_message_hub::AstarteDataType;
     use crate::proto_message_hub::AstarteDataTypeIndividual;
     use crate::proto_message_hub::AstarteMessage;
-    use crate::types::InterfaceJson;
+    use astarte_device_sdk::types::AstarteType;
+    use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent};
+    use chrono::{DateTime, Utc};
+    use std::collections::HashMap;
 
     #[test]
     fn from_double_to_astarte_individual_type_success() {
@@ -771,6 +799,7 @@ mod test {
 
     #[test]
     fn convert_astarte_device_data_event_unset_to_astarte_message() {
+        use crate::proto_message_hub::astarte_message::Payload;
         use crate::proto_message_hub::AstarteUnset;
         let expected_data = AstarteType::Unset;
 
@@ -792,7 +821,11 @@ mod test {
         );
     }
 
-    fn get_individual_data_from_payload(payload: Payload) -> AstarteType {
+    fn get_individual_data_from_payload(
+        payload: proto_message_hub::astarte_message::Payload,
+    ) -> AstarteType {
+        use crate::proto_message_hub::astarte_message::Payload;
+
         if let Payload::AstarteData(astarte_data) = payload {
             if let AstarteIndividual(astarte_individual_data) = astarte_data.data.unwrap() {
                 astarte_individual_data
@@ -1091,6 +1124,7 @@ mod test {
     #[test]
     fn convert_astarte_device_data_event_object_to_astarte_message() {
         use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
+        use crate::proto_message_hub::astarte_message::Payload;
 
         let expected_map = HashMap::from([
             ("Mercury".to_owned(), AstarteType::Double(0.4)),
@@ -1136,6 +1170,7 @@ mod test {
     #[test]
     fn convert_astarte_device_data_event_object2_to_astarte_message() {
         use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
+        use crate::proto_message_hub::astarte_message::Payload;
 
         let expected_map = HashMap::from([
             ("M".to_owned(), AstarteType::Double(0.4)),
@@ -1182,80 +1217,64 @@ mod test {
     }
 
     #[test]
-    fn convert_proto_interface_to_astarte_interface() {
-        const SERV_PROPS_IFACE: &str = r#"
-        {
-            "interface_name": "org.astarte-platform.test.test",
-            "version_major": 1,
-            "version_minor": 1,
-            "type": "properties",
-            "ownership": "server",
-            "mappings": [
+    fn from_sdk_astarte_type_to_astarte_message_payload_success() {
+        use crate::proto_message_hub::astarte_message::Payload;
+
+        let expected_double_value: f64 = 15.5;
+        let astarte_sdk_type_double = AstarteType::Double(expected_double_value);
+
+        let payload: Payload = astarte_sdk_type_double.try_into().unwrap();
+
+        if let Payload::AstarteData(astarte_data) = payload {
+            if let AstarteIndividual(astarte_individual_type) = astarte_data.data.unwrap() {
+                if let IndividualData::AstarteDouble(double_value) =
+                    astarte_individual_type.individual_data.unwrap()
                 {
-                    "endpoint": "/button",
-                    "type": "boolean",
-                    "explicit_timestamp": true
-                },
-                {
-                    "endpoint": "/uptimeSeconds",
-                    "type": "integer",
-                    "explicit_timestamp": true
+                    assert_eq!(expected_double_value, double_value);
+                } else {
+                    panic!();
                 }
-            ]
+            } else {
+                panic!()
+            }
+        } else {
+            panic!()
         }
-        "#;
-
-        let interface = InterfaceJson(SERV_PROPS_IFACE.into());
-
-        let astarte_interface: Interface = interface.try_into().unwrap();
-
-        assert_eq!(
-            astarte_interface.get_name(),
-            "org.astarte-platform.test.test"
-        );
-        assert_eq!(astarte_interface.get_version_major(), 1);
     }
 
-    #[tokio::test]
-    async fn convert_proto_interface_with_special_chars_to_astarte_interface() {
-        const IFACE_SPECIAL_CHARS: &str = r#"
-        {
-            "interface_name": "org.astarte-platform.test.test",
-            "version_major": 1,
-            "version_minor": 1,
-            "type": "properties",
-            "ownership": "server",
-            "mappings": [
+    #[test]
+    fn from_sdk_astarte_aggregate_to_astarte_message_payload_success() {
+        use crate::proto_message_hub::astarte_message::Payload;
+
+        let expected_data: f64 = 15.5;
+        use std::collections::HashMap;
+        let astarte_type_map = HashMap::from([(
+            "key1".to_string(),
+            astarte_device_sdk::types::AstarteType::Double(expected_data),
+        )]);
+
+        let payload_result: Result<Payload, AstarteMessageHubError> = astarte_type_map.try_into();
+        assert!(payload_result.is_ok());
+
+        if let Payload::AstarteData(astarte_data) = payload_result.unwrap() {
+            if let AstarteObject(astarte_object) = astarte_data.data.unwrap() {
+                if let IndividualData::AstarteDouble(double_data) = astarte_object
+                    .object_data
+                    .get("key1")
+                    .unwrap()
+                    .individual_data
+                    .clone()
+                    .unwrap()
                 {
-                    "endpoint": "/uptimeSeconds",
-                    "type": "integer",
-                    "explicit_timestamp": true,
-                    "description": "Hello 你好 안녕하세요"
+                    assert_eq!(expected_data, double_data);
+                } else {
+                    panic!();
                 }
-            ]
+            } else {
+                panic!()
+            }
+        } else {
+            panic!()
         }
-        "#;
-
-        let interface = InterfaceJson(IFACE_SPECIAL_CHARS.into());
-
-        let astarte_interface: Interface = interface.try_into().unwrap();
-
-        assert_eq!(
-            astarte_interface.get_name(),
-            "org.astarte-platform.test.test"
-        );
-        assert_eq!(astarte_interface.get_version_major(), 1);
-    }
-
-    #[tokio::test]
-    async fn convert_bad_proto_interface_to_astarte_interface() {
-        const IFACE_BAD: &str = r#"{"#;
-
-        let interface = InterfaceJson(IFACE_BAD.into());
-
-        let astarte_interface_bad_result: Result<Interface, AstarteMessageHubError> =
-            interface.try_into();
-
-        assert!(astarte_interface_bad_result.is_err());
     }
 }
