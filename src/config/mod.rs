@@ -18,7 +18,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use log::info;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -31,6 +30,8 @@ use crate::error::AstarteMessageHubError;
 pub mod file;
 pub mod http;
 pub mod protobuf;
+
+use file::CONFIG_FILE_NAMES;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct MessageHubOptions {
@@ -46,44 +47,29 @@ pub struct MessageHubOptions {
 
 impl MessageHubOptions {
     /// Function that get the configurations needed by the Message Hub.
-    /// The configuration file is first retrieved from one of two known locations where at least
-    /// the position of the actual file can be found. If no valid configuration file is found
-    /// in either of these locations, HTTP and Protobuf APIs are exposed to provide a valid
+    /// The configuration file is first retrieved from one of two default base locations.
+    /// If no valid configuration file is found in either of these locations, or if the content
+    /// of the first found file is not valid HTTP and Protobuf APIs are exposed to provide a valid
     /// configuration.
     pub async fn get() -> Result<MessageHubOptions, AstarteMessageHubError> {
-        let paths = [file::CONFIG_FILE_NAME, "/etc/message-hub/config.toml"]
-            .iter()
-            .map(Path::new)
-            .filter(|f| f.exists());
-
-        if let Some(path) = paths.into_iter().next() {
-            info!("Found configuration file {path:?}");
-
-            let (msg_hub_opt, redirect_dir) = file::get_options(path)?;
-            if let Some(msg_hub_opt) = msg_hub_opt {
-                return Ok(msg_hub_opt);
-            }
-
-            let (tx, mut rx) = channel(1);
-
-            let web_server =
-                HttpConfigProvider::new("127.0.0.1:40041", redirect_dir.clone(), tx.clone());
-            let protobuf_server =
-                ProtobufConfigProvider::new("[::1]:50051", redirect_dir.clone(), tx.clone()).await;
-
-            rx.recv().await.unwrap();
-
-            web_server.stop().await;
-            protobuf_server.stop().await;
-
-            let toml_str = std::fs::read_to_string(redirect_dir)?;
-            let err_msg = AstarteMessageHubError::FatalError("Invalid configuration.".to_string());
-            file::read_options_from_toml(&toml_str).ok_or(err_msg)
-        } else {
-            Err(AstarteMessageHubError::FatalError(
-                "Configuration file not found in base locations.".to_string(),
-            ))
+        if let Ok(msg_hub_opt) = file::get_options_from_base_toml() {
+            return Ok(msg_hub_opt);
         }
+
+        let (tx, mut rx) = channel(1);
+
+        let web_server =
+            HttpConfigProvider::new("127.0.0.1:40041", tx.clone(), CONFIG_FILE_NAMES[0]);
+        let protobuf_server =
+            ProtobufConfigProvider::new("[::1]:50051", tx.clone(), CONFIG_FILE_NAMES[0]).await;
+
+        rx.recv().await.unwrap();
+
+        web_server.stop().await;
+        protobuf_server.stop().await;
+
+        let toml_str = std::fs::read_to_string(CONFIG_FILE_NAMES[0])?;
+        file::get_options_from_toml(&toml_str)
     }
 
     pub fn is_valid(&self) -> bool {

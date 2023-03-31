@@ -31,7 +31,6 @@ use axum::{Extension, Json, Router, Server};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{channel, Sender};
 
-use crate::config::file::CONFIG_FILE_NAME;
 use crate::config::MessageHubOptions;
 
 #[derive(Deserialize, Serialize)]
@@ -42,8 +41,8 @@ struct ConfigResponse {
 
 #[derive(Clone)]
 struct ConfigServerExtension {
-    store_directory: String,
     configuration_ready_channel: Sender<()>,
+    toml_file: String,
 }
 
 pub struct HttpConfigProvider {
@@ -96,17 +95,13 @@ impl HttpConfigProvider {
             );
         }
 
-        let result =
-            std::fs::File::create(Path::new(&state.store_directory).join(CONFIG_FILE_NAME));
+        let result = std::fs::File::create(Path::new(&state.toml_file));
         if result.is_err() {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ConfigResponse {
                     result: "KO".to_string(),
-                    message: Some(format!(
-                        "Unable to create file message-hub-config.toml in {}",
-                        state.store_directory
-                    )),
+                    message: Some(format!("Unable to create file {}", state.toml_file)),
                 }),
             );
         }
@@ -131,10 +126,7 @@ impl HttpConfigProvider {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ConfigResponse {
                     result: "KO".to_string(),
-                    message: Some(format!(
-                        "Unable to write in file {}/message-hub-config.toml",
-                        state.store_directory
-                    )),
+                    message: Some(format!("Unable to write in file {}", state.toml_file)),
                 }),
             );
         }
@@ -152,12 +144,12 @@ impl HttpConfigProvider {
     /// Start a new HTTP API Server to allow a third party to feed the Message Hub configurations
     pub fn new(
         address: &str,
-        store_directory: String,
         configuration_ready_channel: Sender<()>,
+        toml_file: &str,
     ) -> HttpConfigProvider {
         let extension = ConfigServerExtension {
-            store_directory,
             configuration_ready_channel,
+            toml_file: toml_file.to_string(),
         };
         let app = Router::new()
             .route("/", get(Self::root))
@@ -189,19 +181,21 @@ impl HttpConfigProvider {
 
 #[cfg(test)]
 mod test {
-    use super::{ConfigResponse, HttpConfigProvider};
+    use super::*;
 
+    use serial_test::serial;
     use std::collections::HashMap;
     use std::time::Duration;
 
-    use axum::http::StatusCode;
     use serde_json::{Map, Number, Value};
-    use tokio::sync::mpsc::channel;
+
+    use crate::config::file::CONFIG_FILE_NAMES;
 
     #[tokio::test]
+    #[serial]
     async fn server_test() {
         let (tx, mut rx) = channel(1);
-        let server = HttpConfigProvider::new("127.0.0.1:8080", "./".to_string(), tx);
+        let server = HttpConfigProvider::new("127.0.0.1:8080", tx, CONFIG_FILE_NAMES[0]);
 
         let mut body = Map::new();
         body.insert("realm".to_string(), Value::String("realm".to_string()));
@@ -242,9 +236,10 @@ mod test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn bad_request_test() {
         let (tx, _) = channel(1);
-        let server = HttpConfigProvider::new("127.0.0.1:8081", "./".to_string(), tx);
+        let server = HttpConfigProvider::new("127.0.0.1:8081", tx, CONFIG_FILE_NAMES[0]);
 
         let mut body = HashMap::new();
         body.insert("device_id", "device_id");
@@ -267,9 +262,10 @@ mod test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_set_config_invalid_cfg() {
         let (tx, _) = channel(1);
-        let server = HttpConfigProvider::new("127.0.0.1:8080", "./".to_string(), tx);
+        let server = HttpConfigProvider::new("127.0.0.1:8080", tx, CONFIG_FILE_NAMES[0]);
 
         let mut body = Map::new();
         body.insert("realm".to_string(), Value::String("".to_string()));
