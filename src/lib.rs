@@ -30,107 +30,147 @@ mod types;
 
 #[allow(clippy::all)]
 pub mod proto_message_hub {
-    use self::astarte_data_type::Data;
+    use self::{astarte_data_type::Data, astarte_message::Payload};
 
     tonic::include_proto!("astarteplatform.msghub");
 
-    impl AstarteMessage {
+    impl Payload {
         pub fn take_data(self) -> Option<AstarteDataType> {
-            use self::astarte_message::Payload;
-
-            match self.payload {
-                Some(Payload::AstarteData(data)) => Some(data),
-                _ => None,
-            }
-        }
-
-        pub fn take_unset(self) -> Option<AstarteUnset> {
-            use self::astarte_message::Payload;
-
-            match self.payload {
-                Some(Payload::AstarteUnset(unset)) => Some(unset),
+            match self {
+                Payload::AstarteData(data) => Some(data),
                 _ => None,
             }
         }
 
         pub fn data(&self) -> Option<&AstarteDataType> {
-            use self::astarte_message::Payload;
-
-            match self.payload {
-                Some(Payload::AstarteData(ref data)) => Some(data),
-                _ => None,
-            }
-        }
-
-        pub fn unset(&self) -> Option<&AstarteUnset> {
-            use self::astarte_message::Payload;
-
-            match self.payload {
-                Some(Payload::AstarteUnset(ref unset)) => Some(unset),
+            match self {
+                Payload::AstarteData(ref data) => Some(data),
                 _ => None,
             }
         }
 
         pub fn data_mut(&mut self) -> Option<&mut AstarteDataType> {
-            use self::astarte_message::Payload;
+            match self {
+                Payload::AstarteData(ref mut data) => Some(data),
+                _ => None,
+            }
+        }
 
-            match self.payload {
-                Some(Payload::AstarteData(ref mut data)) => Some(data),
+        pub fn take_unset(self) -> Option<AstarteUnset> {
+            match self {
+                Payload::AstarteUnset(unset) => Some(unset),
+                _ => None,
+            }
+        }
+
+        pub fn unset(&self) -> Option<&AstarteUnset> {
+            match self {
+                Payload::AstarteUnset(ref unset) => Some(unset),
                 _ => None,
             }
         }
 
         pub fn unset_mut(&mut self) -> Option<&mut AstarteUnset> {
-            use self::astarte_message::Payload;
+            match self {
+                Payload::AstarteUnset(ref mut unset) => Some(unset),
+                _ => None,
+            }
+        }
+    }
 
-            match self.payload {
-                Some(Payload::AstarteUnset(ref mut unset)) => Some(unset),
+    impl AstarteMessage {
+        pub fn take_data(self) -> Option<AstarteDataType> {
+            self.payload.and_then(Payload::take_data)
+        }
+
+        pub fn data(&self) -> Option<&AstarteDataType> {
+            self.payload.as_ref().and_then(Payload::data)
+        }
+
+        pub fn data_mut(&mut self) -> Option<&mut AstarteDataType> {
+            self.payload.as_mut().and_then(Payload::data_mut)
+        }
+
+        pub fn take_unset(self) -> Option<AstarteUnset> {
+            self.payload.and_then(Payload::take_unset)
+        }
+
+        pub fn unset(&self) -> Option<&AstarteUnset> {
+            self.payload.as_ref().and_then(Payload::unset)
+        }
+
+        pub fn unset_mut(&mut self) -> Option<&mut AstarteUnset> {
+            self.payload.as_mut().and_then(Payload::unset_mut)
+        }
+    }
+
+    impl Data {
+        pub fn take_individual(self) -> Option<AstarteDataTypeIndividual> {
+            match self {
+                Data::AstarteIndividual(individual) => Some(individual),
+                _ => None,
+            }
+        }
+
+        pub fn individual(&self) -> Option<&AstarteDataTypeIndividual> {
+            match self {
+                Data::AstarteIndividual(ref individual) => Some(individual),
+                _ => None,
+            }
+        }
+
+        pub fn individual_mut(&mut self) -> Option<&mut AstarteDataTypeIndividual> {
+            match self {
+                Data::AstarteIndividual(ref mut individual) => Some(individual),
+                _ => None,
+            }
+        }
+
+        pub fn take_object(self) -> Option<AstarteDataTypeObject> {
+            match self {
+                Data::AstarteObject(object) => Some(object),
+                _ => None,
+            }
+        }
+
+        pub fn object(&self) -> Option<&AstarteDataTypeObject> {
+            match self {
+                Data::AstarteObject(ref object) => Some(object),
+                _ => None,
+            }
+        }
+
+        pub fn object_mut(&mut self) -> Option<&mut AstarteDataTypeObject> {
+            match self {
+                Data::AstarteObject(ref mut object) => Some(object),
                 _ => None,
             }
         }
     }
 
     impl AstarteDataType {
+        pub fn take_individual(self) -> Option<AstarteDataTypeIndividual> {
+            self.data.and_then(Data::take_individual)
+        }
+
         pub fn individual(&self) -> Option<&AstarteDataTypeIndividual> {
-            match self.data {
-                Some(Data::AstarteIndividual(ref individual)) => Some(individual),
-                _ => None,
-            }
+            self.data.as_ref().and_then(Data::individual)
         }
 
         pub fn individual_mut(&mut self) -> Option<&mut AstarteDataTypeIndividual> {
-            match self.data {
-                Some(Data::AstarteIndividual(ref mut individual)) => Some(individual),
-                _ => None,
-            }
-        }
-
-        pub fn take_individual(self) -> Option<AstarteDataTypeIndividual> {
-            match self.data {
-                Some(Data::AstarteIndividual(individual)) => Some(individual),
-                _ => None,
-            }
-        }
-
-        pub fn object(&self) -> Option<&AstarteDataTypeObject> {
-            match self.data {
-                Some(Data::AstarteObject(ref object)) => Some(object),
-                _ => None,
-            }
-        }
-
-        pub fn object_mut(&mut self) -> Option<&mut AstarteDataTypeObject> {
-            match self.data {
-                Some(Data::AstarteObject(ref mut object)) => Some(object),
-                _ => None,
-            }
+            self.data.as_mut().and_then(Data::individual_mut)
         }
 
         pub fn take_object(self) -> Option<AstarteDataTypeObject> {
-            match self.data {
-                Some(Data::AstarteObject(object)) => Some(object),
-                _ => None,
-            }
+            self.data.and_then(Data::take_object)
+        }
+
+        pub fn object(&self) -> Option<&AstarteDataTypeObject> {
+            self.data.as_ref().and_then(Data::object)
+        }
+
+        pub fn object_mut(&mut self) -> Option<&mut AstarteDataTypeObject> {
+            self.data.as_mut().and_then(Data::object_mut)
         }
     }
 }
