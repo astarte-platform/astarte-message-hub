@@ -388,9 +388,7 @@ mod test {
 
     #[tokio::test]
     async fn poll_success() {
-        use crate::proto_message_hub::astarte_data_type::Data;
-        use crate::proto_message_hub::astarte_message::Payload;
-        use crate::proto_message_hub::AstarteDataTypeIndividual;
+        use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
         use crate::proto_message_hub::AstarteMessage;
 
         let prop_interface = astarte_device_sdk::Interface::from_str(SERV_PROPS_IFACE).unwrap();
@@ -434,14 +432,14 @@ mod test {
         assert_eq!(expected_interface_name, astarte_message.interface_name);
         assert_eq!(astarte_message.path, path);
 
-        if let Payload::AstarteData(astarte_data) = astarte_message.payload.unwrap() {
-            if let Data::AstarteIndividual(individual_data) = astarte_data.data.unwrap() {
-                let result_value: AstarteDataTypeIndividual = value.into();
-                assert_eq!(result_value, individual_data);
-            }
-        } else {
-            panic!()
-        }
+        let individual_data = astarte_message
+            .take_data()
+            .and_then(|data| data.take_individual())
+            .and_then(|data| data.individual_data)
+            .and_then(|data| data.into())
+            .unwrap();
+
+        assert_eq!(IndividualData::AstarteInteger(value), individual_data);
     }
 
     #[tokio::test]
