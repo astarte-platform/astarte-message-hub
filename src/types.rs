@@ -321,13 +321,12 @@ mod test {
         let d_astarte_individual_type: AstarteDataTypeIndividual =
             AstarteDataTypeIndividual::from(expected_double_value);
 
-        if let IndividualData::AstarteDouble(double_value) =
-            d_astarte_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_double_value, double_value);
-        } else {
-            panic!();
-        }
+        let double_value = d_astarte_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDouble(expected_double_value),
+            double_value
+        );
     }
 
     #[test]
@@ -336,13 +335,12 @@ mod test {
         let d_astarte_individual_type: AstarteDataTypeIndividual =
             AstarteDataTypeIndividual::from(&expected_double_value);
 
-        if let IndividualData::AstarteDouble(double_value) =
-            d_astarte_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_double_value, double_value);
-        } else {
-            panic!();
-        }
+        let double_value = d_astarte_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDouble(expected_double_value),
+            double_value
+        );
     }
 
     #[test]
@@ -350,13 +348,12 @@ mod test {
         let expected_double_value: f64 = 15.5;
         let d_astarte_individual_type: AstarteDataTypeIndividual = expected_double_value.into();
 
-        if let IndividualData::AstarteDouble(double_value) =
-            d_astarte_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_double_value, double_value);
-        } else {
-            panic!();
-        }
+        let double_value = d_astarte_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDouble(expected_double_value),
+            double_value
+        );
     }
 
     #[test]
@@ -364,13 +361,12 @@ mod test {
         let expected_integer_value: i32 = 15;
         let i32_individual_data_type: AstarteDataTypeIndividual = expected_integer_value.into();
 
-        if let IndividualData::AstarteInteger(i32_value) =
-            i32_individual_data_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_integer_value, i32_value);
-        } else {
-            panic!();
-        }
+        let i32_value = i32_individual_data_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteInteger(expected_integer_value),
+            i32_value
+        );
     }
 
     #[test]
@@ -378,13 +374,12 @@ mod test {
         let expected_bool_value: bool = true;
         let bool_individual_data_type: AstarteDataTypeIndividual = expected_bool_value.into();
 
-        if let IndividualData::AstarteBoolean(bool_value) =
-            bool_individual_data_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_bool_value, bool_value);
-        } else {
-            panic!();
-        }
+        let bool_value = bool_individual_data_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBoolean(expected_bool_value),
+            bool_value
+        );
     }
 
     #[test]
@@ -393,13 +388,12 @@ mod test {
         let vec_u8_astarte_individual_type: AstarteDataTypeIndividual =
             expected_vec_u8_value.clone().into();
 
-        if let IndividualData::AstarteBinaryBlob(vec_u8_values) =
-            vec_u8_astarte_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_vec_u8_value, vec_u8_values);
-        } else {
-            panic!();
-        }
+        let vec_u8_values = vec_u8_astarte_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBinaryBlob(expected_vec_u8_value),
+            vec_u8_values
+        );
     }
 
     #[test]
@@ -408,13 +402,14 @@ mod test {
         let vec_double_individual_type: AstarteDataTypeIndividual =
             expected_vec_double_value.clone().into();
 
-        if let IndividualData::AstarteDoubleArray(vec_double_values) =
-            vec_double_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_vec_double_value, vec_double_values.values);
-        } else {
-            panic!();
-        }
+        let vec_double_values = vec_double_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDoubleArray(proto_message_hub::AstarteDoubleArray {
+                values: expected_vec_double_value
+            }),
+            vec_double_values
+        );
     }
 
     #[test]
@@ -423,13 +418,14 @@ mod test {
         let vec_string_individual_type: AstarteDataTypeIndividual =
             expected_vec_string_value.clone().into();
 
-        if let IndividualData::AstarteStringArray(vec_string_values) =
-            vec_string_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_vec_string_value, vec_string_values.values);
-        } else {
-            panic!();
-        }
+        let vec_string_values = vec_string_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteStringArray(proto_message_hub::AstarteStringArray {
+                values: expected_vec_string_value
+            }),
+            vec_string_values
+        );
     }
 
     #[test]
@@ -437,15 +433,15 @@ mod test {
         let expected_double_value: f64 = 15.5;
         let d_astarte_data_type: AstarteDataType = expected_double_value.into();
 
-        if let AstarteIndividual(data) = d_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteDouble(double_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_double_value, double_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!()
-        }
+        let double_value = d_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDouble(expected_double_value),
+            double_value
+        );
     }
 
     #[test]
@@ -453,15 +449,15 @@ mod test {
         let expected_integer_value: i32 = 15;
         let i32_astarte_data_type: AstarteDataType = expected_integer_value.into();
 
-        if let AstarteIndividual(data) = i32_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteInteger(i32_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_integer_value, i32_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let i32_value = i32_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteInteger(expected_integer_value),
+            i32_value
+        );
     }
 
     #[test]
@@ -469,15 +465,15 @@ mod test {
         let expected_bool_value: bool = true;
         let bool_astarte_data_type: AstarteDataType = expected_bool_value.into();
 
-        if let AstarteIndividual(data) = bool_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteBoolean(bool_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_bool_value, bool_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let bool_value = bool_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBoolean(expected_bool_value),
+            bool_value
+        );
     }
 
     #[test]
@@ -485,15 +481,15 @@ mod test {
         let expected_longinteger_value: i64 = 15;
         let i64_astarte_data_type: AstarteDataType = expected_longinteger_value.into();
 
-        if let AstarteIndividual(data) = i64_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteLongInteger(i64_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_longinteger_value, i64_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let i64_value = i64_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteLongInteger(expected_longinteger_value),
+            i64_value
+        );
     }
 
     #[test]
@@ -501,31 +497,31 @@ mod test {
         let expected_string_value: String = "15".to_owned();
         let string_astarte_data_type: AstarteDataType = expected_string_value.clone().into();
 
-        if let AstarteIndividual(data) = string_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteString(string_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_string_value, string_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let string_value = string_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteString(expected_string_value),
+            string_value
+        );
     }
 
     #[test]
     fn strings_slice_into_astarte_data_type_success() {
-        let expected_string_value: &str = "15";
-        let string_astarte_data_type: AstarteDataType = expected_string_value.into();
+        let expected_string_value = "15".to_string();
+        let string_astarte_data_type: AstarteDataType = expected_string_value.as_str().into();
 
-        if let AstarteIndividual(data) = string_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteString(string_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_string_value, string_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let string_value = string_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteString(expected_string_value),
+            string_value
+        );
     }
 
     #[test]
@@ -533,16 +529,15 @@ mod test {
         let expected_vec_u8_value: Vec<u8> = vec![10, 44];
         let vec_u8_astarte_data_type: AstarteDataType = expected_vec_u8_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_u8_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteBinaryBlob(vec_u8_values) = data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_u8_value, vec_u8_values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_u8_values = vec_u8_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBinaryBlob(expected_vec_u8_value),
+            vec_u8_values
+        );
     }
 
     #[test]
@@ -553,16 +548,16 @@ mod test {
 
         let datetime_astarte_data_type: AstarteDataType = expected_datetime_value.into();
 
-        if let AstarteIndividual(data) = datetime_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteDateTime(date_time_value) = data.individual_data.unwrap()
-            {
-                let resul_date_time: DateTime<Utc> = date_time_value.try_into().unwrap();
-                assert_eq!(expected_datetime_value, resul_date_time);
-            } else {
-                panic!();
-            }
+        let data = datetime_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        if let IndividualData::AstarteDateTime(date_time_value) = data {
+            let resul_date_time: DateTime<Utc> = date_time_value.try_into().unwrap();
+            assert_eq!(expected_datetime_value, resul_date_time);
         } else {
-            panic!()
+            panic!();
         }
     }
 
@@ -572,17 +567,17 @@ mod test {
         let vec_double_astarte_data_type: AstarteDataType =
             expected_vec_double_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_double_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteDoubleArray(vec_double_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_double_value, vec_double_values.values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_double_values = vec_double_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDoubleArray(proto_message_hub::AstarteDoubleArray {
+                values: expected_vec_double_value
+            }),
+            vec_double_values
+        );
     }
 
     #[test]
@@ -590,17 +585,17 @@ mod test {
         let expected_vec_i32_value: Vec<i32> = vec![10, 44];
         let vec_i32_astarte_data_type: AstarteDataType = expected_vec_i32_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_i32_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteIntegerArray(vec_i32_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_i32_value, vec_i32_values.values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_i32_values = vec_i32_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteIntegerArray(proto_message_hub::AstarteIntegerArray {
+                values: expected_vec_i32_value
+            }),
+            vec_i32_values
+        );
     }
 
     #[test]
@@ -608,17 +603,17 @@ mod test {
         let expected_vec_i64_value: Vec<i64> = vec![10, 44];
         let vec_i64_astarte_data_type: AstarteDataType = expected_vec_i64_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_i64_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteLongIntegerArray(vec_i64_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_i64_value, vec_i64_values.values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_i64_values = vec_i64_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteLongIntegerArray(proto_message_hub::AstarteLongIntegerArray {
+                values: expected_vec_i64_value
+            }),
+            vec_i64_values
+        );
     }
 
     #[test]
@@ -626,17 +621,17 @@ mod test {
         let expected_vec_bool_value: Vec<bool> = vec![false, true];
         let vec_bool_astarte_data_type: AstarteDataType = expected_vec_bool_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_bool_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteBooleanArray(vec_bool_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_bool_value, vec_bool_values.values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_bool_values = vec_bool_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBooleanArray(proto_message_hub::AstarteBooleanArray {
+                values: expected_vec_bool_value
+            }),
+            vec_bool_values
+        );
     }
 
     #[test]
@@ -645,17 +640,17 @@ mod test {
         let vec_string_astarte_data_type: AstarteDataType =
             expected_vec_string_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_string_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteStringArray(vec_string_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_string_value, vec_string_values.values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_string_values = vec_string_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteStringArray(proto_message_hub::AstarteStringArray {
+                values: expected_vec_string_value
+            }),
+            vec_string_values
+        );
     }
 
     #[test]
@@ -664,20 +659,17 @@ mod test {
         let vec_binary_blob_astarte_data_type: AstarteDataType =
             expected_vec_binary_blob_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_binary_blob_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteBinaryBlobArray(vec_binary_blob_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(
-                    expected_vec_binary_blob_value,
-                    vec_binary_blob_values.values
-                );
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_binary_blob_values = vec_binary_blob_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBinaryBlobArray(proto_message_hub::AstarteBinaryBlobArray {
+                values: expected_vec_binary_blob_value
+            }),
+            vec_binary_blob_values
+        );
     }
 
     #[test]
