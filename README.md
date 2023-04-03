@@ -258,4 +258,4 @@ sequenceDiagram
 
 ## Requirements
 
-protobuf >= 3.15
+protobuf >= 3.15 Rust version >= 1.59
