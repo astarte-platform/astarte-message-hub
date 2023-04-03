@@ -18,6 +18,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 use clap::Parser;
+use log::info;
 
 use astarte_device_sdk::options::AstarteOptions;
 use astarte_device_sdk::registration;
@@ -25,6 +26,9 @@ use astarte_device_sdk::AstarteDeviceSdk;
 
 use astarte_message_hub::config::MessageHubOptions;
 use astarte_message_hub::error::AstarteMessageHubError;
+use astarte_message_hub::proto_message_hub::message_hub_server::MessageHubServer;
+use astarte_message_hub::AstarteHandler;
+use astarte_message_hub::AstarteMessageHub;
 
 /// A central service that runs on (Linux) devices for collecting and delivering messages from N
 /// apps using 1 MQTT connection to Astarte.
@@ -44,10 +48,24 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     env_logger::init();
     let args = Cli::parse();
 
-    let options = MessageHubOptions::get(args.toml, args.store_directory).await?;
-    let _astarte_sdk = initialize_astarte_device_sdk(options).await?;
+    let msg_hub_opts = MessageHubOptions::get(args.toml, args.store_directory).await?;
 
-    //TODO add MessageHubServer and add AstarteHandler::new() on top of AstarteSDK
+    // Initailize an Astarte device
+    let device_sdk = initialize_astarte_device_sdk(msg_hub_opts).await?;
+    info!("Connection to Astarte established.");
+
+    // Create a new Astarte handler
+    let handler = AstarteHandler::new(device_sdk);
+
+    // Create a new message hub
+    let message_hub = AstarteMessageHub::new(handler.clone());
+
+    // Run the protobuf server
+    let addr = "[::1]:50051".parse().unwrap();
+    tonic::transport::Server::builder()
+        .add_service(MessageHubServer::new(message_hub))
+        .serve(addr)
+        .await?;
 
     Ok(())
 }
