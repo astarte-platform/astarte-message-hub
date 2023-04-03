@@ -18,7 +18,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use log::info;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -32,74 +31,217 @@ pub mod file;
 pub mod http;
 pub mod protobuf;
 
-const CONFIG_FILE_NAME: &str = "message-hub-config.toml";
+use file::CONFIG_FILE_NAMES;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct MessageHubOptions {
-    pub realm: Option<String>,
-    pub device_id: Option<String>,
+    pub realm: String,
+    pub device_id: String,
     pub credentials_secret: Option<String>,
-    pub pairing_url: Option<String>,
+    pub pairing_url: String,
     pub pairing_token: Option<String>,
-    pub interfaces_directory: String,
-    pub store_directory: String,
-    pub astarte_ignore_ssl: Option<bool>,
+    pub interfaces_directory: Option<String>,
+    pub astarte_ignore_ssl: bool,
+    pub grpc_socket_port: u32,
 }
 
 impl MessageHubOptions {
     /// Function that get the configurations needed by the Message Hub.
-    /// The configuration file is first retrieved from one of two known locations where at least
-    /// the position of the actual file can be found. If no valid configuration file is found
-    /// in either of these locations, HTTP and Protobuf APIs are exposed to provide a valid
+    /// The configuration file is first retrieved from one of two default base locations.
+    /// If no valid configuration file is found in either of these locations, or if the content
+    /// of the first found file is not valid HTTP and Protobuf APIs are exposed to provide a valid
     /// configuration.
     pub async fn get() -> Result<MessageHubOptions, AstarteMessageHubError> {
-        let base_config = read_options_from_base_locations()?;
-        if base_config.is_valid() {
-            return Ok(base_config);
-        }
-
-        let store_directory = base_config.store_directory.clone();
-        let path = Path::new(&store_directory).join(CONFIG_FILE_NAME);
-
-        if path.exists() {
-            return file::read_options(&path);
+        if let Ok(msg_hub_opt) = file::get_options_from_base_toml() {
+            return Ok(msg_hub_opt);
         }
 
         let (tx, mut rx) = channel(1);
 
         let web_server =
-            HttpConfigProvider::new("127.0.0.1:40041", store_directory.clone(), tx.clone());
+            HttpConfigProvider::new("127.0.0.1:40041", tx.clone(), CONFIG_FILE_NAMES[0]);
         let protobuf_server =
-            ProtobufConfigProvider::new("[::1]:50051", store_directory.clone(), tx.clone()).await;
+            ProtobufConfigProvider::new("[::1]:50051", tx.clone(), CONFIG_FILE_NAMES[0]).await;
 
         rx.recv().await.unwrap();
 
         web_server.stop().await;
         protobuf_server.stop().await;
-        file::read_options(&path)
+
+        let toml_str = std::fs::read_to_string(CONFIG_FILE_NAMES[0])?;
+        file::get_options_from_toml(&toml_str)
     }
 
-    fn is_valid(&self) -> bool {
-        self.device_id.is_some()
-            && self.realm.is_some()
-            && self.pairing_url.is_some()
-            && (self.pairing_token.is_some() || self.credentials_secret.is_some())
+    pub fn is_valid(&self) -> bool {
+        let valid_secret = Some(true) == self.credentials_secret.clone().map(|e| !e.is_empty());
+        let valid_token = Some(true) == self.pairing_token.clone().map(|e| !e.is_empty());
+        let valid_interface_dir = self.interfaces_directory.is_none()
+            || (Some(true)
+                == self.interfaces_directory.clone().map(|e| {
+                    let id_path = Path::new(&e);
+                    id_path.exists() && id_path.is_dir()
+                }));
+
+        (!self.realm.is_empty())
+            && (!self.device_id.is_empty())
+            && (valid_secret || valid_token)
+            && valid_interface_dir
+            && (!self.pairing_url.is_empty())
+            && (self.grpc_socket_port <= 655356)
     }
 }
 
-/// Function that retrieves the base configurations, the minimal amount necessary to run the
-/// configuration module. The base configuration is retrieved from two standard known locations.
-fn read_options_from_base_locations() -> Result<MessageHubOptions, AstarteMessageHubError> {
-    let paths = ["message-hub-config.toml", "/etc/message-hub/config.toml"]
-        .iter()
-        .map(|f| f.to_string());
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    if let Some(path) = paths.into_iter().next() {
-        info!("Found configuration file {path}");
-        file::read_options(Path::new(&path))
-    } else {
-        Err(AstarteMessageHubError::FatalError(
-            "Configuration file not found".to_string(),
-        ))
+    #[test]
+    fn test_is_valid_cred_sec_ok() {
+        let expected_msg_hub_opts = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: Some("4".to_string()),
+            pairing_token: None,
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 5,
+        };
+        assert!(expected_msg_hub_opts.is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_pairing_token_ok() {
+        let expected_msg_hub_opts = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: Some("4".to_string()),
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 5,
+        };
+        assert!(expected_msg_hub_opts.is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_empty_realm_err() {
+        let expected_msg_hub_opts = MessageHubOptions {
+            realm: "".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: Some("4".to_string()),
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 5,
+        };
+        assert!(!expected_msg_hub_opts.is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_empty_device_id_err() {
+        let expected_msg_hub_opts = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: Some("4".to_string()),
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 5,
+        };
+        assert!(!expected_msg_hub_opts.is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_empty_pairing_url_err() {
+        let expected_msg_hub_opts = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "".to_string(),
+            credentials_secret: None,
+            pairing_token: Some("4".to_string()),
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 5,
+        };
+        assert!(!expected_msg_hub_opts.is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_empty_credentials_secred_err() {
+        let expected_msg_hub_opts = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: Some("".to_string()),
+            pairing_token: None,
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 5,
+        };
+        assert!(!expected_msg_hub_opts.is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_empty_pairing_token_err() {
+        let expected_msg_hub_opts = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: Some("".to_string()),
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 5,
+        };
+        assert!(!expected_msg_hub_opts.is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_invalid_grpc_socket_port_err() {
+        let expected_msg_hub_opts = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: Some("4".to_string()),
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 655357,
+        };
+        assert!(!expected_msg_hub_opts.is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_invalid_interf_dir_err() {
+        let expected_msg_hub_opts = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: Some("4".to_string()),
+            interfaces_directory: Some("".to_string()),
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 5,
+        };
+        assert!(!expected_msg_hub_opts.is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_missing_credentials_secret_and_pairing_token_err() {
+        let expected_msg_hub_opts = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: None,
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 655,
+        };
+        assert!(!expected_msg_hub_opts.is_valid());
     }
 }

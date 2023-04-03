@@ -35,6 +35,9 @@ pub enum AstarteMessageHubError {
     #[error(transparent)]
     AstarteError(#[from] astarte_device_sdk::AstarteError),
 
+    #[error(transparent)]
+    AstarteOptionsError(#[from] astarte_device_sdk::options::AstarteOptionsError),
+
     #[error("{0}")]
     AstarteInvalidData(String),
 

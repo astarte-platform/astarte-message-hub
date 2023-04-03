@@ -21,7 +21,6 @@
 use std::io::Write;
 use std::path::Path;
 
-use crate::config;
 use tokio::sync::mpsc::{channel, Sender};
 use tonic::transport::Server;
 use tonic::{Code, Request, Response, Status};
@@ -31,8 +30,8 @@ use crate::proto_message_hub;
 
 #[derive(Debug)]
 struct AstarteMessageHubConfig {
-    store_directory: String,
     configuration_ready_channel: Sender<()>,
+    toml_file: String,
 }
 
 pub struct ProtobufConfigProvider {
@@ -48,18 +47,24 @@ impl proto_message_hub::message_hub_config_server::MessageHubConfig for AstarteM
     ) -> Result<Response<pbjson_types::Empty>, Status> {
         let req = request.into_inner();
         let message_hub_options = MessageHubOptions {
-            realm: Some(req.realm),
-            device_id: Some(req.device_id),
+            realm: req.realm,
+            device_id: req.device_id,
             credentials_secret: req.credentials_secret,
-            pairing_url: Some(req.pairing_url),
+            pairing_url: req.pairing_url,
             pairing_token: req.pairing_token,
-            interfaces_directory: "".to_string(),
-            store_directory: "".to_string(),
-            astarte_ignore_ssl: None,
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: req.grpc_socket_port,
         };
 
-        let mut file =
-            std::fs::File::create(Path::new(&self.store_directory).join(config::CONFIG_FILE_NAME))?;
+        if !message_hub_options.is_valid() {
+            return Err(Status::new(
+                Code::InvalidArgument,
+                "Invalid configuration.".to_string(),
+            ));
+        }
+
+        let mut file = std::fs::File::create(Path::new(&self.toml_file))?;
 
         let result = toml::to_string(&message_hub_options);
         if let Err(e) = result {
@@ -80,15 +85,15 @@ impl ProtobufConfigProvider {
     /// configurations
     pub async fn new(
         address: &str,
-        store_directory: String,
         configuration_ready_channel: Sender<()>,
+        toml_file: &str,
     ) -> ProtobufConfigProvider {
         use crate::proto_message_hub::message_hub_config_server::MessageHubConfigServer;
 
         let addr = address.parse().unwrap();
         let service = AstarteMessageHubConfig {
-            store_directory,
             configuration_ready_channel,
+            toml_file: toml_file.to_string(),
         };
         let (tx, mut rx) = channel::<()>(1);
         tokio::spawn(async move {
@@ -111,21 +116,24 @@ impl ProtobufConfigProvider {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
+    use serial_test::serial;
     use tokio::sync::mpsc;
     use tonic::transport::Endpoint;
-    use tonic::Request;
 
-    use crate::config::protobuf::{AstarteMessageHubConfig, ProtobufConfigProvider};
-    use crate::proto_message_hub::message_hub_config_client::MessageHubConfigClient;
-    use crate::proto_message_hub::message_hub_config_server::MessageHubConfig;
-    use crate::proto_message_hub::ConfigMessage;
+    use crate::config::file::CONFIG_FILE_NAMES;
 
     #[tokio::test]
+    #[serial]
     async fn set_config_test() {
+        use crate::proto_message_hub::message_hub_config_server::MessageHubConfig;
+        use crate::proto_message_hub::ConfigMessage;
+
         let (tx, _) = mpsc::channel(1);
         let config_server = AstarteMessageHubConfig {
-            store_directory: "./".to_string(),
             configuration_ready_channel: tx,
+            toml_file: CONFIG_FILE_NAMES[0].to_string(),
         };
         let msg = ConfigMessage {
             realm: "rpc_realm".to_string(),
@@ -133,15 +141,43 @@ mod test {
             credentials_secret: None,
             pairing_url: "rpc_pairing_url".to_string(),
             pairing_token: Some("rpc_pairing_token".to_string()),
+            grpc_socket_port: 42,
         };
         let result = config_server.set_config(Request::new(msg)).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
+    #[serial]
+    async fn test_set_config_invalid_config() {
+        use crate::proto_message_hub::message_hub_config_server::MessageHubConfig;
+        use crate::proto_message_hub::ConfigMessage;
+
+        let (tx, _) = mpsc::channel(1);
+        let config_server = AstarteMessageHubConfig {
+            configuration_ready_channel: tx,
+            toml_file: CONFIG_FILE_NAMES[0].to_string(),
+        };
+        let msg = ConfigMessage {
+            realm: "".to_string(),
+            device_id: "rpc_device_id".to_string(),
+            credentials_secret: None,
+            pairing_url: "rpc_pairing_url".to_string(),
+            pairing_token: Some("rpc_pairing_token".to_string()),
+            grpc_socket_port: 42,
+        };
+        let result = config_server.set_config(Request::new(msg)).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn server_test() {
+        use crate::proto_message_hub::message_hub_config_client::MessageHubConfigClient;
+        use crate::proto_message_hub::ConfigMessage;
+
         let (tx, mut rx) = mpsc::channel(1);
-        let server = ProtobufConfigProvider::new("127.0.0.1:1400", "./".to_string(), tx).await;
+        let server = ProtobufConfigProvider::new("127.0.0.1:1400", tx, CONFIG_FILE_NAMES[0]).await;
         let channel = Endpoint::from_static("http://localhost:1400")
             .connect()
             .await
@@ -153,6 +189,7 @@ mod test {
             credentials_secret: None,
             pairing_url: "rpc_pairing_url".to_string(),
             pairing_token: Some("rpc_pairing_token".to_string()),
+            grpc_socket_port: 42,
         };
         let response = client.set_config(msg).await;
         assert!(response.is_ok());
