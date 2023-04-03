@@ -1,0 +1,14 @@
+{
+    "interface_name": "org.astarte-platform.rust.examples.datastream.ServerDatastream",
+    "version_major": 0,
+    "version_minor": 1,
+    "type": "datastream",
+    "ownership": "server",
+    "mappings": [
+        {
+            "endpoint": "/some_endpoint",
+            "type": "boolean",
+            "explicit_timestamp": true
+        }
+    ]
+}

@@ -47,7 +47,7 @@ flowchart LR
 ## GRPC MessageHub Service
 ### Node
 A node is an entity connected to Astarte Message Hub, it can receive/send messages from/to Astarte via the Message Hub.
-A node is uniquely identified by its Node UUID and has an Introspection that is a list of Json Interfaces used by it for exchanging data with Astarte. 
+A node is uniquely identified by its Node UUID and has an Introspection that is a list of Json Interfaces used by it for exchanging data with Astarte.
 
 ``` protobuf
 message Node {
@@ -74,11 +74,11 @@ sequenceDiagram
     participant Astarte
     Node1->>AstarteMessageHub: attach(node)
     AstarteMessageHub->>Astarte: sendIntrospection()
-    
+
     alt when the introspection process fails
          AstarteMessageHub->>Node1: Unable to attach the node
     end
-    
+
     Astarte->>AstarteMessageHub: Event data for node1
     AstarteMessageHub->>Node1: Event data
     Astarte->AstarteMessageHub: Event data for node1
@@ -179,7 +179,7 @@ sequenceDiagram
     participant Astarte
     Node1->>AstarteMessageHub: send(message)
     AstarteMessageHub->>Astarte: sendData()
-    
+
     alt when the send process fails
          AstarteMessageHub->>Node1: Unable to send message
     end
@@ -201,7 +201,7 @@ sequenceDiagram
     participant Astarte
     Node1->>AstarteMessageHub: detach(node)
     AstarteMessageHub->>Astarte: sendIntrospection()
-    
+
     alt when the introspection process fails
          AstarteMessageHub->>Node1: Unable to attach the node
     end
@@ -209,4 +209,4 @@ sequenceDiagram
 
 ## Requirements
 protobuf >= 3.15
-
+Rust version >= 1.59
