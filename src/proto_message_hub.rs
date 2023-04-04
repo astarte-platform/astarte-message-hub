@@ -15,12 +15,16 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//! Contains the generated code from the ProtoBuf definitions and the implementations of those
+//! types.
+
 #[allow(clippy::all)]
 use self::{astarte_data_type::Data, astarte_message::Payload};
 
 tonic::include_proto!("astarteplatform.msghub");
 
 impl Payload {
+    /// Takes the [Payload::AstarteData] variant value out of the enum.
     pub fn take_data(self) -> Option<AstarteDataType> {
         match self {
             Payload::AstarteData(data) => Some(data),
@@ -28,6 +32,7 @@ impl Payload {
         }
     }
 
+    /// Returns a reference to the [Payload::AstarteData] variant value.
     pub fn data(&self) -> Option<&AstarteDataType> {
         match self {
             Payload::AstarteData(ref data) => Some(data),
@@ -35,6 +40,7 @@ impl Payload {
         }
     }
 
+    /// Returns a mutable reference to the [Payload::AstarteData] variant value.
     pub fn data_mut(&mut self) -> Option<&mut AstarteDataType> {
         match self {
             Payload::AstarteData(ref mut data) => Some(data),
@@ -42,6 +48,7 @@ impl Payload {
         }
     }
 
+    /// Takes the [Payload::AstarteUnset] variant value out of the enum.
     pub fn take_unset(self) -> Option<AstarteUnset> {
         match self {
             Payload::AstarteUnset(unset) => Some(unset),
@@ -49,6 +56,7 @@ impl Payload {
         }
     }
 
+    /// Returns a reference to the [Payload::AstarteUnset] variant value.
     pub fn unset(&self) -> Option<&AstarteUnset> {
         match self {
             Payload::AstarteUnset(ref unset) => Some(unset),
@@ -56,6 +64,7 @@ impl Payload {
         }
     }
 
+    /// Returns a mutable reference to the [Payload::AstarteUnset] variant value.
     pub fn unset_mut(&mut self) -> Option<&mut AstarteUnset> {
         match self {
             Payload::AstarteUnset(ref mut unset) => Some(unset),
@@ -65,32 +74,39 @@ impl Payload {
 }
 
 impl AstarteMessage {
+    /// Takes the [Payload::AstarteData] variant value out of the [payload](AstarteMessage::payload) enum.
     pub fn take_data(self) -> Option<AstarteDataType> {
         self.payload.and_then(Payload::take_data)
     }
 
+    /// Returns a reference to the [Payload::AstarteData] variant value of the [payload](AstarteMessage::payload) enum.
     pub fn data(&self) -> Option<&AstarteDataType> {
         self.payload.as_ref().and_then(Payload::data)
     }
 
+    /// Returns a mutable reference to the [Payload::AstarteData] variant value of the [payload](AstarteMessage::payload) enum.
     pub fn data_mut(&mut self) -> Option<&mut AstarteDataType> {
         self.payload.as_mut().and_then(Payload::data_mut)
     }
 
+    /// Takes the [Payload::AstarteUnset] variant value out of the [payload](AstarteMessage::payload) enum.
     pub fn take_unset(self) -> Option<AstarteUnset> {
         self.payload.and_then(Payload::take_unset)
     }
 
+    /// Returns a reference to the [Payload::AstarteUnset] variant value of the [payload](AstarteMessage::payload) enum.
     pub fn unset(&self) -> Option<&AstarteUnset> {
         self.payload.as_ref().and_then(Payload::unset)
     }
 
+    /// Returns a mutable reference to the [Payload::AstarteUnset] variant value of the [payload](AstarteMessage::payload) enum.
     pub fn unset_mut(&mut self) -> Option<&mut AstarteUnset> {
         self.payload.as_mut().and_then(Payload::unset_mut)
     }
 }
 
 impl Data {
+    /// Takes the [Data::AstarteIndividual] variant value out of the enum.
     pub fn take_individual(self) -> Option<AstarteDataTypeIndividual> {
         match self {
             Data::AstarteIndividual(individual) => Some(individual),
@@ -98,6 +114,7 @@ impl Data {
         }
     }
 
+    /// Returns a reference to the [Data::AstarteIndividual] variant value.
     pub fn individual(&self) -> Option<&AstarteDataTypeIndividual> {
         match self {
             Data::AstarteIndividual(ref individual) => Some(individual),
@@ -105,6 +122,7 @@ impl Data {
         }
     }
 
+    /// Returns a mutable reference to the [Data::AstarteIndividual] variant value.
     pub fn individual_mut(&mut self) -> Option<&mut AstarteDataTypeIndividual> {
         match self {
             Data::AstarteIndividual(ref mut individual) => Some(individual),
@@ -112,6 +130,7 @@ impl Data {
         }
     }
 
+    /// Takes the [Data::AstarteObject] variant value out of the enum.
     pub fn take_object(self) -> Option<AstarteDataTypeObject> {
         match self {
             Data::AstarteObject(object) => Some(object),
@@ -119,6 +138,7 @@ impl Data {
         }
     }
 
+    /// Returns a reference to the [Data::AstarteObject] variant value.
     pub fn object(&self) -> Option<&AstarteDataTypeObject> {
         match self {
             Data::AstarteObject(ref object) => Some(object),
@@ -126,6 +146,7 @@ impl Data {
         }
     }
 
+    /// Returns a mutable reference to the [Data::AstarteObject] variant value.
     pub fn object_mut(&mut self) -> Option<&mut AstarteDataTypeObject> {
         match self {
             Data::AstarteObject(ref mut object) => Some(object),
@@ -135,26 +156,32 @@ impl Data {
 }
 
 impl AstarteDataType {
+    /// Takes the [Data::AstarteIndividual] variant value out of the [data](AstarteDataType::data) enum.
     pub fn take_individual(self) -> Option<AstarteDataTypeIndividual> {
         self.data.and_then(Data::take_individual)
     }
 
+    /// Returns a reference to the [Data::AstarteIndividual] variant value of the [data](AstarteDataType::data) enum.
     pub fn individual(&self) -> Option<&AstarteDataTypeIndividual> {
         self.data.as_ref().and_then(Data::individual)
     }
 
+    /// Returns a mutable reference to the [Data::AstarteIndividual] variant value of the [data](AstarteDataType::data) enum.
     pub fn individual_mut(&mut self) -> Option<&mut AstarteDataTypeIndividual> {
         self.data.as_mut().and_then(Data::individual_mut)
     }
 
+    /// Takes the [Data::AstarteObject] variant value out of the [data](AstarteDataType::data) enum.
     pub fn take_object(self) -> Option<AstarteDataTypeObject> {
         self.data.and_then(Data::take_object)
     }
 
+    /// Returns a reference to the [Data::AstarteObject] variant value of the [data](AstarteDataType::data) enum.
     pub fn object(&self) -> Option<&AstarteDataTypeObject> {
         self.data.as_ref().and_then(Data::object)
     }
 
+    /// Returns a mutable reference to the [Data::AstarteObject] variant value of the [data](AstarteDataType::data) enum.
     pub fn object_mut(&mut self) -> Option<&mut AstarteDataTypeObject> {
         self.data.as_mut().and_then(Data::object_mut)
     }
