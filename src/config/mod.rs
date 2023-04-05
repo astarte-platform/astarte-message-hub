@@ -19,7 +19,9 @@
  */
 
 use std::path::Path;
+use std::{fs, io};
 
+use log::debug;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::channel;
 
@@ -32,6 +34,8 @@ pub mod http;
 pub mod protobuf;
 
 use file::CONFIG_FILE_NAMES;
+
+const CREDENTIAL_FILE: &str = "credentials_secret";
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct MessageHubOptions {
@@ -107,6 +111,61 @@ impl MessageHubOptions {
             && (valid_secret || valid_token)
             && valid_interface_dir
             && (!self.pairing_url.is_empty())
+    }
+
+    /// Obtains the credential secret from the stored path or by registering the device.
+    pub async fn obtain_credential_secret(
+        &self,
+        cred_store: &Path,
+    ) -> Result<String, AstarteMessageHubError> {
+        if let Some(cred_sec) = self.credentials_secret.as_ref() {
+            return Ok(cred_sec.to_string());
+        }
+
+        let path = cred_store.join(CREDENTIAL_FILE);
+
+        match fs::read_to_string(&path) {
+            Ok(c) => {
+                debug!("using stored credentials from {:?}", path);
+
+                return Ok(c);
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                debug!("credentials not found, registering device");
+            }
+            Err(err) => {
+                return Err(AstarteMessageHubError::FatalError(format!(
+                    "failed to read {}: {}",
+                    path.to_string_lossy(),
+                    err
+                )))
+            }
+        }
+
+        let pairing_token = self.pairing_token.as_ref().ok_or_else(|| {
+            AstarteMessageHubError::FatalError("missing pairing token not found".to_string())
+        })?;
+
+        let creds = astarte_device_sdk::registration::register_device(
+            pairing_token,
+            &self.pairing_url,
+            &self.realm,
+            &self.device_id,
+        )
+        .await
+        .map_err(|err| AstarteMessageHubError::FatalError(err.to_string()))?;
+
+        debug!("device registered, storing credentials to {:?}", path);
+
+        fs::write(&path, &creds).map_err(|err| {
+            AstarteMessageHubError::FatalError(format!(
+                "failed to write credentials to {}: {}",
+                path.to_string_lossy(),
+                err
+            ))
+        })?;
+
+        Ok(creds)
     }
 }
 

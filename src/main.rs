@@ -1,4 +1,5 @@
 use std::net::Ipv6Addr;
+use std::path::Path;
 
 /*
  * This file is part of Astarte.
@@ -23,7 +24,6 @@ use clap::Parser;
 use log::info;
 
 use astarte_device_sdk::options::AstarteOptions;
-use astarte_device_sdk::registration;
 use astarte_device_sdk::AstarteDeviceSdk;
 
 use astarte_message_hub::config::MessageHubOptions;
@@ -75,19 +75,14 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
 ) -> Result<AstarteDeviceSdk, AstarteMessageHubError> {
-    // If no credential secret is present, register a new device using the Astarte device SDK
-    if msg_hub_opts.credentials_secret.is_none() {
-        msg_hub_opts.credentials_secret = Some(
-            registration::register_device(
-                msg_hub_opts.pairing_token.as_ref().unwrap(),
-                &msg_hub_opts.pairing_url,
-                &msg_hub_opts.realm,
-                &msg_hub_opts.device_id,
-            )
-            .await
-            .map_err(|err| AstarteMessageHubError::FatalError(err.to_string()))?,
-        );
-    }
+    // Obtain the credentials secret
+    // TODO: this should be passed in the configuration or as a param
+    let credentail_store = Path::new("./");
+    let cred_secret = msg_hub_opts
+        .obtain_credential_secret(credentail_store)
+        .await?;
+    msg_hub_opts.credentials_secret = Some(cred_secret);
+
     // Create the configuration options for the device and then instantiate a new device
     let mut device_sdk_opts = AstarteOptions::new(
         &msg_hub_opts.realm,
@@ -95,11 +90,16 @@ async fn initialize_astarte_device_sdk(
         msg_hub_opts.credentials_secret.as_ref().unwrap(),
         &msg_hub_opts.pairing_url,
     );
+
     if msg_hub_opts.astarte_ignore_ssl {
         device_sdk_opts = device_sdk_opts.ignore_ssl_errors();
     }
+
     if let Some(int_dir) = &msg_hub_opts.interfaces_directory {
         device_sdk_opts = device_sdk_opts.interface_directory(int_dir)?;
     }
-    Ok(AstarteDeviceSdk::new(&device_sdk_opts).await?)
+
+    let sdk = AstarteDeviceSdk::new(&device_sdk_opts).await?;
+
+    Ok(sdk)
 }
