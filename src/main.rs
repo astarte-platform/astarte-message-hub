@@ -1,5 +1,5 @@
 use std::net::Ipv6Addr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /*
  * This file is part of Astarte.
@@ -42,7 +42,7 @@ struct Cli {
     toml: Option<String>,
     /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
     #[clap(short, long, conflicts_with = "toml")]
-    store_directory: Option<String>,
+    store_directory: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -50,10 +50,12 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     env_logger::init();
     let args = Cli::parse();
 
-    let mut msg_hub_opts = MessageHubOptions::get(args.toml, args.store_directory).await?;
+    let store_directory = args.store_directory.as_deref();
+
+    let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
 
     // Initailize an Astarte device
-    let device_sdk = initialize_astarte_device_sdk(&mut msg_hub_opts).await?;
+    let device_sdk = initialize_astarte_device_sdk(&mut options, store_directory).await?;
     info!("Connection to Astarte established.");
 
     // Create a new Astarte handler
@@ -63,7 +65,7 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     let message_hub = AstarteMessageHub::new(handler.clone());
 
     // Run the protobuf server
-    let addrs = (Ipv6Addr::LOCALHOST, msg_hub_opts.grpc_socket_port).into();
+    let addrs = (Ipv6Addr::LOCALHOST, options.grpc_socket_port).into();
     tonic::transport::Server::builder()
         .add_service(MessageHubServer::new(message_hub))
         .serve(addrs)
@@ -74,10 +76,10 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
+    store_directory: Option<&Path>,
 ) -> Result<AstarteDeviceSdk, AstarteMessageHubError> {
-    // Obtain the credentials secret
-    // TODO: this should be passed in the configuration or as a param
-    let credentail_store = Path::new("./");
+    // Obtain the credentials secret, the store defaults to the current directory
+    let credentail_store = store_directory.unwrap_or_else(|| Path::new("."));
     let cred_secret = msg_hub_opts
         .obtain_credential_secret(credentail_store)
         .await?;

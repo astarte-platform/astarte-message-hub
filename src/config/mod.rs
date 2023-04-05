@@ -57,13 +57,12 @@ impl MessageHubOptions {
     /// configuration.
     pub async fn get(
         toml_file: Option<String>,
-        http_grpc_dir: Option<String>,
+        http_grpc_dir: Option<&Path>,
     ) -> Result<MessageHubOptions, AstarteMessageHubError> {
         if let Some(toml_file) = toml_file {
             let toml_str = std::fs::read_to_string(toml_file)?;
             file::get_options_from_toml(&toml_str)
         } else if let Some(http_grpc_dir) = http_grpc_dir {
-            let http_grpc_dir = Path::new(&http_grpc_dir);
             if !http_grpc_dir.is_dir() {
                 let err_msg = "Provided store directory for HTTP and ProtoBuf does not exists.";
                 return Err(AstarteMessageHubError::FatalError(err_msg.to_string()));
