@@ -142,18 +142,7 @@ impl MessageHubOptions {
             }
         }
 
-        let pairing_token = self.pairing_token.as_ref().ok_or_else(|| {
-            AstarteMessageHubError::FatalError("missing pairing token not found".to_string())
-        })?;
-
-        let creds = astarte_device_sdk::registration::register_device(
-            pairing_token,
-            &self.pairing_url,
-            &self.realm,
-            &self.device_id,
-        )
-        .await
-        .map_err(|err| AstarteMessageHubError::FatalError(err.to_string()))?;
+        let creds = self.register_device().await?;
 
         debug!("device registered, storing credentials to {:?}", path);
 
@@ -166,6 +155,33 @@ impl MessageHubOptions {
         })?;
 
         Ok(creds)
+    }
+
+    /// Registers the device to the Astarte instance.
+    #[cfg(not(test))]
+    async fn register_device(&self) -> Result<String, AstarteMessageHubError> {
+        let pairing_token = self.pairing_token.as_ref().ok_or_else(|| {
+            AstarteMessageHubError::FatalError("missing pairing token".to_string())
+        })?;
+
+        astarte_device_sdk::registration::register_device(
+            pairing_token,
+            &self.pairing_url,
+            &self.realm,
+            &self.device_id,
+        )
+        .await
+        .map_err(|err| AstarteMessageHubError::FatalError(err.to_string()))
+    }
+
+    /// Registers the device to the Astarte instance.
+    #[cfg(test)]
+    async fn register_device(&self) -> Result<String, AstarteMessageHubError> {
+        let _pairing_token = self.pairing_token.as_ref().ok_or_else(|| {
+            AstarteMessageHubError::FatalError("missing pairing token".to_string())
+        })?;
+
+        Ok(String::default())
     }
 }
 
@@ -306,5 +322,63 @@ mod test {
             grpc_socket_port: 655,
         };
         assert!(!expected_msg_hub_opts.is_valid());
+    }
+
+    #[tokio::test]
+    async fn obtain_stored_credential() {
+        let expected = "32".to_string();
+
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+
+        let opt = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: None,
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 655,
+        };
+
+        let secret = opt.obtain_credential_secret(dir.path()).await;
+
+        assert!(
+            secret.is_ok(),
+            "error obtaining stored credential {:?}",
+            secret
+        );
+        assert_eq!(secret.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn obtain_credential_secret_register_device() {
+        let dir = tempfile::TempDir::new().unwrap();
+
+        let opt = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: Some("42".to_string()),
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 655,
+        };
+
+        let secret = opt.obtain_credential_secret(dir.path()).await;
+
+        assert!(
+            secret.is_ok(),
+            "error obtaining stored credential {:?}",
+            secret
+        );
+
+        let secret = secret.unwrap();
+
+        let res = fs::read_to_string(dir.path().join(CREDENTIAL_FILE)).unwrap();
+
+        assert_eq!(secret, res);
     }
 }
