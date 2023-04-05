@@ -26,9 +26,5 @@ mod astarte_message_hub;
 pub mod config;
 mod data;
 pub mod error;
+pub mod proto_message_hub;
 mod types;
-
-#[allow(clippy::all)]
-pub mod proto_message_hub {
-    tonic::include_proto!("astarteplatform.msghub");
-}

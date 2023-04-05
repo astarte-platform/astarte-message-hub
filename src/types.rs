@@ -305,8 +305,8 @@ impl TryFrom<HashMap<String, AstarteType>> for proto_message_hub::astarte_messag
 mod test {
     use crate::error::AstarteMessageHubError;
     use crate::proto_message_hub;
-    use crate::proto_message_hub::astarte_data_type::Data::{AstarteIndividual, AstarteObject};
     use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
+    use crate::proto_message_hub::astarte_message::Payload;
     use crate::proto_message_hub::AstarteDataType;
     use crate::proto_message_hub::AstarteDataTypeIndividual;
     use crate::proto_message_hub::AstarteMessage;
@@ -321,13 +321,12 @@ mod test {
         let d_astarte_individual_type: AstarteDataTypeIndividual =
             AstarteDataTypeIndividual::from(expected_double_value);
 
-        if let IndividualData::AstarteDouble(double_value) =
-            d_astarte_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_double_value, double_value);
-        } else {
-            panic!();
-        }
+        let double_value = d_astarte_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDouble(expected_double_value),
+            double_value
+        );
     }
 
     #[test]
@@ -336,13 +335,12 @@ mod test {
         let d_astarte_individual_type: AstarteDataTypeIndividual =
             AstarteDataTypeIndividual::from(&expected_double_value);
 
-        if let IndividualData::AstarteDouble(double_value) =
-            d_astarte_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_double_value, double_value);
-        } else {
-            panic!();
-        }
+        let double_value = d_astarte_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDouble(expected_double_value),
+            double_value
+        );
     }
 
     #[test]
@@ -350,13 +348,12 @@ mod test {
         let expected_double_value: f64 = 15.5;
         let d_astarte_individual_type: AstarteDataTypeIndividual = expected_double_value.into();
 
-        if let IndividualData::AstarteDouble(double_value) =
-            d_astarte_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_double_value, double_value);
-        } else {
-            panic!();
-        }
+        let double_value = d_astarte_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDouble(expected_double_value),
+            double_value
+        );
     }
 
     #[test]
@@ -364,13 +361,12 @@ mod test {
         let expected_integer_value: i32 = 15;
         let i32_individual_data_type: AstarteDataTypeIndividual = expected_integer_value.into();
 
-        if let IndividualData::AstarteInteger(i32_value) =
-            i32_individual_data_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_integer_value, i32_value);
-        } else {
-            panic!();
-        }
+        let i32_value = i32_individual_data_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteInteger(expected_integer_value),
+            i32_value
+        );
     }
 
     #[test]
@@ -378,13 +374,12 @@ mod test {
         let expected_bool_value: bool = true;
         let bool_individual_data_type: AstarteDataTypeIndividual = expected_bool_value.into();
 
-        if let IndividualData::AstarteBoolean(bool_value) =
-            bool_individual_data_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_bool_value, bool_value);
-        } else {
-            panic!();
-        }
+        let bool_value = bool_individual_data_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBoolean(expected_bool_value),
+            bool_value
+        );
     }
 
     #[test]
@@ -393,13 +388,12 @@ mod test {
         let vec_u8_astarte_individual_type: AstarteDataTypeIndividual =
             expected_vec_u8_value.clone().into();
 
-        if let IndividualData::AstarteBinaryBlob(vec_u8_values) =
-            vec_u8_astarte_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_vec_u8_value, vec_u8_values);
-        } else {
-            panic!();
-        }
+        let vec_u8_values = vec_u8_astarte_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBinaryBlob(expected_vec_u8_value),
+            vec_u8_values
+        );
     }
 
     #[test]
@@ -408,13 +402,14 @@ mod test {
         let vec_double_individual_type: AstarteDataTypeIndividual =
             expected_vec_double_value.clone().into();
 
-        if let IndividualData::AstarteDoubleArray(vec_double_values) =
-            vec_double_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_vec_double_value, vec_double_values.values);
-        } else {
-            panic!();
-        }
+        let vec_double_values = vec_double_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDoubleArray(proto_message_hub::AstarteDoubleArray {
+                values: expected_vec_double_value
+            }),
+            vec_double_values
+        );
     }
 
     #[test]
@@ -423,13 +418,14 @@ mod test {
         let vec_string_individual_type: AstarteDataTypeIndividual =
             expected_vec_string_value.clone().into();
 
-        if let IndividualData::AstarteStringArray(vec_string_values) =
-            vec_string_individual_type.individual_data.unwrap()
-        {
-            assert_eq!(expected_vec_string_value, vec_string_values.values);
-        } else {
-            panic!();
-        }
+        let vec_string_values = vec_string_individual_type.individual_data.unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteStringArray(proto_message_hub::AstarteStringArray {
+                values: expected_vec_string_value
+            }),
+            vec_string_values
+        );
     }
 
     #[test]
@@ -437,15 +433,15 @@ mod test {
         let expected_double_value: f64 = 15.5;
         let d_astarte_data_type: AstarteDataType = expected_double_value.into();
 
-        if let AstarteIndividual(data) = d_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteDouble(double_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_double_value, double_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!()
-        }
+        let double_value = d_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDouble(expected_double_value),
+            double_value
+        );
     }
 
     #[test]
@@ -453,15 +449,15 @@ mod test {
         let expected_integer_value: i32 = 15;
         let i32_astarte_data_type: AstarteDataType = expected_integer_value.into();
 
-        if let AstarteIndividual(data) = i32_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteInteger(i32_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_integer_value, i32_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let i32_value = i32_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteInteger(expected_integer_value),
+            i32_value
+        );
     }
 
     #[test]
@@ -469,15 +465,15 @@ mod test {
         let expected_bool_value: bool = true;
         let bool_astarte_data_type: AstarteDataType = expected_bool_value.into();
 
-        if let AstarteIndividual(data) = bool_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteBoolean(bool_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_bool_value, bool_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let bool_value = bool_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBoolean(expected_bool_value),
+            bool_value
+        );
     }
 
     #[test]
@@ -485,15 +481,15 @@ mod test {
         let expected_longinteger_value: i64 = 15;
         let i64_astarte_data_type: AstarteDataType = expected_longinteger_value.into();
 
-        if let AstarteIndividual(data) = i64_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteLongInteger(i64_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_longinteger_value, i64_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let i64_value = i64_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteLongInteger(expected_longinteger_value),
+            i64_value
+        );
     }
 
     #[test]
@@ -501,31 +497,31 @@ mod test {
         let expected_string_value: String = "15".to_owned();
         let string_astarte_data_type: AstarteDataType = expected_string_value.clone().into();
 
-        if let AstarteIndividual(data) = string_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteString(string_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_string_value, string_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let string_value = string_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteString(expected_string_value),
+            string_value
+        );
     }
 
     #[test]
     fn strings_slice_into_astarte_data_type_success() {
-        let expected_string_value: &str = "15";
-        let string_astarte_data_type: AstarteDataType = expected_string_value.into();
+        let expected_string_value = "15".to_string();
+        let string_astarte_data_type: AstarteDataType = expected_string_value.as_str().into();
 
-        if let AstarteIndividual(data) = string_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteString(string_value) = data.individual_data.unwrap() {
-                assert_eq!(expected_string_value, string_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let string_value = string_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteString(expected_string_value),
+            string_value
+        );
     }
 
     #[test]
@@ -533,16 +529,15 @@ mod test {
         let expected_vec_u8_value: Vec<u8> = vec![10, 44];
         let vec_u8_astarte_data_type: AstarteDataType = expected_vec_u8_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_u8_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteBinaryBlob(vec_u8_values) = data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_u8_value, vec_u8_values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_u8_values = vec_u8_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBinaryBlob(expected_vec_u8_value),
+            vec_u8_values
+        );
     }
 
     #[test]
@@ -553,16 +548,16 @@ mod test {
 
         let datetime_astarte_data_type: AstarteDataType = expected_datetime_value.into();
 
-        if let AstarteIndividual(data) = datetime_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteDateTime(date_time_value) = data.individual_data.unwrap()
-            {
-                let resul_date_time: DateTime<Utc> = date_time_value.try_into().unwrap();
-                assert_eq!(expected_datetime_value, resul_date_time);
-            } else {
-                panic!();
-            }
+        let data = datetime_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        if let IndividualData::AstarteDateTime(date_time_value) = data {
+            let resul_date_time: DateTime<Utc> = date_time_value.try_into().unwrap();
+            assert_eq!(expected_datetime_value, resul_date_time);
         } else {
-            panic!()
+            panic!();
         }
     }
 
@@ -572,17 +567,17 @@ mod test {
         let vec_double_astarte_data_type: AstarteDataType =
             expected_vec_double_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_double_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteDoubleArray(vec_double_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_double_value, vec_double_values.values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_double_values = vec_double_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDoubleArray(proto_message_hub::AstarteDoubleArray {
+                values: expected_vec_double_value
+            }),
+            vec_double_values
+        );
     }
 
     #[test]
@@ -590,17 +585,17 @@ mod test {
         let expected_vec_i32_value: Vec<i32> = vec![10, 44];
         let vec_i32_astarte_data_type: AstarteDataType = expected_vec_i32_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_i32_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteIntegerArray(vec_i32_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_i32_value, vec_i32_values.values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_i32_values = vec_i32_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteIntegerArray(proto_message_hub::AstarteIntegerArray {
+                values: expected_vec_i32_value
+            }),
+            vec_i32_values
+        );
     }
 
     #[test]
@@ -608,17 +603,17 @@ mod test {
         let expected_vec_i64_value: Vec<i64> = vec![10, 44];
         let vec_i64_astarte_data_type: AstarteDataType = expected_vec_i64_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_i64_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteLongIntegerArray(vec_i64_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_i64_value, vec_i64_values.values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_i64_values = vec_i64_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteLongIntegerArray(proto_message_hub::AstarteLongIntegerArray {
+                values: expected_vec_i64_value
+            }),
+            vec_i64_values
+        );
     }
 
     #[test]
@@ -626,17 +621,17 @@ mod test {
         let expected_vec_bool_value: Vec<bool> = vec![false, true];
         let vec_bool_astarte_data_type: AstarteDataType = expected_vec_bool_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_bool_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteBooleanArray(vec_bool_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_bool_value, vec_bool_values.values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_bool_values = vec_bool_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBooleanArray(proto_message_hub::AstarteBooleanArray {
+                values: expected_vec_bool_value
+            }),
+            vec_bool_values
+        );
     }
 
     #[test]
@@ -645,17 +640,17 @@ mod test {
         let vec_string_astarte_data_type: AstarteDataType =
             expected_vec_string_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_string_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteStringArray(vec_string_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(expected_vec_string_value, vec_string_values.values);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_string_values = vec_string_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteStringArray(proto_message_hub::AstarteStringArray {
+                values: expected_vec_string_value
+            }),
+            vec_string_values
+        );
     }
 
     #[test]
@@ -664,20 +659,17 @@ mod test {
         let vec_binary_blob_astarte_data_type: AstarteDataType =
             expected_vec_binary_blob_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_binary_blob_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteBinaryBlobArray(vec_binary_blob_values) =
-                data.individual_data.unwrap()
-            {
-                assert_eq!(
-                    expected_vec_binary_blob_value,
-                    vec_binary_blob_values.values
-                );
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let vec_binary_blob_values = vec_binary_blob_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteBinaryBlobArray(proto_message_hub::AstarteBinaryBlobArray {
+                values: expected_vec_binary_blob_value
+            }),
+            vec_binary_blob_values
+        );
     }
 
     #[test]
@@ -717,23 +709,22 @@ mod test {
         let vec_datetime_astarte_data_type: AstarteDataType =
             expected_vec_datetime_value.clone().into();
 
-        if let AstarteIndividual(data) = vec_datetime_astarte_data_type.data.unwrap() {
-            if let IndividualData::AstarteDateTimeArray(vec_datetime_value) =
-                data.individual_data.unwrap()
-            {
-                for i in 0..expected_vec_datetime_value.len() {
-                    let date_time: DateTime<Utc> = vec_datetime_value
-                        .values
-                        .get(i)
-                        .unwrap()
-                        .clone()
-                        .try_into()
-                        .unwrap();
+        let data = vec_datetime_astarte_data_type
+            .take_individual()
+            .and_then(|data| data.individual_data)
+            .unwrap();
 
-                    assert_eq!(expected_vec_datetime_value.get(i).unwrap(), &date_time);
-                }
-            } else {
-                panic!();
+        if let IndividualData::AstarteDateTimeArray(vec_datetime_value) = data {
+            for i in 0..expected_vec_datetime_value.len() {
+                let date_time: DateTime<Utc> = vec_datetime_value
+                    .values
+                    .get(i)
+                    .unwrap()
+                    .clone()
+                    .try_into()
+                    .unwrap();
+
+                assert_eq!(expected_vec_datetime_value.get(i).unwrap(), &date_time);
             }
         } else {
             panic!();
@@ -742,7 +733,6 @@ mod test {
 
     #[test]
     fn map_into_astarte_data_type_success() {
-        use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
         use crate::proto_message_hub::AstarteDataTypeIndividual;
 
         let expected_i32 = 5;
@@ -753,34 +743,23 @@ mod test {
 
         let astarte_data_object: AstarteDataType = map_val.into();
 
-        if let AstarteObject(data) = astarte_data_object.data.unwrap() {
-            if let IndividualData::AstarteInteger(i32_value) = data
-                .object_data
-                .get("i32")
-                .unwrap()
-                .clone()
-                .individual_data
-                .unwrap()
-            {
-                assert_eq!(expected_i32, i32_value);
-            } else {
-                panic!();
-            }
-            if let IndividualData::AstarteDouble(f64_value) = data
-                .object_data
-                .get("f64")
-                .unwrap()
-                .clone()
-                .individual_data
-                .unwrap()
-            {
-                assert_eq!(expected_f64, f64_value);
-            } else {
-                panic!();
-            }
-        } else {
-            panic!();
-        }
+        let data = astarte_data_object.object().unwrap();
+
+        let i32_value = data
+            .object_data
+            .get("i32")
+            .and_then(|data| data.individual_data.clone())
+            .unwrap();
+
+        assert_eq!(IndividualData::AstarteInteger(expected_i32), i32_value);
+
+        let f64_value = data
+            .object_data
+            .get("f64")
+            .and_then(|data| data.individual_data.clone())
+            .unwrap();
+
+        assert_eq!(IndividualData::AstarteDouble(expected_f64), f64_value);
     }
 
     #[test]
@@ -822,23 +801,14 @@ mod test {
     }
 
     fn get_individual_data_from_payload(
-        payload: proto_message_hub::astarte_message::Payload,
-    ) -> AstarteType {
-        use crate::proto_message_hub::astarte_message::Payload;
-
-        if let Payload::AstarteData(astarte_data) = payload {
-            if let AstarteIndividual(astarte_individual_data) = astarte_data.data.unwrap() {
-                astarte_individual_data
-                    .individual_data
-                    .unwrap()
-                    .try_into()
-                    .unwrap()
-            } else {
-                panic!()
-            }
-        } else {
-            panic!()
-        }
+        payload: Payload,
+    ) -> Result<AstarteType, AstarteMessageHubError> {
+        payload
+            .take_data()
+            .and_then(AstarteDataType::take_individual)
+            .and_then(|data| data.individual_data)
+            .ok_or(AstarteMessageHubError::ConversionError)?
+            .try_into()
     }
 
     #[test]
@@ -857,7 +827,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -877,7 +850,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -896,8 +872,10 @@ mod test {
             astarte_device_data_event.interface,
             astarte_message.interface_name
         );
-        assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -917,7 +895,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -937,7 +918,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -957,7 +941,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -977,7 +964,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -997,7 +987,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -1017,7 +1010,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -1037,7 +1033,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -1057,7 +1056,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -1078,7 +1080,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -1098,7 +1103,10 @@ mod test {
             astarte_message.interface_name
         );
         assert_eq!(astarte_device_data_event.path, astarte_message.path);
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
@@ -1117,15 +1125,15 @@ mod test {
             astarte_device_data_event.interface,
             astarte_message.interface_name
         );
-        let astarte_type = get_individual_data_from_payload(astarte_message.payload.unwrap());
+
+        let payload = astarte_message.payload.unwrap();
+        let astarte_type = get_individual_data_from_payload(payload).unwrap();
+
         assert_eq!(expected_data, astarte_type);
     }
 
     #[test]
     fn convert_astarte_device_data_event_object_to_astarte_message() {
-        use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
-        use crate::proto_message_hub::astarte_message::Payload;
-
         let expected_map = HashMap::from([
             ("Mercury".to_owned(), AstarteType::Double(0.4)),
             ("Venus".to_owned(), AstarteType::Double(0.7)),
@@ -1145,33 +1153,25 @@ mod test {
             astarte_message.interface_name
         );
 
-        if let Payload::AstarteData(astarte_data) = astarte_message.payload.unwrap() {
-            if let AstarteObject(astarte_object) = astarte_data.data.unwrap() {
-                let object_data = astarte_object.object_data;
-                for (k, v) in expected_map.into_iter() {
-                    let astarte_type: AstarteType = object_data
-                        .get(&k)
-                        .unwrap()
-                        .individual_data
-                        .clone()
-                        .unwrap()
-                        .try_into()
-                        .unwrap();
-                    assert_eq!(v, astarte_type);
-                }
-            } else {
-                panic!()
-            }
-        } else {
-            panic!()
+        let astarte_object = astarte_message
+            .take_data()
+            .and_then(|data| data.take_object())
+            .unwrap();
+
+        let object_data = astarte_object.object_data;
+        for (k, v) in expected_map.into_iter() {
+            let astarte_type: AstarteType = object_data
+                .get(&k)
+                .and_then(|data| data.individual_data.as_ref())
+                .and_then(|data| data.clone().try_into().ok())
+                .unwrap();
+
+            assert_eq!(v, astarte_type);
         }
     }
 
     #[test]
     fn convert_astarte_device_data_event_object2_to_astarte_message() {
-        use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
-        use crate::proto_message_hub::astarte_message::Payload;
-
         let expected_map = HashMap::from([
             ("M".to_owned(), AstarteType::Double(0.4)),
             (
@@ -1194,52 +1194,40 @@ mod test {
             astarte_message.interface_name
         );
 
-        if let Payload::AstarteData(astarte_data) = astarte_message.payload.unwrap() {
-            if let AstarteObject(astarte_object) = astarte_data.data.unwrap() {
-                let object_data = astarte_object.object_data;
-                for (k, v) in expected_map.into_iter() {
-                    let astarte_type: AstarteType = object_data
-                        .get(&k)
-                        .unwrap()
-                        .individual_data
-                        .clone()
-                        .unwrap()
-                        .try_into()
-                        .unwrap();
-                    assert_eq!(v, astarte_type);
-                }
-            } else {
-                panic!()
-            }
-        } else {
-            panic!()
+        let object_data = astarte_message
+            .take_data()
+            .and_then(|data| data.take_object())
+            .unwrap()
+            .object_data;
+
+        for (k, v) in expected_map.into_iter() {
+            let astarte_type: AstarteType = object_data
+                .get(&k)
+                .and_then(|data| data.individual_data.as_ref())
+                .and_then(|data| data.clone().try_into().ok())
+                .unwrap();
+
+            assert_eq!(v, astarte_type);
         }
     }
 
     #[test]
     fn from_sdk_astarte_type_to_astarte_message_payload_success() {
-        use crate::proto_message_hub::astarte_message::Payload;
-
         let expected_double_value: f64 = 15.5;
         let astarte_sdk_type_double = AstarteType::Double(expected_double_value);
 
         let payload: Payload = astarte_sdk_type_double.try_into().unwrap();
 
-        if let Payload::AstarteData(astarte_data) = payload {
-            if let AstarteIndividual(astarte_individual_type) = astarte_data.data.unwrap() {
-                if let IndividualData::AstarteDouble(double_value) =
-                    astarte_individual_type.individual_data.unwrap()
-                {
-                    assert_eq!(expected_double_value, double_value);
-                } else {
-                    panic!();
-                }
-            } else {
-                panic!()
-            }
-        } else {
-            panic!()
-        }
+        let double_value = payload
+            .take_data()
+            .and_then(AstarteDataType::take_individual)
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(
+            IndividualData::AstarteDouble(expected_double_value),
+            double_value
+        );
     }
 
     #[test]
@@ -1256,25 +1244,15 @@ mod test {
         let payload_result: Result<Payload, AstarteMessageHubError> = astarte_type_map.try_into();
         assert!(payload_result.is_ok());
 
-        if let Payload::AstarteData(astarte_data) = payload_result.unwrap() {
-            if let AstarteObject(astarte_object) = astarte_data.data.unwrap() {
-                if let IndividualData::AstarteDouble(double_data) = astarte_object
-                    .object_data
-                    .get("key1")
-                    .unwrap()
-                    .individual_data
-                    .clone()
-                    .unwrap()
-                {
-                    assert_eq!(expected_data, double_data);
-                } else {
-                    panic!();
-                }
-            } else {
-                panic!()
-            }
-        } else {
-            panic!()
-        }
+        let double_data = payload_result
+            .ok()
+            .as_mut()
+            .and_then(Payload::data_mut)
+            .and_then(AstarteDataType::object_mut)
+            .and_then(|data| data.object_data.remove("key1"))
+            .and_then(|data| data.individual_data)
+            .unwrap();
+
+        assert_eq!(IndividualData::AstarteDouble(expected_data), double_data);
     }
 }
