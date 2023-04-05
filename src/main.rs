@@ -17,6 +17,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+use clap::Parser;
+
 use astarte_device_sdk::options::AstarteOptions;
 use astarte_device_sdk::registration;
 use astarte_device_sdk::AstarteDeviceSdk;
@@ -24,11 +26,25 @@ use astarte_device_sdk::AstarteDeviceSdk;
 use astarte_message_hub::config::MessageHubOptions;
 use astarte_message_hub::error::AstarteMessageHubError;
 
+/// A central service that runs on (Linux) devices for collecting and delivering messages from N
+/// apps using 1 MQTT connection to Astarte.
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Cli {
+    /// Path to a valid .toml file containing the message hub configuration.
+    #[clap(short, long, conflicts_with = "store-directory")]
+    toml: Option<String>,
+    /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
+    #[clap(short, long, conflicts_with = "toml")]
+    store_directory: Option<String>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), AstarteMessageHubError> {
     env_logger::init();
+    let args = Cli::parse();
 
-    let options = MessageHubOptions::get().await?;
+    let options = MessageHubOptions::get(args.toml, args.store_directory).await?;
     let _astarte_sdk = initialize_astarte_device_sdk(options).await?;
 
     //TODO add MessageHubServer and add AstarteHandler::new() on top of AstarteSDK
