@@ -51,25 +51,45 @@ impl MessageHubOptions {
     /// If no valid configuration file is found in either of these locations, or if the content
     /// of the first found file is not valid HTTP and Protobuf APIs are exposed to provide a valid
     /// configuration.
-    pub async fn get() -> Result<MessageHubOptions, AstarteMessageHubError> {
-        if let Ok(msg_hub_opt) = file::get_options_from_base_toml() {
-            return Ok(msg_hub_opt);
+    pub async fn get(
+        toml_file: Option<String>,
+        http_grpc_dir: Option<String>,
+    ) -> Result<MessageHubOptions, AstarteMessageHubError> {
+        if let Some(toml_file) = toml_file {
+            let toml_str = std::fs::read_to_string(toml_file)?;
+            file::get_options_from_toml(&toml_str)
+        } else if let Some(http_grpc_dir) = http_grpc_dir {
+            let http_grpc_dir = Path::new(&http_grpc_dir);
+            if !http_grpc_dir.is_dir() {
+                let err_msg = "Provided store directory for HTTP and ProtoBuf does not exists.";
+                return Err(AstarteMessageHubError::FatalError(err_msg.to_string()));
+            }
+            let http_grpc_file = http_grpc_dir.join(CONFIG_FILE_NAMES[0]);
+            if !http_grpc_file.exists() {
+                let (tx, mut rx) = channel(1);
+
+                let web_server = HttpConfigProvider::new(
+                    "127.0.0.1:40041",
+                    tx.clone(),
+                    http_grpc_file.to_str().unwrap(),
+                );
+                let protobuf_server = ProtobufConfigProvider::new(
+                    "[::1]:50051",
+                    tx.clone(),
+                    http_grpc_file.to_str().unwrap(),
+                )
+                .await;
+
+                rx.recv().await.unwrap();
+
+                web_server.stop().await;
+                protobuf_server.stop().await;
+            }
+            let toml_str = std::fs::read_to_string(http_grpc_file)?;
+            file::get_options_from_toml(&toml_str)
+        } else {
+            file::get_options_from_base_toml()
         }
-
-        let (tx, mut rx) = channel(1);
-
-        let web_server =
-            HttpConfigProvider::new("127.0.0.1:40041", tx.clone(), CONFIG_FILE_NAMES[0]);
-        let protobuf_server =
-            ProtobufConfigProvider::new("[::1]:50051", tx.clone(), CONFIG_FILE_NAMES[0]).await;
-
-        rx.recv().await.unwrap();
-
-        web_server.stop().await;
-        protobuf_server.stop().await;
-
-        let toml_str = std::fs::read_to_string(CONFIG_FILE_NAMES[0])?;
-        file::get_options_from_toml(&toml_str)
     }
 
     pub fn is_valid(&self) -> bool {
