@@ -1,9 +1,5 @@
 use std::net::Ipv6Addr;
-<<<<<<< HEAD
 use std::path::PathBuf;
-=======
-use std::path::{Path, PathBuf};
->>>>>>> 5c1ec27 (refactor(config): pass the store directory when initializing the sdk)
 
 /*
  * This file is part of Astarte.
