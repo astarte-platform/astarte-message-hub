@@ -54,7 +54,7 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 
     let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
 
-    // Initailize an Astarte device
+    // Initialize an Astarte device
     let device_sdk = initialize_astarte_device_sdk(&mut options).await?;
     info!("Connection to Astarte established.");
 
