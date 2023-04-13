@@ -1,5 +1,5 @@
 use std::net::Ipv6Addr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /*
  * This file is part of Astarte.
@@ -55,7 +55,7 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
 
     // Initailize an Astarte device
-    let device_sdk = initialize_astarte_device_sdk(&mut options, store_directory).await?;
+    let device_sdk = initialize_astarte_device_sdk(&mut options).await?;
     info!("Connection to Astarte established.");
 
     // Create a new Astarte handler
@@ -76,14 +76,9 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
-    store_directory: Option<&Path>,
 ) -> Result<AstarteDeviceSdk, AstarteMessageHubError> {
     // Obtain the credentials secret, the store defaults to the current directory
-    let credentail_store = store_directory.unwrap_or_else(|| Path::new("."));
-    let cred_secret = msg_hub_opts
-        .obtain_credential_secret(credentail_store)
-        .await?;
-    msg_hub_opts.credentials_secret = Some(cred_secret);
+    msg_hub_opts.obtain_credential_secret().await?;
 
     // Create the configuration options for the device and then instantiate a new device
     let mut device_sdk_opts = AstarteOptions::new(

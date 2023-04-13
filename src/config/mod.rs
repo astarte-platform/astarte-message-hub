@@ -18,7 +18,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use log::debug;
@@ -47,9 +47,17 @@ pub struct MessageHubOptions {
     pub interfaces_directory: Option<String>,
     pub astarte_ignore_ssl: bool,
     pub grpc_socket_port: u16,
+    /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
+    #[serde(default = "MessageHubOptions::default_store_directory")]
+    pub store_directory: PathBuf,
 }
 
 impl MessageHubOptions {
+    /// Default the store directory to the current working directory.
+    fn default_store_directory() -> PathBuf {
+        PathBuf::from(".")
+    }
+
     /// Function that get the configurations needed by the Message Hub.
     /// The configuration file is first retrieved from one of two default base locations.
     /// If no valid configuration file is found in either of these locations, or if the content
@@ -57,17 +65,17 @@ impl MessageHubOptions {
     /// configuration.
     pub async fn get(
         toml_file: Option<String>,
-        http_grpc_dir: Option<&Path>,
+        store_directory: Option<&Path>,
     ) -> Result<MessageHubOptions, AstarteMessageHubError> {
-        if let Some(toml_file) = toml_file {
+        let mut opt = if let Some(toml_file) = toml_file {
             let toml_str = std::fs::read_to_string(toml_file)?;
             file::get_options_from_toml(&toml_str)
-        } else if let Some(http_grpc_dir) = http_grpc_dir {
-            if !http_grpc_dir.is_dir() {
+        } else if let Some(store_directory) = store_directory {
+            if !store_directory.is_dir() {
                 let err_msg = "Provided store directory for HTTP and ProtoBuf does not exists.";
                 return Err(AstarteMessageHubError::FatalError(err_msg.to_string()));
             }
-            let http_grpc_file = http_grpc_dir.join(CONFIG_FILE_NAMES[0]);
+            let http_grpc_file = store_directory.join(CONFIG_FILE_NAMES[0]);
             if !http_grpc_file.exists() {
                 let (tx, mut rx) = channel(1);
 
@@ -89,10 +97,17 @@ impl MessageHubOptions {
                 protobuf_server.stop().await;
             }
             let toml_str = std::fs::read_to_string(http_grpc_file)?;
+
             file::get_options_from_toml(&toml_str)
         } else {
             file::get_options_from_base_toml()
+        }?;
+
+        if let Some(store_directory) = store_directory {
+            opt.store_directory = store_directory.to_path_buf();
         }
+
+        Ok(opt)
     }
 
     pub fn is_valid(&self) -> bool {
@@ -113,47 +128,55 @@ impl MessageHubOptions {
     }
 
     /// Obtains the credential secret from the stored path or by registering the device.
-    pub async fn obtain_credential_secret(
-        &self,
-        cred_store: &Path,
-    ) -> Result<String, AstarteMessageHubError> {
-        if let Some(cred_sec) = self.credentials_secret.as_ref() {
-            return Ok(cred_sec.to_string());
+    pub async fn obtain_credential_secret<'a: 'b, 'b>(
+        &'a mut self,
+    ) -> Result<&'b str, AstarteMessageHubError> {
+        if let Some(ref cred_sec) = self.credentials_secret {
+            return Ok(cred_sec);
         }
 
-        let path = cred_store.join(CREDENTIAL_FILE);
+        let path = self.store_directory.join(CREDENTIAL_FILE);
 
-        match fs::read_to_string(&path) {
-            Ok(c) => {
+        let credential = match fs::read_to_string(&path) {
+            Ok(cred) => {
                 debug!("using stored credentials from {:?}", path);
 
-                return Ok(c);
+                Ok(Some(cred))
             }
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 debug!("credentials not found, registering device");
+
+                Ok(None)
             }
-            Err(err) => {
-                return Err(AstarteMessageHubError::FatalError(format!(
-                    "failed to read {}: {}",
-                    path.to_string_lossy(),
-                    err
-                )))
-            }
-        }
-
-        let creds = self.register_device().await?;
-
-        debug!("device registered, storing credentials to {:?}", path);
-
-        fs::write(&path, &creds).map_err(|err| {
-            AstarteMessageHubError::FatalError(format!(
-                "failed to write credentials to {}: {}",
+            Err(err) => Err(AstarteMessageHubError::FatalError(format!(
+                "failed to read {}: {}",
                 path.to_string_lossy(),
                 err
-            ))
-        })?;
+            ))),
+        }?;
 
-        Ok(creds)
+        let credential = match credential {
+            Some(cred) => cred,
+            None => {
+                let cred = self.register_device().await?;
+
+                debug!("device registered, storing credentials to {:?}", path);
+
+                fs::write(&path, &cred).map_err(|err| {
+                    AstarteMessageHubError::FatalError(format!(
+                        "failed to write credentials to {}: {}",
+                        path.to_string_lossy(),
+                        err
+                    ))
+                })?;
+
+                cred
+            }
+        };
+
+        self.credentials_secret = Some(credential);
+
+        Ok(self.credentials_secret.as_ref().unwrap())
     }
 
     /// Registers the device to the Astarte instance.
@@ -199,6 +222,7 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
         assert!(expected_msg_hub_opts.is_valid());
     }
@@ -214,6 +238,7 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
         assert!(expected_msg_hub_opts.is_valid());
     }
@@ -229,6 +254,7 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
         assert!(!expected_msg_hub_opts.is_valid());
     }
@@ -244,6 +270,7 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
         assert!(!expected_msg_hub_opts.is_valid());
     }
@@ -259,6 +286,7 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
         assert!(!expected_msg_hub_opts.is_valid());
     }
@@ -274,6 +302,7 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
         assert!(!expected_msg_hub_opts.is_valid());
     }
@@ -289,6 +318,7 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
         assert!(!expected_msg_hub_opts.is_valid());
     }
@@ -304,6 +334,7 @@ mod test {
             interfaces_directory: Some("".to_string()),
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
         assert!(!expected_msg_hub_opts.is_valid());
     }
@@ -319,6 +350,7 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
         assert!(!expected_msg_hub_opts.is_valid());
     }
@@ -330,7 +362,7 @@ mod test {
         let dir = tempfile::TempDir::new().unwrap();
         fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
 
-        let opt = MessageHubOptions {
+        let mut opt = MessageHubOptions {
             realm: "1".to_string(),
             device_id: "2".to_string(),
             pairing_url: "3".to_string(),
@@ -339,9 +371,10 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
+            store_directory: dir.path().to_path_buf(),
         };
 
-        let secret = opt.obtain_credential_secret(dir.path()).await;
+        let secret = opt.obtain_credential_secret().await;
 
         assert!(
             secret.is_ok(),
@@ -355,7 +388,7 @@ mod test {
     async fn obtain_credential_secret_register_device() {
         let dir = tempfile::TempDir::new().unwrap();
 
-        let opt = MessageHubOptions {
+        let mut opt = MessageHubOptions {
             realm: "1".to_string(),
             device_id: "2".to_string(),
             pairing_url: "3".to_string(),
@@ -364,9 +397,10 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
+            store_directory: dir.path().to_path_buf(),
         };
 
-        let secret = opt.obtain_credential_secret(dir.path()).await;
+        let secret = opt.obtain_credential_secret().await;
 
         assert!(
             secret.is_ok(),

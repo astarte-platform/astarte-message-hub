@@ -65,6 +65,7 @@ impl proto_message_hub::message_hub_config_server::MessageHubConfig for AstarteM
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: port,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
 
         if !message_hub_options.is_valid() {
