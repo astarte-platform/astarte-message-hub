@@ -414,4 +414,61 @@ mod test {
 
         assert_eq!(secret, res);
     }
+
+    #[tokio::test]
+    async fn load_toml_config() {
+        let expected = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: Some("42".to_string()),
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 655,
+            store_directory: MessageHubOptions::default_store_directory(),
+        };
+
+        let dir = tempfile::TempDir::new().unwrap();
+
+        let path = dir.path().join(CONFIG_FILE_NAMES[0]);
+
+        fs::write(&path, toml::to_string(&expected).unwrap()).unwrap();
+
+        let path = Some(path.to_string_lossy().to_string());
+
+        let options = MessageHubOptions::get(path, None).await;
+
+        assert!(options.is_ok(), "error loading config {:?}", options);
+        assert_eq!(options.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn load_from_store_path() {
+        let mut expected = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: "2".to_string(),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: Some("42".to_string()),
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 655,
+            store_directory: MessageHubOptions::default_store_directory(),
+        };
+
+        let dir = tempfile::TempDir::new().unwrap();
+
+        let path = dir.path().join(CONFIG_FILE_NAMES[0]);
+
+        fs::write(&path, toml::to_string(&expected).unwrap()).unwrap();
+
+        let options = MessageHubOptions::get(None, Some(dir.path())).await;
+
+        // Set the store directory to the passed value
+        expected.store_directory = dir.path().to_path_buf();
+
+        assert!(options.is_ok(), "error loading config {:?}", options);
+        assert_eq!(options.unwrap(), expected);
+    }
 }
