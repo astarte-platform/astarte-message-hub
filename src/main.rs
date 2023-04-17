@@ -1,3 +1,5 @@
+use std::net::Ipv6Addr;
+
 /*
  * This file is part of Astarte.
  *
@@ -48,10 +50,10 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     env_logger::init();
     let args = Cli::parse();
 
-    let msg_hub_opts = MessageHubOptions::get(args.toml, args.store_directory).await?;
+    let mut msg_hub_opts = MessageHubOptions::get(args.toml, args.store_directory).await?;
 
     // Initailize an Astarte device
-    let device_sdk = initialize_astarte_device_sdk(msg_hub_opts).await?;
+    let device_sdk = initialize_astarte_device_sdk(&mut msg_hub_opts).await?;
     info!("Connection to Astarte established.");
 
     // Create a new Astarte handler
@@ -61,17 +63,17 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     let message_hub = AstarteMessageHub::new(handler.clone());
 
     // Run the protobuf server
-    let addr = "[::1]:50051".parse().unwrap();
+    let addrs = (Ipv6Addr::LOCALHOST, msg_hub_opts.grpc_socket_port).into();
     tonic::transport::Server::builder()
         .add_service(MessageHubServer::new(message_hub))
-        .serve(addr)
+        .serve(addrs)
         .await?;
 
     Ok(())
 }
 
 async fn initialize_astarte_device_sdk(
-    mut msg_hub_opts: MessageHubOptions,
+    msg_hub_opts: &mut MessageHubOptions,
 ) -> Result<AstarteDeviceSdk, AstarteMessageHubError> {
     // If no credential secret is present, register a new device using the Astarte device SDK
     if msg_hub_opts.credentials_secret.is_none() {
