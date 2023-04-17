@@ -9,12 +9,54 @@
 ![](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/build.yaml/badge.svg?branch=master)
 [![codecov](https://codecov.io/gh/astarte-platform/astarte-message-hub/branch/master/graph/badge.svg)](https://app.codecov.io/gh/astarte-message-hub)
 
-A central service that runs on (Linux) devices for collecting and delivering messages from N apps using 1 MQTT connection to Astarte.
+A central service that runs on (Linux) devices for collecting and delivering
+messages from N apps using 1 MQTT connection to Astarte.
+
+## Configuration
+
+The Astarte Message Hub is configured through `message-hub-config.toml` in the
+current working directory, otherwise the system wide
+`/etc/message-hub/config.toml` can be used. In alternative, you can specify the
+path to the configuration file with the `-t/--toml` cli option.
+
+The format for the configuration file is the following:
+
+```toml
+##
+# Required fields
+#
+realm = "<REALM>"
+device_id = "<DEVICE_ID>"
+pairing_url = "<PAIRING_URL>"
+grpc_socket_port = 0 # Required, 0 is only a placeholder
+
+##
+# Optional fields
+#
+interfaces_directory = "[INTERFACES_DIRECTORY]"
+# Used to register a device and obtain a `credentials_secret`
+pairing_token = "[PAIRING_TOKEN]"
+# Credential secret, if not provided the `pairing_token` is required
+credentials_secret = "[CREDENTIALS_SECRET]"
+# Ignore SSL errors, defaults to false
+astarte_ignore_ssl = false
+# Path to store persistent data, defaults to "./"
+store_directory = "<STORE_PAHT>"
+```
+
+An example configuration file can be found in the
+[examples](./examples/message-hub-config.toml) direction.
 
 ## Architecture
-The Astarte Message Hub is the main component that shares the Astarte connection to the nodes attached to it.
-The communication between the Hub and nodes is based on `gRPC` which is great for scenarios like real-time communication, low-power, low-bandwidth systems, and multi-language environments.
-`gRPC` makes the most out of `HTTP/2`, with multiplexed streaming and binary protocol framing. In addition, it offers performance advantages through the `Protobuf` message structure and features built-in code generation capability, which enables a multi-language environment.
+
+The Astarte Message Hub is the main component that shares the Astarte
+connection to the nodes attached to it. The communication between the Hub and
+nodes is based on `gRPC` which is great for scenarios like real-time
+communication, low-power, low-bandwidth systems, and multi-language
+environments. `gRPC` makes the most out of `HTTP/2`, with multiplexed streaming
+and binary protocol framing. In addition, it offers performance advantages
+through the `Protobuf` message structure and features built-in code generation
+capability, which enables a multi-language environment.
 
 ```mermaid
 flowchart LR
@@ -45,11 +87,15 @@ flowchart LR
 ```
 
 ## GRPC MessageHub Service
-### Node
-A node is an entity connected to Astarte Message Hub, it can receive/send messages from/to Astarte via the Message Hub.
-A node is uniquely identified by its Node UUID and has an Introspection that is a list of Json Interfaces used by it for exchanging data with Astarte. 
 
-``` protobuf
+### Node
+
+A node is an entity connected to Astarte Message Hub, it can receive/send
+messages from/to Astarte via the Message Hub. A node is uniquely identified by
+its Node UUID and has an Introspection that is a list of Json Interfaces used
+by it for exchanging data with Astarte.
+
+```protobuf
 message Node {
   string uuid = 1;
   repeated bytes interface_jsons = 2;
@@ -57,28 +103,31 @@ message Node {
 ```
 
 ### Attach Method
-When a new node is connected to Message Hub, it will have to call `Attach` method to exchange data with Astarte.
-If the node was successfully attached, the method returns a gRPC stream into which the events received from Astarte(based on the declared Introspection) will be redirected.
 
-``` protobuf
+When a new node is connected to Message Hub, it will have to call `Attach`
+method to exchange data with Astarte. If the node was successfully attached,
+the method returns a gRPC stream into which the events received from
+Astarte(based on the declared Introspection) will be redirected.
+
+```protobuf
 service MessageHub {
   rpc Attach(Node) returns (stream AstarteMessage) {}
   ....
 }
 ```
 
-``` mermaid
+```mermaid
 sequenceDiagram
     participant Node1
     participant AstarteMessageHub
     participant Astarte
     Node1->>AstarteMessageHub: attach(node)
     AstarteMessageHub->>Astarte: sendIntrospection()
-    
+
     alt when the introspection process fails
          AstarteMessageHub->>Node1: Unable to attach the node
     end
-    
+
     Astarte->>AstarteMessageHub: Event data for node1
     AstarteMessageHub->>Node1: Event data
     Astarte->AstarteMessageHub: Event data for node1
@@ -86,17 +135,19 @@ sequenceDiagram
 ```
 
 ## Send Method
+
 Send a message to Astarte for a node attached to the Astarte Message Hub.
 
-``` protobuf
+```protobuf
 service MessageHub {
   rpc Send(AstarteMessage) returns (google.protobuf.Empty){}
   ....
 }
 ```
+
 ### Astarte Message
 
-``` protobuf
+```protobuf
 message AstarteMessage{
   string interface_name = 1;
   string path = 2;
@@ -111,7 +162,8 @@ message AstarteUnset{}
 ```
 
 ### Astarte Types
-``` protobuf
+
+```protobuf
 message AstarteDoubleArray {
   repeated double astarte_double = 1;
 }
@@ -172,22 +224,24 @@ message AstarteDataType {
 }
 ```
 
-``` mermaid
+```mermaid
 sequenceDiagram
     participant Node1
     participant AstarteMessageHub
     participant Astarte
     Node1->>AstarteMessageHub: send(message)
     AstarteMessageHub->>Astarte: sendData()
-    
+
     alt when the send process fails
          AstarteMessageHub->>Node1: Unable to send message
     end
 ```
+
 ## Detach Method
+
 Remove an existing Node and its introspection from Astarte Message Hub.
 
-``` protobuf
+```protobuf
 service MessageHub {
   rpc Detach(Node) returns (google.protobuf.Empty){}
   ....
@@ -201,12 +255,12 @@ sequenceDiagram
     participant Astarte
     Node1->>AstarteMessageHub: detach(node)
     AstarteMessageHub->>Astarte: sendIntrospection()
-    
+
     alt when the introspection process fails
          AstarteMessageHub->>Node1: Unable to attach the node
     end
 ```
 
 ## Requirements
-protobuf >= 3.15
 
+protobuf >= 3.15
