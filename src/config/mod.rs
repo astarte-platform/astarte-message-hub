@@ -75,19 +75,19 @@ impl MessageHubOptions {
                 let err_msg = "Provided store directory for HTTP and ProtoBuf does not exists.";
                 return Err(AstarteMessageHubError::FatalError(err_msg.to_string()));
             }
-            let http_grpc_file = store_directory.join(CONFIG_FILE_NAMES[0]);
-            if !http_grpc_file.exists() {
+            let configuration_file = store_directory.join(CONFIG_FILE_NAMES[0]);
+            if !configuration_file.exists() {
                 let (tx, mut rx) = channel(1);
 
                 let web_server = HttpConfigProvider::new(
                     "127.0.0.1:40041",
                     tx.clone(),
-                    http_grpc_file.to_str().unwrap(),
+                    configuration_file.to_str().unwrap(),
                 );
                 let protobuf_server = ProtobufConfigProvider::new(
                     "[::1]:50051",
                     tx.clone(),
-                    http_grpc_file.to_str().unwrap(),
+                    configuration_file.to_str().unwrap(),
                 )
                 .await;
 
@@ -96,7 +96,7 @@ impl MessageHubOptions {
                 web_server.stop().await;
                 protobuf_server.stop().await;
             }
-            let toml_str = std::fs::read_to_string(http_grpc_file)?;
+            let toml_str = std::fs::read_to_string(configuration_file)?;
 
             file::get_options_from_toml(&toml_str)
         } else {
