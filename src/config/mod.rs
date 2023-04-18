@@ -42,7 +42,7 @@ pub struct MessageHubOptions {
     pub pairing_token: Option<String>,
     pub interfaces_directory: Option<String>,
     pub astarte_ignore_ssl: bool,
-    pub grpc_socket_port: u32,
+    pub grpc_socket_port: u16,
 }
 
 impl MessageHubOptions {
@@ -107,7 +107,6 @@ impl MessageHubOptions {
             && (valid_secret || valid_token)
             && valid_interface_dir
             && (!self.pairing_url.is_empty())
-            && (self.grpc_socket_port <= 655356)
     }
 }
 
@@ -216,21 +215,6 @@ mod test {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
-        };
-        assert!(!expected_msg_hub_opts.is_valid());
-    }
-
-    #[test]
-    fn test_is_valid_invalid_grpc_socket_port_err() {
-        let expected_msg_hub_opts = MessageHubOptions {
-            realm: "1".to_string(),
-            device_id: "2".to_string(),
-            pairing_url: "3".to_string(),
-            credentials_secret: None,
-            pairing_token: Some("4".to_string()),
-            interfaces_directory: None,
-            astarte_ignore_ssl: false,
-            grpc_socket_port: 655357,
         };
         assert!(!expected_msg_hub_opts.is_valid());
     }

@@ -56,7 +56,7 @@ struct ConfigPayload {
     credentials_secret: Option<String>,
     pairing_url: String,
     pairing_token: Option<String>,
-    grpc_socket_port: u32,
+    grpc_socket_port: u16,
 }
 
 impl Default for ConfigResponse {

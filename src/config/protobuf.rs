@@ -19,6 +19,7 @@
  */
 
 use std::io::Write;
+use std::num::TryFromIntError;
 use std::path::Path;
 
 use tokio::sync::mpsc::{channel, Sender};
@@ -46,6 +47,15 @@ impl proto_message_hub::message_hub_config_server::MessageHubConfig for AstarteM
         request: Request<proto_message_hub::ConfigMessage>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
         let req = request.into_inner();
+
+        // Protobuf version 3 only supports u32
+        let port: u16 = req
+            .grpc_socket_port
+            .try_into()
+            .map_err(|err: TryFromIntError| {
+                Status::new(Code::InvalidArgument, format!("Invalid grpc port: {}", err))
+            })?;
+
         let message_hub_options = MessageHubOptions {
             realm: req.realm,
             device_id: req.device_id,
@@ -54,7 +64,7 @@ impl proto_message_hub::message_hub_config_server::MessageHubConfig for AstarteM
             pairing_token: req.pairing_token,
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: req.grpc_socket_port,
+            grpc_socket_port: port,
         };
 
         if !message_hub_options.is_valid() {

@@ -49,4 +49,7 @@ pub enum AstarteMessageHubError {
 
     #[error("configuration file error")]
     ConfigFileError(#[from] toml::de::Error),
+
+    #[error(transparent)]
+    TransportError(#[from] tonic::transport::Error),
 }
