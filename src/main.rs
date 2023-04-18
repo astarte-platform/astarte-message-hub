@@ -1,6 +1,3 @@
-use std::net::Ipv6Addr;
-use std::path::PathBuf;
-
 /*
  * This file is part of Astarte.
  *
@@ -20,6 +17,15 @@ use std::path::PathBuf;
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+//! A central service that runs on (Linux) devices for collecting and delivering messages from N
+//! apps using 1 MQTT connection to Astarte.
+
+#![warn(missing_docs)]
+
+use std::net::Ipv6Addr;
+use std::path::PathBuf;
+
 use clap::Parser;
 use log::info;
 

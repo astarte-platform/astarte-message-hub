@@ -18,12 +18,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+//! Load the toml file in the [MessageHubOptions] struct.
+
 use std::fs;
 use std::path::Path;
 
 use crate::config::MessageHubOptions;
 use crate::error::AstarteMessageHubError;
 
+/// Locations for the configuration files
 pub const CONFIG_FILE_NAMES: [&str; 2] =
     ["message-hub-config.toml", "/etc/message-hub/config.toml"];
 

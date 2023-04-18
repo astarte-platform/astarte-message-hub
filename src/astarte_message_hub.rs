@@ -31,6 +31,7 @@ use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
 use crate::proto_message_hub;
 use crate::types::InterfaceJson;
 
+/// Manages the Astarte nodes
 pub struct AstarteMessageHub<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber> {
     nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
     astarte_handler: T,
@@ -54,6 +55,7 @@ impl<T: 'static> AstarteMessageHub<T>
 where
     T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber,
 {
+    /// A new instance form an handler
     pub fn new(astarte_handler: T) -> Self {
         let mut astarte_handler_cpy = astarte_handler.clone();
         tokio::task::spawn(async move {

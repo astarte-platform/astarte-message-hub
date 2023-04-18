@@ -38,6 +38,7 @@ use crate::data::mock_astarte_sdk::MockAstarteDeviceSdk as AstarteDeviceSdk;
 #[cfg(not(test))]
 use astarte_device_sdk::AstarteDeviceSdk;
 
+/// Astarte Handler for the device SDK.
 #[derive(Clone)]
 pub struct AstarteHandler {
     device_sdk: AstarteDeviceSdk,
@@ -209,6 +210,7 @@ impl AstarteRunner for AstarteHandler {
 }
 
 impl AstarteHandler {
+    /// Constructs a new handler from the [AstarteDeviceSdk]
     #[allow(dead_code)]
     pub fn new(device_sdk: AstarteDeviceSdk) -> Self {
         AstarteHandler {

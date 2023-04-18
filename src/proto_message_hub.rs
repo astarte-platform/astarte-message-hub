@@ -19,7 +19,6 @@
 //! Contains the generated code from the ProtoBuf definitions and the implementations of those
 //! types.
 
-#[allow(clippy::all)]
 use self::{astarte_data_type::Data, astarte_message::Payload};
 
 tonic::include_proto!("astarteplatform.msghub");

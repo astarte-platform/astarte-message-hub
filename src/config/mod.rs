@@ -17,6 +17,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Option parsing and configuration loading.
 
 use std::path::{Path, PathBuf};
 use std::{fs, io};
@@ -46,16 +47,25 @@ macro_rules! ensure {
     };
 }
 
+/// The configuration of the Message Hub.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct MessageHubOptions {
+    /// The Astarte realm the device belongs to.
     pub realm: String,
+    /// A unique ID for the device.
     pub device_id: String,
+    /// The credentials secret used to authenticate with Astarte.
     pub credentials_secret: Option<String>,
+    /// The URL of the Astarte pairing API.
     pub pairing_url: String,
+    /// Token used to register the device.
     pub pairing_token: Option<String>,
+    /// Directory containing the Astarte interfaces.
     pub interfaces_directory: Option<PathBuf>,
+    /// Whether to ignore SSL errors when connecting to Astarte.
     #[serde(default)]
     pub astarte_ignore_ssl: bool,
+    /// The gRPC port to use.
     pub grpc_socket_port: u16,
     /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
     #[serde(default = "MessageHubOptions::default_store_directory")]
@@ -120,6 +130,7 @@ impl MessageHubOptions {
         Ok(opt)
     }
 
+    /// Validates the configuration and return the reason if it is not valid.
     pub fn validate(&self) -> Result<(), ConfigValidationError> {
         ensure!(
             !self.realm.is_empty(),
