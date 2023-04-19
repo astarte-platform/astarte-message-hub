@@ -206,6 +206,23 @@ impl AstarteDataType {
     }
 }
 
+impl Node {
+    /// Create a new [Node] with the given [uuid](Node::uuid) and [interface_jsons](Node::interface_jsons).
+    pub fn new<S, B>(uuid: S, interface_jsons: &[B]) -> Self
+    where
+        S: Into<String>,
+        B: Clone + Into<Vec<u8>>,
+    {
+        Self {
+            uuid: uuid.into(),
+            interface_jsons: interface_jsons
+                .iter()
+                .map(|json| json.clone().into())
+                .collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
