@@ -141,12 +141,14 @@ impl MessageHubOptions {
             Ok(cred) => {
                 debug!("using stored credentials from {:?}", path);
 
-                Ok(Some(cred))
+                Ok(cred)
             }
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 debug!("credentials not found, registering device");
 
-                Ok(None)
+                let cred = self.register_device(&path).await?;
+
+                Ok(cred)
             }
             Err(err) => Err(AstarteMessageHubError::FatalError(format!(
                 "failed to read {}: {}",
@@ -155,37 +157,38 @@ impl MessageHubOptions {
             ))),
         }?;
 
-        let credential = match credential {
-            Some(cred) => cred,
-            None => {
-                let cred = self.register_device().await?;
-
-                debug!("device registered, storing credentials to {:?}", path);
-
-                fs::write(&path, &cred).map_err(|err| {
-                    AstarteMessageHubError::FatalError(format!(
-                        "failed to write credentials to {}: {}",
-                        path.to_string_lossy(),
-                        err
-                    ))
-                })?;
-
-                cred
-            }
-        };
-
         self.credentials_secret = Some(credential);
 
         Ok(self.credentials_secret.as_ref().unwrap())
     }
 
     /// Registers the device to the Astarte instance.
-    #[cfg(not(test))]
-    async fn register_device(&self) -> Result<String, AstarteMessageHubError> {
+    async fn register_device(&self, cred_file: &Path) -> Result<String, AstarteMessageHubError> {
         let pairing_token = self.pairing_token.as_ref().ok_or_else(|| {
             AstarteMessageHubError::FatalError("missing pairing token".to_string())
         })?;
 
+        let credentials = self.register_with_astarte(pairing_token).await?;
+
+        debug!("device registered, storing credentials to {:?}", cred_file);
+
+        fs::write(cred_file, &credentials).map_err(|err| {
+            AstarteMessageHubError::FatalError(format!(
+                "failed to write credentials to {}: {}",
+                cred_file.to_string_lossy(),
+                err
+            ))
+        })?;
+
+        Ok(credentials)
+    }
+
+    #[cfg(not(test))]
+    async fn register_with_astarte(
+        &self,
+        pairing_token: &str,
+    ) -> Result<String, AstarteMessageHubError> {
+        // Call extracted to allow mocking in tests
         astarte_device_sdk::registration::register_device(
             pairing_token,
             &self.pairing_url,
@@ -196,12 +199,14 @@ impl MessageHubOptions {
         .map_err(|err| AstarteMessageHubError::FatalError(err.to_string()))
     }
 
-    /// Registers the device to the Astarte instance.
     #[cfg(test)]
-    async fn register_device(&self) -> Result<String, AstarteMessageHubError> {
-        let _pairing_token = self.pairing_token.as_ref().ok_or_else(|| {
-            AstarteMessageHubError::FatalError("missing pairing token".to_string())
-        })?;
+    async fn register_with_astarte(
+        &self,
+        pairing_token: &str,
+    ) -> Result<String, AstarteMessageHubError> {
+        use log::info;
+
+        info!("registering device with pairing token {}", pairing_token);
 
         Ok(String::default())
     }
