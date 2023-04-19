@@ -1,4 +1,5 @@
 use std::net::Ipv6Addr;
+use std::path::PathBuf;
 
 /*
  * This file is part of Astarte.
@@ -23,7 +24,6 @@ use clap::Parser;
 use log::info;
 
 use astarte_device_sdk::options::AstarteOptions;
-use astarte_device_sdk::registration;
 use astarte_device_sdk::AstarteDeviceSdk;
 
 use astarte_message_hub::config::MessageHubOptions;
@@ -42,7 +42,7 @@ struct Cli {
     toml: Option<String>,
     /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
     #[clap(short, long, conflicts_with = "toml")]
-    store_directory: Option<String>,
+    store_directory: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -50,10 +50,12 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     env_logger::init();
     let args = Cli::parse();
 
-    let mut msg_hub_opts = MessageHubOptions::get(args.toml, args.store_directory).await?;
+    let store_directory = args.store_directory.as_deref();
+
+    let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
 
     // Initailize an Astarte device
-    let device_sdk = initialize_astarte_device_sdk(&mut msg_hub_opts).await?;
+    let device_sdk = initialize_astarte_device_sdk(&mut options).await?;
     info!("Connection to Astarte established.");
 
     // Create a new Astarte handler
@@ -63,7 +65,7 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     let message_hub = AstarteMessageHub::new(handler.clone());
 
     // Run the protobuf server
-    let addrs = (Ipv6Addr::LOCALHOST, msg_hub_opts.grpc_socket_port).into();
+    let addrs = (Ipv6Addr::LOCALHOST, options.grpc_socket_port).into();
     tonic::transport::Server::builder()
         .add_service(MessageHubServer::new(message_hub))
         .serve(addrs)
@@ -75,19 +77,9 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
 ) -> Result<AstarteDeviceSdk, AstarteMessageHubError> {
-    // If no credential secret is present, register a new device using the Astarte device SDK
-    if msg_hub_opts.credentials_secret.is_none() {
-        msg_hub_opts.credentials_secret = Some(
-            registration::register_device(
-                msg_hub_opts.pairing_token.as_ref().unwrap(),
-                &msg_hub_opts.pairing_url,
-                &msg_hub_opts.realm,
-                &msg_hub_opts.device_id,
-            )
-            .await
-            .map_err(|err| AstarteMessageHubError::FatalError(err.to_string()))?,
-        );
-    }
+    // Obtain the credentials secret, the store defaults to the current directory
+    msg_hub_opts.obtain_credential_secret().await?;
+
     // Create the configuration options for the device and then instantiate a new device
     let mut device_sdk_opts = AstarteOptions::new(
         &msg_hub_opts.realm,
@@ -95,11 +87,16 @@ async fn initialize_astarte_device_sdk(
         msg_hub_opts.credentials_secret.as_ref().unwrap(),
         &msg_hub_opts.pairing_url,
     );
+
     if msg_hub_opts.astarte_ignore_ssl {
         device_sdk_opts = device_sdk_opts.ignore_ssl_errors();
     }
+
     if let Some(int_dir) = &msg_hub_opts.interfaces_directory {
         device_sdk_opts = device_sdk_opts.interface_directory(int_dir)?;
     }
-    Ok(AstarteDeviceSdk::new(&device_sdk_opts).await?)
+
+    let sdk = AstarteDeviceSdk::new(&device_sdk_opts).await?;
+
+    Ok(sdk)
 }

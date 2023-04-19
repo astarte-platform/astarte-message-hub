@@ -83,6 +83,7 @@ impl HttpConfigProvider {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: payload.grpc_socket_port,
+            store_directory: MessageHubOptions::default_store_directory(),
         };
 
         if !message_hub_options.is_valid() {
