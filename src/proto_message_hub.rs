@@ -210,11 +210,11 @@ impl Node {
     /// Create a new [Node] with the given [uuid](Node::uuid) and [interface_jsons](Node::interface_jsons).
     pub fn new<S, B>(uuid: S, interface_jsons: &[B]) -> Self
     where
-        S: Into<String>,
+        S: ToString,
         B: Clone + Into<Vec<u8>>,
     {
         Self {
-            uuid: uuid.into(),
+            uuid: uuid.to_string(),
             interface_jsons: interface_jsons
                 .iter()
                 .map(|json| json.clone().into())
@@ -318,5 +318,28 @@ mod test {
         let res = data.take_individual();
 
         assert_eq!(res, Some(individual));
+    }
+
+    #[test]
+    fn create_note_from_interface_files() {
+        let uid = uuid::Uuid::new_v4();
+
+        let interface_jsons = [
+            include_str!(
+                "../examples/client/interfaces/org.astarte-platform.rust.examples.datastream.DeviceDatastream.json"
+            ),
+            include_str!(
+                "../examples/client/interfaces/org.astarte-platform.rust.examples.datastream.ServerDatastream.json"
+            ),
+        ];
+
+        let node = Node::new(uid, &interface_jsons);
+
+        assert_eq!(node.uuid, uid.to_string());
+        assert_eq!(node.interface_jsons.len(), 2);
+
+        for (interface, &expected) in node.interface_jsons.iter().zip(interface_jsons.iter()) {
+            assert_eq!(interface, expected.as_bytes());
+        }
     }
 }
