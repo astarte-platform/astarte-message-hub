@@ -130,6 +130,7 @@ mod test {
     use super::*;
 
     use serial_test::serial;
+    use tempfile::TempDir;
     use tokio::sync::mpsc;
     use tonic::transport::Endpoint;
 
@@ -141,10 +142,17 @@ mod test {
         use crate::proto_message_hub::message_hub_config_server::MessageHubConfig;
         use crate::proto_message_hub::ConfigMessage;
 
+        let dir = TempDir::new().unwrap();
+        let toml_file = dir
+            .path()
+            .join(CONFIG_FILE_NAMES[0])
+            .to_string_lossy()
+            .to_string();
+
         let (tx, _) = mpsc::channel(1);
         let config_server = AstarteMessageHubConfig {
             configuration_ready_channel: tx,
-            toml_file: CONFIG_FILE_NAMES[0].to_string(),
+            toml_file,
         };
         let msg = ConfigMessage {
             realm: "rpc_realm".to_string(),
@@ -164,10 +172,17 @@ mod test {
         use crate::proto_message_hub::message_hub_config_server::MessageHubConfig;
         use crate::proto_message_hub::ConfigMessage;
 
+        let dir = TempDir::new().unwrap();
+        let toml_file = dir
+            .path()
+            .join(CONFIG_FILE_NAMES[0])
+            .to_string_lossy()
+            .to_string();
+
         let (tx, _) = mpsc::channel(1);
         let config_server = AstarteMessageHubConfig {
             configuration_ready_channel: tx,
-            toml_file: CONFIG_FILE_NAMES[0].to_string(),
+            toml_file,
         };
         let msg = ConfigMessage {
             realm: "".to_string(),
@@ -187,8 +202,15 @@ mod test {
         use crate::proto_message_hub::message_hub_config_client::MessageHubConfigClient;
         use crate::proto_message_hub::ConfigMessage;
 
+        let dir = TempDir::new().unwrap();
+        let toml_file = dir
+            .path()
+            .join(CONFIG_FILE_NAMES[0])
+            .to_string_lossy()
+            .to_string();
+
         let (tx, mut rx) = mpsc::channel(1);
-        let server = ProtobufConfigProvider::new("127.0.0.1:1400", tx, CONFIG_FILE_NAMES[0]).await;
+        let server = ProtobufConfigProvider::new("127.0.0.1:1400", tx, &toml_file).await;
         let channel = Endpoint::from_static("http://localhost:1400")
             .connect()
             .await
