@@ -1,0 +1,14 @@
+{
+    "interface_name": "org.astarte-platform.rust.examples.datastream.DeviceDatastream",
+    "version_major": 0,
+    "version_minor": 1,
+    "type": "datastream",
+    "ownership": "device",
+    "mappings": [
+        {
+            "endpoint": "/uptime",
+            "type": "string",
+            "explicit_timestamp": true
+        }
+    ]
+}
