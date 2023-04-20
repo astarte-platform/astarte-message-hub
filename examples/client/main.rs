@@ -40,6 +40,10 @@ struct Cli {
     /// Stop after sending COUNT messages.
     #[clap(short, long)]
     count: Option<u64>,
+
+    /// Milliseconds to wait between messages.
+    #[clap(short, long, default_value = "3000")]
+    time: u64,
 }
 
 #[tokio::main]
@@ -80,7 +84,7 @@ async fn main() {
         let now = time::SystemTime::now();
         let mut count = 0;
         // Consistent interval of 3 seconds
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(args.time));
 
         while args.count.is_none() || Some(count) < args.count {
             // Wait a little
