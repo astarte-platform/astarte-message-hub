@@ -27,7 +27,8 @@ use tokio::sync::mpsc::channel;
 
 use crate::config::http::HttpConfigProvider;
 use crate::config::protobuf::ProtobufConfigProvider;
-use crate::error::AstarteMessageHubError;
+use crate::ensure;
+use crate::error::{AstarteMessageHubError, ConfigValidationError};
 
 pub mod file;
 pub mod http;
@@ -44,7 +45,7 @@ pub struct MessageHubOptions {
     pub credentials_secret: Option<String>,
     pub pairing_url: String,
     pub pairing_token: Option<String>,
-    pub interfaces_directory: Option<String>,
+    pub interfaces_directory: Option<PathBuf>,
     #[serde(default)]
     pub astarte_ignore_ssl: bool,
     pub grpc_socket_port: u16,
@@ -111,21 +112,52 @@ impl MessageHubOptions {
         Ok(opt)
     }
 
-    pub fn is_valid(&self) -> bool {
-        let valid_secret = Some(true) == self.credentials_secret.clone().map(|e| !e.is_empty());
-        let valid_token = Some(true) == self.pairing_token.clone().map(|e| !e.is_empty());
-        let valid_interface_dir = self.interfaces_directory.is_none()
-            || (Some(true)
-                == self.interfaces_directory.clone().map(|e| {
-                    let id_path = Path::new(&e);
-                    id_path.exists() && id_path.is_dir()
-                }));
+    pub fn validate(&self) -> Result<(), ConfigValidationError> {
+        ensure!(
+            !self.realm.is_empty(),
+            ConfigValidationError::MissingField("realm")
+        );
 
-        (!self.realm.is_empty())
-            && (!self.device_id.is_empty())
-            && (valid_secret || valid_token)
-            && valid_interface_dir
-            && (!self.pairing_url.is_empty())
+        ensure!(
+            !self.device_id.is_empty(),
+            ConfigValidationError::MissingField("device_id")
+        );
+
+        ensure!(
+            !self.pairing_url.is_empty(),
+            ConfigValidationError::MissingField("pairing_url")
+        );
+
+        let valid_secret = self
+            .credentials_secret
+            .as_ref()
+            .map(|e| !e.is_empty())
+            .unwrap_or(false);
+
+        let valid_token = self
+            .pairing_token
+            .as_ref()
+            .map(|e| !e.is_empty())
+            .unwrap_or(false);
+
+        ensure!(
+            valid_secret || valid_token,
+            ConfigValidationError::MissingPairingAndCredentials
+        );
+
+        let valid_interface_dir = self
+            .interfaces_directory
+            .as_ref()
+            .map(|dir| dir.is_dir())
+            // If no interface directory is specified, it's valid.
+            .unwrap_or(true);
+
+        ensure!(
+            valid_interface_dir,
+            ConfigValidationError::InvalidInterfaceDirectory(self.interfaces_directory.clone())
+        );
+
+        Ok(())
     }
 
     /// Obtains the credential secret from the stored path or by registering the device.
@@ -230,7 +262,9 @@ mod test {
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(expected_msg_hub_opts.is_valid());
+
+        let res = expected_msg_hub_opts.validate();
+        assert!(res.is_ok(), "{:?}", res);
     }
 
     #[test]
@@ -246,7 +280,9 @@ mod test {
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(expected_msg_hub_opts.is_valid());
+
+        let res = expected_msg_hub_opts.validate();
+        assert!(res.is_ok(), "{:?}", res);
     }
 
     #[test]
@@ -262,7 +298,7 @@ mod test {
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(!expected_msg_hub_opts.is_valid());
+        assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
@@ -278,7 +314,7 @@ mod test {
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(!expected_msg_hub_opts.is_valid());
+        assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
@@ -294,7 +330,7 @@ mod test {
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(!expected_msg_hub_opts.is_valid());
+        assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
@@ -310,7 +346,7 @@ mod test {
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(!expected_msg_hub_opts.is_valid());
+        assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
@@ -326,7 +362,7 @@ mod test {
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(!expected_msg_hub_opts.is_valid());
+        assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
@@ -337,12 +373,12 @@ mod test {
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: Some("4".to_string()),
-            interfaces_directory: Some("".to_string()),
+            interfaces_directory: Some(PathBuf::from("")),
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(!expected_msg_hub_opts.is_valid());
+        assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
@@ -358,7 +394,7 @@ mod test {
             grpc_socket_port: 655,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(!expected_msg_hub_opts.is_valid());
+        assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[tokio::test]
@@ -494,7 +530,7 @@ mod test {
             credentials_secret: None,
             pairing_url: "https://api.astarte.EXAMPLE.COM".to_string(),
             pairing_token: Some("YOUR_PAIRING_TOKEN".to_string()),
-            interfaces_directory: Some("/usr/share/message-hub/astarte-interfaces/".to_string()),
+            interfaces_directory: Some(PathBuf::from("/usr/share/message-hub/astarte-interfaces/")),
             astarte_ignore_ssl: false,
             grpc_socket_port: 50051,
             store_directory: PathBuf::from("/var/lib/message-hub"),

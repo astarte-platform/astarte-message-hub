@@ -42,11 +42,15 @@ pub fn get_options_from_base_toml() -> Result<MessageHubOptions, AstarteMessageH
 
 /// Get the message hub options from the toml file passed as input.
 pub fn get_options_from_toml(toml_str: &str) -> Result<MessageHubOptions, AstarteMessageHubError> {
-    let err_msg = "Toml file does not contain valid options.".to_string();
     toml::from_str::<MessageHubOptions>(toml_str)
-        .ok()
-        .filter(|opt| opt.is_valid())
-        .ok_or(AstarteMessageHubError::FatalError(err_msg))
+        .map_err(AstarteMessageHubError::ConfigFileError)
+        .and_then(|opt| {
+            opt.validate().map_err(|err| {
+                AstarteMessageHubError::FatalError(format!("Invalid configuration file: {}", err))
+            })?;
+
+            Ok(opt)
+        })
 }
 
 #[cfg(test)]

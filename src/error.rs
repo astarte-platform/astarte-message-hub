@@ -18,6 +18,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 /// A list specifying general categories of Astarte Message Hub error.
@@ -52,4 +54,24 @@ pub enum AstarteMessageHubError {
 
     #[error(transparent)]
     TransportError(#[from] tonic::transport::Error),
+}
+
+/// A macro to simplify the creation of a `Result` with an `AstarteMessageHubError` error type.
+#[macro_export(crate)]
+macro_rules! ensure {
+    ($cond:expr, $err:expr) => {
+        if !($cond) {
+            return Err($err);
+        }
+    };
+}
+/// Reason why a configuration is invalid.
+#[derive(Error, Debug)]
+pub enum ConfigValidationError {
+    #[error("{0} field is missing")]
+    MissingField(&'static str),
+    #[error("either the pairing token or credential secret must be provided")]
+    MissingPairingAndCredentials,
+    #[error("interface path {0:?} is not a directory")]
+    InvalidInterfaceDirectory(Option<PathBuf>),
 }

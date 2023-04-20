@@ -68,10 +68,10 @@ impl proto_message_hub::message_hub_config_server::MessageHubConfig for AstarteM
             store_directory: MessageHubOptions::default_store_directory(),
         };
 
-        if !message_hub_options.is_valid() {
+        if let Err(err) = message_hub_options.validate() {
             return Err(Status::new(
                 Code::InvalidArgument,
-                "Invalid configuration.".to_string(),
+                format!("Invalid configuration: {}.", err),
             ));
         }
 
