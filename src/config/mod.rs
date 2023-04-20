@@ -45,6 +45,7 @@ pub struct MessageHubOptions {
     pub pairing_url: String,
     pub pairing_token: Option<String>,
     pub interfaces_directory: Option<String>,
+    #[serde(default)]
     pub astarte_ignore_ssl: bool,
     pub grpc_socket_port: u16,
     /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
@@ -475,5 +476,30 @@ mod test {
 
         assert!(options.is_ok(), "error loading config {:?}", options);
         assert_eq!(options.unwrap(), expected);
+    }
+
+    /// Make sure the example config is keep in sync with the code
+    #[test]
+    fn deserialize_example_config() {
+        let config = include_str!("../../examples/message-hub-config.toml");
+
+        let opts = toml::from_str::<MessageHubOptions>(config);
+
+        assert!(opts.is_ok(), "error deserializing config: {:?}", opts);
+        let opts = opts.unwrap();
+
+        let expected = MessageHubOptions {
+            realm: "example_realm".to_string(),
+            device_id: "YOUR_UNIQUE_DEVICE_ID".to_string(),
+            credentials_secret: None,
+            pairing_url: "https://api.astarte.EXAMPLE.COM".to_string(),
+            pairing_token: Some("YOUR_PAIRING_TOKEN".to_string()),
+            interfaces_directory: Some("/usr/share/message-hub/astarte-interfaces/".to_string()),
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 50051,
+            store_directory: PathBuf::from("/var/lib/message-hub"),
+        };
+
+        assert_ne!(opts, expected);
     }
 }
