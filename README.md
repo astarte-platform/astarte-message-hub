@@ -9,15 +9,14 @@
 ![](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/build.yaml/badge.svg?branch=master)
 [![codecov](https://codecov.io/gh/astarte-platform/astarte-message-hub/branch/master/graph/badge.svg)](https://app.codecov.io/gh/astarte-message-hub)
 
-A central service that runs on (Linux) devices for collecting and delivering
-messages from N apps using 1 MQTT connection to Astarte.
+A central service that runs on (Linux) devices for collecting and delivering messages from N apps
+using 1 MQTT connection to Astarte.
 
 ## Configuration
 
-The Astarte Message Hub is configured through `message-hub-config.toml` in the
-current working directory, otherwise the system wide
-`/etc/message-hub/config.toml` can be used. In alternative, you can specify the
-path to the configuration file with the `-t/--toml` cli option.
+The Astarte Message Hub is configured through `message-hub-config.toml` in the current working
+directory, otherwise the system wide `/etc/message-hub/config.toml` can be used. In alternative,
+you can specify the path to the configuration file with the `-t/--toml` cli option.
 
 The format for the configuration file is the following:
 
@@ -44,19 +43,17 @@ astarte_ignore_ssl = false
 store_directory = "<STORE_PAHT>"
 ```
 
-An example configuration file can be found in the
-[examples](./examples/message-hub-config.toml) direction.
+An example configuration file can be found in the [examples](./examples/message-hub-config.toml)
+direction.
 
 ## Architecture
 
-The Astarte Message Hub is the main component that shares the Astarte
-connection to the nodes attached to it. The communication between the Hub and
-nodes is based on `gRPC` which is great for scenarios like real-time
-communication, low-power, low-bandwidth systems, and multi-language
-environments. `gRPC` makes the most out of `HTTP/2`, with multiplexed streaming
-and binary protocol framing. In addition, it offers performance advantages
-through the `Protobuf` message structure and features built-in code generation
-capability, which enables a multi-language environment.
+The Astarte Message Hub is the main component that shares the Astarte connection to the nodes
+attached to it. The communication between the Hub and nodes is based on `gRPC` which is great for
+scenarios like real-time communication, low-power, low-bandwidth systems, and multi-language
+environments. `gRPC` makes the most out of `HTTP/2`, with multiplexed streaming and binary protocol
+framing. In addition, it offers performance advantages through the `Protobuf` message structure and
+features built-in code generation capability, which enables a multi-language environment.
 
 ```mermaid
 flowchart LR
@@ -90,10 +87,9 @@ flowchart LR
 
 ### Node
 
-A node is an entity connected to Astarte Message Hub, it can receive/send
-messages from/to Astarte via the Message Hub. A node is uniquely identified by
-its Node UUID and has an Introspection that is a list of Json Interfaces used
-by it for exchanging data with Astarte.
+A node is an entity connected to Astarte Message Hub, it can receive/send messages from/to Astarte
+via the Message Hub. A node is uniquely identified by its Node UUID and has an Introspection that
+is a list of Json Interfaces used by it for exchanging data with Astarte.
 
 ```protobuf
 message Node {
@@ -104,10 +100,9 @@ message Node {
 
 ### Attach Method
 
-When a new node is connected to Message Hub, it will have to call `Attach`
-method to exchange data with Astarte. If the node was successfully attached,
-the method returns a gRPC stream into which the events received from
-Astarte(based on the declared Introspection) will be redirected.
+When a new node is connected to Message Hub, it will have to call `Attach` method to exchange data
+with Astarte. If the node was successfully attached, the method returns a gRPC stream into which
+the events received from Astarte(based on the declared Introspection) will be redirected.
 
 ```protobuf
 service MessageHub {
