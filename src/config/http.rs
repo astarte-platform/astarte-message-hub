@@ -187,6 +187,7 @@ mod test {
     use serial_test::serial;
     use std::collections::HashMap;
     use std::time::Duration;
+    use tempfile::TempDir;
 
     use serde_json::{Map, Number, Value};
 
@@ -196,7 +197,15 @@ mod test {
     #[serial]
     async fn server_test() {
         let (tx, mut rx) = channel(1);
-        let server = HttpConfigProvider::new("127.0.0.1:8080", tx, CONFIG_FILE_NAMES[0]);
+
+        let dir = TempDir::new().unwrap();
+        let toml_file = dir
+            .path()
+            .join(CONFIG_FILE_NAMES[0])
+            .to_string_lossy()
+            .to_string();
+
+        let server = HttpConfigProvider::new("127.0.0.1:8080", tx, &toml_file);
 
         let mut body = Map::new();
         body.insert("realm".to_string(), Value::String("realm".to_string()));
@@ -240,7 +249,15 @@ mod test {
     #[serial]
     async fn bad_request_test() {
         let (tx, _) = channel(1);
-        let server = HttpConfigProvider::new("127.0.0.1:8081", tx, CONFIG_FILE_NAMES[0]);
+
+        let dir = TempDir::new().unwrap();
+        let toml_file = dir
+            .path()
+            .join(CONFIG_FILE_NAMES[0])
+            .to_string_lossy()
+            .to_string();
+
+        let server = HttpConfigProvider::new("127.0.0.1:8081", tx, &toml_file);
 
         let mut body = HashMap::new();
         body.insert("device_id", "device_id");
@@ -266,7 +283,15 @@ mod test {
     #[serial]
     async fn test_set_config_invalid_cfg() {
         let (tx, _) = channel(1);
-        let server = HttpConfigProvider::new("127.0.0.1:8080", tx, CONFIG_FILE_NAMES[0]);
+
+        let dir = TempDir::new().unwrap();
+        let toml_file = dir
+            .path()
+            .join(CONFIG_FILE_NAMES[0])
+            .to_string_lossy()
+            .to_string();
+
+        let server = HttpConfigProvider::new("127.0.0.1:8080", tx, &toml_file);
 
         let mut body = Map::new();
         body.insert("realm".to_string(), Value::String("".to_string()));
