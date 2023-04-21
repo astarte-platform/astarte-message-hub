@@ -23,10 +23,12 @@ on:
   push:
     branches:
       - 'master'
+      - release-*
   pull_request:
 
 env:
   PB_REL: https://github.com/protocolbuffers/protobuf/releases
+  CARGO_TERM_COLOR: always
 
 jobs:
   code_coverage:
@@ -49,7 +51,7 @@ jobs:
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
       - name: Run cargo-tarpaulin with xml output
-        run: cargo tarpaulin --engine llvm --ignore-tests --lib --out xml -- --test-threads 1
+        run: cargo tarpaulin --engine llvm --locked --all-features --ignore-tests --lib --out xml -- --test-threads 1
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
         with:
