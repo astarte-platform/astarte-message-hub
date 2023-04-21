@@ -12,15 +12,16 @@
 A central service that runs on (Linux) devices for collecting and delivering messages from N apps
 using 1 MQTT connection to Astarte.
 
+## Documentation
+
+- [Astarte Message Hub Documentation](https://docs.rs/astarte-message-hub/0.1.0/astarte_message_hub)
+- [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+- [Astarte Documentation](https://docs.astarte-platform.org/latest/001-intro_user.html)
+
 ## Requirements
 
 - protobuf >= 3.15
 - Rust version >= 1.59
-
-For more information see:
-
-- [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
-- [Astarte Documentation](https://docs.astarte-platform.org/latest/001-intro_user.html)
 
 ## Configuration
 
@@ -55,3 +56,8 @@ store_directory = "<STORE_PAHT>"
 
 An example configuration file can be found in the [examples](./examples/message-hub-config.toml)
 direction.
+
+## Example
+
+Have a look at the [examples](./examples/) for an usage example showing how to send and receive
+data.
