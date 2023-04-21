@@ -21,7 +21,7 @@
 //!
 //! This module contains all the required traits for such an handler.
 //! An implementation of an handler is included in this crate
-//! [Astarte][crate::data::astarte_provider::Astarte].
+//! [AstarteHandler][crate::data::astarte_handler::AstarteHandler].
 //! However, nothing stops third parties from developing their own handler by implementing
 //! the traits in this file.
 
