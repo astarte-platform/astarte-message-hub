@@ -6,15 +6,17 @@
 
 # Astarte Message Hub
 
-![](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/build.yaml/badge.svg?branch=master)
+[![Crates.io](https://img.shields.io/crates/v/astarte-message-hub)](https://crates.io/crates/astarte-message-hub)
+[![docs.rs](https://img.shields.io/docsrs/astarte_message_hub)](https://docs.rs/astarte-message-hub/)
+[![CI](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/build.yaml/badge.svg?branch=master)](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/build.yaml?branch=master)
 [![codecov](https://codecov.io/gh/astarte-platform/astarte-message-hub/branch/master/graph/badge.svg)](https://app.codecov.io/gh/astarte-message-hub)
+[![LICENSE](https://img.shields.io/github/license/astarte-platform/astarte-message-hub)](./LICENSE)
 
 A central service that runs on (Linux) devices for collecting and delivering messages from N apps
 using 1 MQTT connection to Astarte.
 
 ## Documentation
 
-- [Astarte Message Hub Documentation](https://docs.rs/astarte-message-hub/0.1.0/astarte_message_hub)
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 - [Astarte Documentation](https://docs.astarte-platform.org/latest/001-intro_user.html)
 

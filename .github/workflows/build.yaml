@@ -16,7 +16,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-name: Astarte Message Hub build
+name: build
 
 on:
   # Run when pushing to stable branches
