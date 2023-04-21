@@ -86,12 +86,12 @@ impl HttpConfigProvider {
             store_directory: MessageHubOptions::default_store_directory(),
         };
 
-        if !message_hub_options.is_valid() {
+        if let Err(err) = message_hub_options.validate() {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(ConfigResponse {
                     result: "KO".to_string(),
-                    message: Some("Invalid configuration.".to_string()),
+                    message: Some(format!("Invalid configuration: {}", err)),
                 }),
             );
         }

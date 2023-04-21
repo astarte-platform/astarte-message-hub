@@ -93,7 +93,7 @@ async fn initialize_astarte_device_sdk(
     }
 
     if let Some(int_dir) = &msg_hub_opts.interfaces_directory {
-        device_sdk_opts = device_sdk_opts.interface_directory(int_dir)?;
+        device_sdk_opts = device_sdk_opts.interface_directory(&int_dir.to_string_lossy())?;
     }
 
     let sdk = AstarteDeviceSdk::new(&device_sdk_opts).await?;
