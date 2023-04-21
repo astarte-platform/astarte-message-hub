@@ -17,6 +17,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Build script generating service stubs and proto definitions to be used by tonic in the
+//! message hub.
 
 fn main() {
     let proto_files = &[

@@ -17,6 +17,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! The Astarte message hub uses an independent handler to communicate with Astarte.
+//!
+//! This module contains all the required traits for such an handler.
+//! An implementation of an handler is included in this crate
+//! [Astarte][crate::data::astarte_provider::Astarte].
+//! However, nothing stops third parties from developing their own handler by implementing
+//! the traits in this file.
 
 use async_trait::async_trait;
 use tokio::sync::mpsc::Receiver;
@@ -31,19 +38,29 @@ pub trait AstarteRunner {
     async fn run(&mut self);
 }
 
+/// A **trait** required for all Astarte handlers that want to publish data on Astarte.
 #[async_trait]
 pub trait AstartePublisher: Send + Sync {
+    /// Publish new data on Astarte.
+    ///
+    /// The `astarte_message` argument format is
+    /// defined in `./proto/astarteplatform/msghub/astarte_message.proto`
     async fn publish(
         &self,
         astarte_message: &proto_message_hub::AstarteMessage,
     ) -> Result<(), AstarteMessageHubError>;
 }
 
+/// A **trait** required for all Astarte handlers that want to subscribe and unsubscribe a
+/// node to Astarte.
 #[async_trait]
 pub trait AstarteSubscriber {
+    /// Subscribe a new node to Astarte.
     async fn subscribe(
         &self,
         astarte_node: &AstarteNode,
     ) -> Result<Receiver<Result<proto_message_hub::AstarteMessage, Status>>, AstarteMessageHubError>;
+
+    /// Unsubscribe a previously subscribed node to Astarte.
     async fn unsubscribe(&self, astarte_node: &AstarteNode) -> Result<(), AstarteMessageHubError>;
 }

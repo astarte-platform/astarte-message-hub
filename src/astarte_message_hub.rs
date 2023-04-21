@@ -17,6 +17,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+//! Contains the implementation for the Astarte message hub.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,17 +32,24 @@ use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
 use crate::proto_message_hub;
 use crate::types::InterfaceJson;
 
+/// Main struct for the Astarte message hub.
 pub struct AstarteMessageHub<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber> {
+    /// The nodes connected to the message hub.
     nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
+    /// The Astarte handler used to communicate with Astarte.
     astarte_handler: T,
 }
 
+/// A single node that can be connected to the Astarte message hub.
 pub struct AstarteNode {
+    /// Identifier for the node
     pub id: Uuid,
+    /// A vector of interfaces for this node.
     pub introspection: Vec<InterfaceJson>,
 }
 
 impl AstarteNode {
+    /// Instantiate a new node.
     pub fn new(uuid: Uuid, introspection: Vec<Vec<u8>>) -> Self {
         AstarteNode {
             id: uuid,
@@ -54,6 +62,11 @@ impl<T: 'static> AstarteMessageHub<T>
 where
     T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber,
 {
+    /// Instantiate a new Astarte message hub.
+    ///
+    /// The `astarte_handler` should satisfy the required traits for an Astarte handler.
+    /// See the [Astarte][crate::data::astarte_provider::Astarte] for a ready-to-use Astarte
+    /// handler.
     pub fn new(astarte_handler: T) -> Self {
         let mut astarte_handler_cpy = astarte_handler.clone();
         tokio::task::spawn(async move {

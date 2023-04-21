@@ -18,6 +18,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+//! Provides a Protobuf API to set The Message Hub configurations
+
 use std::io::Write;
 use std::num::TryFromIntError;
 use std::path::Path;
@@ -35,6 +37,7 @@ struct AstarteMessageHubConfig {
     toml_file: String,
 }
 
+/// Provides a Protobuf API to set The Message Hub configurations
 pub struct ProtobufConfigProvider {
     shutdown_channel: Sender<()>,
 }

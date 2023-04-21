@@ -18,6 +18,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+//! Provides an HTTP API to set The Message Hub configurations
+
 use std::io::Write;
 use std::net::SocketAddr;
 use std::panic;
@@ -45,6 +47,7 @@ struct ConfigServerExtension {
     toml_file: String,
 }
 
+/// Provides an HTTP API to set The Message Hub configurations
 pub struct HttpConfigProvider {
     shutdown_channel: Sender<()>,
 }
