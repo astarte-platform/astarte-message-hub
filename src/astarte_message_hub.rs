@@ -65,7 +65,7 @@ where
     /// Instantiate a new Astarte message hub.
     ///
     /// The `astarte_handler` should satisfy the required traits for an Astarte handler.
-    /// See the [Astarte][crate::data::astarte_provider::Astarte] for a ready-to-use Astarte
+    /// See the [AstarteHandler](crate::data::astarte_handler::AstarteHandler) for a ready-to-use Astarte
     /// handler.
     pub fn new(astarte_handler: T) -> Self {
         let mut astarte_handler_cpy = astarte_handler.clone();

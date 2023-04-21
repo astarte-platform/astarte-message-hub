@@ -17,7 +17,7 @@ using 1 MQTT connection to Astarte.
 
 ## Documentation
 
-- [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+- [Astarte Message Hub Architecture](https://github.com/astarte-platform/astarte-message-hub/blob/master/docs/ARCHITECTURE.md)
 - [Astarte Documentation](https://docs.astarte-platform.org/latest/001-intro_user.html)
 
 ## Requirements
@@ -56,10 +56,12 @@ astarte_ignore_ssl = false
 store_directory = "<STORE_PAHT>"
 ```
 
-An example configuration file can be found in the [examples](./examples/message-hub-config.toml)
+An example configuration file can be found in the
+[examples](https://github.com/astarte-platform/astarte-message-hub/blob/master/examples/message-hub-config.toml)
 direction.
 
 ## Example
 
-Have a look at the [examples](./examples/) for an usage example showing how to send and receive
-data.
+Have a look at the
+[examples](https://github.com/astarte-platform/astarte-message-hub/blob/master/examples/) for an
+usage example showing how to send and receive data.
