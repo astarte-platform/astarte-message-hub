@@ -27,7 +27,6 @@ use tokio::sync::mpsc::channel;
 
 use crate::config::http::HttpConfigProvider;
 use crate::config::protobuf::ProtobufConfigProvider;
-use crate::ensure;
 use crate::error::{AstarteMessageHubError, ConfigValidationError};
 
 pub mod file;
@@ -37,6 +36,15 @@ pub mod protobuf;
 use file::CONFIG_FILE_NAMES;
 
 const CREDENTIAL_FILE: &str = "credentials_secret";
+
+/// A macro to simplify the creation of a `Result` with an `AstarteMessageHubError` error type.
+macro_rules! ensure {
+    ($cond:expr, $err:expr) => {
+        if !($cond) {
+            return Err($err);
+        }
+    };
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct MessageHubOptions {

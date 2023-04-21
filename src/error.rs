@@ -56,15 +56,6 @@ pub enum AstarteMessageHubError {
     TransportError(#[from] tonic::transport::Error),
 }
 
-/// A macro to simplify the creation of a `Result` with an `AstarteMessageHubError` error type.
-#[macro_export(crate)]
-macro_rules! ensure {
-    ($cond:expr, $err:expr) => {
-        if !($cond) {
-            return Err($err);
-        }
-    };
-}
 /// Reason why a configuration is invalid.
 #[derive(Error, Debug)]
 pub enum ConfigValidationError {
