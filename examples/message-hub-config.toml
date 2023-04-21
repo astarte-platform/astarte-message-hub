@@ -4,6 +4,6 @@ pairing_url = "https://api.astarte.EXAMPLE.COM/pairing"
 grpc_socket_port = 50051
 interfaces_directory = "/usr/share/message-hub/astarte-interfaces/"
 pairing_token = "YOUR_PAIRING_TOKEN"
-# credential_secret = "YOUR_CREDENTIAL_SECRET"
+# credentials_secret = "YOUR_CREDENTIAL_SECRET"
 astarte_ignore_ssl = false
 store_directory = "/var/lib/message-hub"
