@@ -29,7 +29,15 @@ fn main() {
         "proto/astarteplatform/msghub/config.proto",
     ];
 
-    tonic_build::configure()
+    let mut config = tonic_build::configure();
+
+    // NOTE: This is a temporary workaround to build the documentation on docs.rs, since they are
+    //       using protobuf 3.12.
+    if cfg!(feature = "docrs") {
+        config = config.protoc_arg("--experimental_allow_proto3_optional");
+    }
+
+    config
         .compile_well_known_types(true)
         .extern_path(".google.protobuf", "::pbjson_types")
         .compile(proto_files, &["proto"])
