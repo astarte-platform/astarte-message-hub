@@ -84,17 +84,19 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: true
+      # Install the protoc from apt since docs.rs uses this environment to build the documentation
+      # https://github.com/rust-lang/crates-build-env/tree/master
       - name: Install Protoc
-        run: |
-          curl -LO "$PB_REL/download/v22.2/protoc-22.2-linux-x86_64.zip"
-          unzip protoc-22.2-linux-x86_64.zip -d "$HOME/.local"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: sudo apt-get install -y libprotobuf-dev libprotobuf-lite23 libprotobuf23 libprotoc23 protobuf-compiler
       - name: Install nightly
         uses: dtolnay/rust-toolchain@nightly
       - name: cargo doc
         run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: --cfg docsrs  -D warnings
+          DOCS_RS: 1
   hack:
     runs-on: ubuntu-latest
     name: ubuntu / stable / features
