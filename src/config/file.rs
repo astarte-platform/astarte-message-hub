@@ -74,7 +74,7 @@ mod test {
         let res = get_options_from_toml(TOML_FILE);
         let options = res.expect("Parsing of TOML file failed");
         assert_eq!(options.realm, "1");
-        assert_eq!(options.device_id, "2");
+        assert_eq!(options.device_id, Some("2".to_string()));
         assert_eq!(options.pairing_url, "3");
         assert_eq!(options.credentials_secret, Some("4".to_string()));
         assert_eq!(options.pairing_token, None);
@@ -96,7 +96,7 @@ mod test {
         let res = get_options_from_toml(TOML_FILE);
         let options = res.expect("Parsing of TOML file failed");
         assert_eq!(options.realm, "1");
-        assert_eq!(options.device_id, "2");
+        assert_eq!(options.device_id, Some("2".to_string()));
         assert_eq!(options.pairing_url, "3");
         assert_eq!(options.credentials_secret, None);
         assert_eq!(options.pairing_token, Some("4".to_string()));
@@ -119,7 +119,7 @@ mod test {
         let res = get_options_from_toml(TOML_FILE);
         let options = res.expect("Parsing of TOML file failed");
         assert_eq!(options.realm, "1");
-        assert_eq!(options.device_id, "2");
+        assert_eq!(options.device_id, Some("2".to_string()));
         assert_eq!(options.pairing_url, "3");
         assert_eq!(options.credentials_secret, Some("4".to_string()));
         assert_eq!(options.pairing_token, Some("5".to_string()));

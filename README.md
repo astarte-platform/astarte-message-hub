@@ -38,7 +38,6 @@ The format for the configuration file is the following:
 # Required fields
 #
 realm = "<REALM>"
-device_id = "<DEVICE_ID>"
 pairing_url = "<PAIRING_URL>"
 grpc_socket_port = 0 # Required, 0 is only a placeholder
 
@@ -46,6 +45,8 @@ grpc_socket_port = 0 # Required, 0 is only a placeholder
 # Optional fields
 #
 interfaces_directory = "[INTERFACES_DIRECTORY]"
+# Device id, if not provided it will be retrieved from `io.edgehog.Device` dbus-service
+device_id = "[DEVICE_ID]"
 # Used to register a device and obtain a `credentials_secret`
 pairing_token = "[PAIRING_TOKEN]"
 # Credential secret, if not provided the `pairing_token` is required
