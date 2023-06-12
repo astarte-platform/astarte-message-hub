@@ -1,5 +1,5 @@
 /*
- * This file is part of Astarte.
+ * This file is part of Edgehog.
  *
  * Copyright 2022 SECO Mind Srl
  *
@@ -17,19 +17,14 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#![doc = include_str!("../README.md")]
-#![warn(missing_docs)]
 
-pub use crate::astarte_message_hub::AstarteMessageHub;
-pub use crate::data::astarte_handler::AstarteHandler;
-pub use crate::proto_message_hub::message_hub_server::MessageHubServer;
+use zbus::dbus_proxy;
 
-mod astarte_device_sdk_types;
-mod astarte_message_hub;
-pub mod config;
-mod data;
-mod device;
-pub mod error;
-#[allow(missing_docs)]
-pub mod proto_message_hub;
-mod types;
+#[dbus_proxy(
+    interface = "io.edgehog.Device1",
+    default_service = "io.edgehog.Device",
+    default_path = "/io/edgehog/Device"
+)]
+trait Device {
+    fn get_hardware_id(&self, namespace: &str) -> zbus::Result<String>;
+}
