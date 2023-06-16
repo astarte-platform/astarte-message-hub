@@ -138,14 +138,6 @@ impl MessageHubOptions {
         );
 
         ensure!(
-            self.device_id
-                .as_ref()
-                .map(|e| !e.is_empty())
-                .unwrap_or(false),
-            ConfigValidationError::MissingField("device_id")
-        );
-
-        ensure!(
             !self.pairing_url.is_empty(),
             ConfigValidationError::MissingField("pairing_url")
         );
@@ -366,7 +358,7 @@ mod test {
     }
 
     #[test]
-    fn test_is_valid_empty_device_id_err() {
+    fn test_is_valid_empty_device_id() {
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("".to_string()),
@@ -378,7 +370,7 @@ mod test {
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(expected_msg_hub_opts.validate().is_err());
+        assert!(expected_msg_hub_opts.validate().is_ok());
     }
 
     #[test]
