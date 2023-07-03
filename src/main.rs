@@ -84,13 +84,14 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
 ) -> Result<AstarteDeviceSdk, AstarteMessageHubError> {
+    msg_hub_opts.obtain_device_id().await?;
     // Obtain the credentials secret, the store defaults to the current directory
     msg_hub_opts.obtain_credential_secret().await?;
 
     // Create the configuration options for the device and then instantiate a new device
     let mut device_sdk_opts = AstarteOptions::new(
         &msg_hub_opts.realm,
-        &msg_hub_opts.device_id,
+        msg_hub_opts.device_id.as_ref().unwrap(),
         msg_hub_opts.credentials_secret.as_ref().unwrap(),
         &msg_hub_opts.pairing_url,
     );

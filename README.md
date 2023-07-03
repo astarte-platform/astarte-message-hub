@@ -7,7 +7,7 @@
 # Astarte Message Hub
 
 [![Crates.io](https://img.shields.io/crates/v/astarte-message-hub)](https://crates.io/crates/astarte-message-hub)
-[![docs.rs](https://img.shields.io/docsrs/astarte_message_hub)](https://docs.rs/astarte-message-hub/)
+[![docs.rs](https://img.shields.io/docsrs/astarte-message-hub)](https://docs.rs/astarte-message-hub/)
 [![CI](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/build.yaml/badge.svg?branch=master)](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/build.yaml?branch=master)
 [![codecov](https://codecov.io/gh/astarte-platform/astarte-message-hub/branch/master/graph/badge.svg)](https://app.codecov.io/gh/astarte-message-hub)
 [![LICENSE](https://img.shields.io/github/license/astarte-platform/astarte-message-hub)](./LICENSE)
@@ -38,7 +38,6 @@ The format for the configuration file is the following:
 # Required fields
 #
 realm = "<REALM>"
-device_id = "<DEVICE_ID>"
 pairing_url = "<PAIRING_URL>"
 grpc_socket_port = 0 # Required, 0 is only a placeholder
 
@@ -46,6 +45,8 @@ grpc_socket_port = 0 # Required, 0 is only a placeholder
 # Optional fields
 #
 interfaces_directory = "[INTERFACES_DIRECTORY]"
+# Device id, if not provided it will be retrieved from `io.edgehog.Device` dbus-service
+device_id = "[DEVICE_ID]"
 # Used to register a device and obtain a `credentials_secret`
 pairing_token = "[PAIRING_TOKEN]"
 # Credential secret, if not provided the `pairing_token` is required
