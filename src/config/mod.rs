@@ -53,7 +53,7 @@ pub struct MessageHubOptions {
     /// The Astarte realm the device belongs to.
     pub realm: String,
     /// A unique ID for the device.
-    pub device_id: String,
+    pub device_id: Option<String>,
     /// The credentials secret used to authenticate with Astarte.
     pub credentials_secret: Option<String>,
     /// The URL of the Astarte pairing API.
@@ -135,11 +135,6 @@ impl MessageHubOptions {
         ensure!(
             !self.realm.is_empty(),
             ConfigValidationError::MissingField("realm")
-        );
-
-        ensure!(
-            !self.device_id.is_empty(),
-            ConfigValidationError::MissingField("device_id")
         );
 
         ensure!(
@@ -245,7 +240,9 @@ impl MessageHubOptions {
             pairing_token,
             &self.pairing_url,
             &self.realm,
-            &self.device_id,
+            self.device_id.as_ref().ok_or_else(|| {
+                AstarteMessageHubError::FatalError("No device id provided".to_string())
+            })?,
         )
         .await
         .map_err(|err| AstarteMessageHubError::FatalError(err.to_string()))
@@ -262,6 +259,46 @@ impl MessageHubOptions {
 
         Ok(String::default())
     }
+
+    /// Obtains the device id from option or by zbus service.
+    pub async fn obtain_device_id<'a: 'b, 'b>(
+        &'a mut self,
+    ) -> Result<&'b str, AstarteMessageHubError> {
+        if self
+            .device_id
+            .as_ref()
+            .filter(|device_id| !device_id.is_empty())
+            .is_none()
+        {
+            let device_id = self.get_hardware_id_from_dbus().await?;
+            self.device_id = Some(device_id);
+        }
+
+        Ok(self.device_id.as_ref().unwrap())
+    }
+
+    #[cfg(not(test))]
+    async fn get_hardware_id_from_dbus(&self) -> Result<String, AstarteMessageHubError> {
+        use crate::device::DeviceProxy;
+
+        let connection = zbus::Connection::system().await?;
+        let proxy = DeviceProxy::new(&connection).await?;
+        let device_id: String = proxy.get_hardware_id("").await?;
+        if device_id.is_empty() {
+            return Err(AstarteMessageHubError::FatalError(
+                "No hardware id provided".to_string(),
+            ));
+        }
+        Ok(device_id)
+    }
+
+    #[cfg(test)]
+    async fn get_hardware_id_from_dbus(&self) -> Result<String, AstarteMessageHubError> {
+        use log::info;
+
+        info!("retrieve mock-id");
+        Ok("mock-id".to_string())
+    }
 }
 
 #[cfg(test)]
@@ -272,7 +309,7 @@ mod test {
     fn test_is_valid_cred_sec_ok() {
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: Some("4".to_string()),
             pairing_token: None,
@@ -290,7 +327,7 @@ mod test {
     fn test_is_valid_pairing_token_ok() {
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: Some("4".to_string()),
@@ -308,7 +345,7 @@ mod test {
     fn test_is_valid_empty_realm_err() {
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: Some("4".to_string()),
@@ -321,10 +358,10 @@ mod test {
     }
 
     #[test]
-    fn test_is_valid_empty_device_id_err() {
+    fn test_is_valid_empty_device_id() {
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "".to_string(),
+            device_id: Some("".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: Some("4".to_string()),
@@ -333,14 +370,14 @@ mod test {
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
         };
-        assert!(expected_msg_hub_opts.validate().is_err());
+        assert!(expected_msg_hub_opts.validate().is_ok());
     }
 
     #[test]
     fn test_is_valid_empty_pairing_url_err() {
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "".to_string(),
             credentials_secret: None,
             pairing_token: Some("4".to_string()),
@@ -356,7 +393,7 @@ mod test {
     fn test_is_valid_empty_credentials_secred_err() {
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: Some("".to_string()),
             pairing_token: None,
@@ -372,7 +409,7 @@ mod test {
     fn test_is_valid_empty_pairing_token_err() {
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: Some("".to_string()),
@@ -388,7 +425,7 @@ mod test {
     fn test_is_valid_invalid_interf_dir_err() {
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: Some("4".to_string()),
@@ -404,7 +441,7 @@ mod test {
     fn test_is_valid_missing_credentials_secret_and_pairing_token_err() {
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: None,
@@ -425,7 +462,7 @@ mod test {
 
         let mut opt = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: None,
@@ -451,7 +488,7 @@ mod test {
 
         let mut opt = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: Some("42".to_string()),
@@ -480,7 +517,7 @@ mod test {
     async fn load_toml_config() {
         let expected = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: Some("42".to_string()),
@@ -508,7 +545,7 @@ mod test {
     async fn load_from_store_path() {
         let mut expected = MessageHubOptions {
             realm: "1".to_string(),
-            device_id: "2".to_string(),
+            device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
             credentials_secret: None,
             pairing_token: Some("42".to_string()),
@@ -545,7 +582,7 @@ mod test {
 
         let expected = MessageHubOptions {
             realm: "example_realm".to_string(),
-            device_id: "YOUR_UNIQUE_DEVICE_ID".to_string(),
+            device_id: Some("YOUR_UNIQUE_DEVICE_ID".to_string()),
             credentials_secret: None,
             pairing_url: "https://api.astarte.EXAMPLE.COM".to_string(),
             pairing_token: Some("YOUR_PAIRING_TOKEN".to_string()),
@@ -556,5 +593,92 @@ mod test {
         };
 
         assert_ne!(opts, expected);
+    }
+
+    #[tokio::test]
+    async fn obtain_configured_device_id() {
+        let expected = "2".to_string();
+
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+
+        let mut opt = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: Some("2".to_string()),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: None,
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 655,
+            store_directory: dir.path().to_path_buf(),
+        };
+
+        let device_id = opt.obtain_device_id().await;
+
+        assert!(
+            device_id.is_ok(),
+            "error obtaining stored credential {:?}",
+            device_id
+        );
+        assert_eq!(device_id.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn obtain_device_id_configured_none() {
+        let expected = "mock-id".to_string();
+
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+
+        let mut opt = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: None,
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: None,
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 655,
+            store_directory: dir.path().to_path_buf(),
+        };
+
+        let device_id = opt.obtain_device_id().await;
+
+        assert!(
+            device_id.is_ok(),
+            "error obtaining stored credential {:?}",
+            device_id
+        );
+        assert_eq!(device_id.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn obtain_device_id_configured_some_but_empty() {
+        let expected = "mock-id".to_string();
+
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+
+        let mut opt = MessageHubOptions {
+            realm: "1".to_string(),
+            device_id: Some("".to_string()),
+            pairing_url: "3".to_string(),
+            credentials_secret: None,
+            pairing_token: None,
+            interfaces_directory: None,
+            astarte_ignore_ssl: false,
+            grpc_socket_port: 655,
+            store_directory: dir.path().to_path_buf(),
+        };
+
+        let device_id = opt.obtain_device_id().await;
+
+        assert!(
+            device_id.is_ok(),
+            "error obtaining stored credential {:?}",
+            device_id
+        );
+        assert_eq!(device_id.unwrap(), expected);
     }
 }

@@ -67,6 +67,10 @@ pub enum AstarteMessageHubError {
     /// Fail while sending or receiving data
     #[error(transparent)]
     TransportError(#[from] tonic::transport::Error),
+
+    /// Error returned by Zbus
+    #[error(transparent)]
+    ZbusError(#[from] zbus::Error),
 }
 
 /// Reason why a configuration is invalid.

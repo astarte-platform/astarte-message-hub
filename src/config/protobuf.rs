@@ -159,7 +159,7 @@ mod test {
         };
         let msg = ConfigMessage {
             realm: "rpc_realm".to_string(),
-            device_id: "rpc_device_id".to_string(),
+            device_id: Some("rpc_device_id".to_string()),
             credentials_secret: None,
             pairing_url: "rpc_pairing_url".to_string(),
             pairing_token: Some("rpc_pairing_token".to_string()),
@@ -189,7 +189,7 @@ mod test {
         };
         let msg = ConfigMessage {
             realm: "".to_string(),
-            device_id: "rpc_device_id".to_string(),
+            device_id: Some("rpc_device_id".to_string()),
             credentials_secret: None,
             pairing_url: "rpc_pairing_url".to_string(),
             pairing_token: Some("rpc_pairing_token".to_string()),
@@ -221,7 +221,7 @@ mod test {
         let mut client = MessageHubConfigClient::new(channel);
         let msg = ConfigMessage {
             realm: "rpc_realm".to_string(),
-            device_id: "rpc_device_id".to_string(),
+            device_id: Some("rpc_device_id".to_string()),
             credentials_secret: None,
             pairing_url: "rpc_pairing_url".to_string(),
             pairing_token: Some("rpc_pairing_token".to_string()),
