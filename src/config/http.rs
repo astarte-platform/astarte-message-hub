@@ -55,7 +55,7 @@ pub struct HttpConfigProvider {
 #[derive(Deserialize)]
 struct ConfigPayload {
     realm: String,
-    device_id: String,
+    device_id: Option<String>,
     credentials_secret: Option<String>,
     pairing_url: String,
     pairing_token: Option<String>,
