@@ -1,5 +1,5 @@
 /*
- * This file is part of Edgehog.
+ * This file is part of Astarte.
  *
  * Copyright 2022 SECO Mind Srl
  *
