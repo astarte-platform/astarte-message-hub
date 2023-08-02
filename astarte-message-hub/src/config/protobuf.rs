@@ -24,12 +24,12 @@ use std::io::Write;
 use std::num::TryFromIntError;
 use std::path::Path;
 
+use astarte_message_hub_proto::proto_message_hub;
 use tokio::sync::mpsc::{channel, Sender};
 use tonic::transport::Server;
 use tonic::{Code, Request, Response, Status};
 
 use crate::config::MessageHubOptions;
-use crate::proto_message_hub;
 
 #[derive(Debug)]
 struct AstarteMessageHubConfig {
@@ -102,7 +102,7 @@ impl ProtobufConfigProvider {
         configuration_ready_channel: Sender<()>,
         toml_file: &str,
     ) -> ProtobufConfigProvider {
-        use crate::proto_message_hub::message_hub_config_server::MessageHubConfigServer;
+        use proto_message_hub::message_hub_config_server::MessageHubConfigServer;
 
         let addr = address.parse().unwrap();
         let service = AstarteMessageHubConfig {
@@ -142,8 +142,8 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn set_config_test() {
-        use crate::proto_message_hub::message_hub_config_server::MessageHubConfig;
-        use crate::proto_message_hub::ConfigMessage;
+        use super::proto_message_hub::message_hub_config_server::MessageHubConfig;
+        use super::proto_message_hub::ConfigMessage;
 
         let dir = TempDir::new().unwrap();
         let toml_file = dir
@@ -172,8 +172,8 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_set_config_invalid_config() {
-        use crate::proto_message_hub::message_hub_config_server::MessageHubConfig;
-        use crate::proto_message_hub::ConfigMessage;
+        use super::proto_message_hub::message_hub_config_server::MessageHubConfig;
+        use super::proto_message_hub::ConfigMessage;
 
         let dir = TempDir::new().unwrap();
         let toml_file = dir
@@ -202,8 +202,8 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn server_test() {
-        use crate::proto_message_hub::message_hub_config_client::MessageHubConfigClient;
-        use crate::proto_message_hub::ConfigMessage;
+        use super::proto_message_hub::message_hub_config_client::MessageHubConfigClient;
+        use super::proto_message_hub::ConfigMessage;
 
         let dir = TempDir::new().unwrap();
         let toml_file = dir

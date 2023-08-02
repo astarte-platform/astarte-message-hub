@@ -18,11 +18,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use crate::error::AstarteMessageHubError;
 use astarte_device_sdk::types::AstarteType;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
+use crate::error::AstarteMessageHubProtoError;
 use crate::proto_message_hub;
 
 /// This macro can be used to implement the from trait for an AstarteDataTypeIndividual from a
@@ -166,9 +166,9 @@ impl From<HashMap<String, proto_message_hub::AstarteDataTypeIndividual>>
 macro_rules! impl_astarte_type_to_individual_data_conversion_traits {
     ($($typ:ident),*) => {
         impl TryFrom<astarte_device_sdk::types::AstarteType> for proto_message_hub::AstarteDataTypeIndividual {
-            type Error = AstarteMessageHubError;
+            type Error = AstarteMessageHubProtoError;
             fn try_from(d: astarte_device_sdk::types::AstarteType) -> Result<Self, Self::Error> {
-                use crate::types::AstarteMessageHubError::ConversionError;
+                use crate::types::AstarteMessageHubProtoError::ConversionError;
                 use astarte_device_sdk::types::AstarteType;
 
                 match d {
@@ -200,16 +200,16 @@ impl_astarte_type_to_individual_data_conversion_traits!(
 );
 
 impl TryFrom<astarte_device_sdk::AstarteDeviceDataEvent> for proto_message_hub::AstarteMessage {
-    type Error = AstarteMessageHubError;
+    type Error = AstarteMessageHubProtoError;
 
     fn try_from(value: astarte_device_sdk::AstarteDeviceDataEvent) -> Result<Self, Self::Error> {
-        use crate::proto_message_hub::astarte_data_type::Data;
-        use crate::proto_message_hub::astarte_message::Payload;
-        use crate::proto_message_hub::AstarteDataType;
-        use crate::proto_message_hub::AstarteDataTypeIndividual;
-        use crate::proto_message_hub::AstarteMessage;
-        use crate::proto_message_hub::AstarteUnset;
         use astarte_device_sdk::Aggregation;
+        use proto_message_hub::astarte_data_type::Data;
+        use proto_message_hub::astarte_message::Payload;
+        use proto_message_hub::AstarteDataType;
+        use proto_message_hub::AstarteDataTypeIndividual;
+        use proto_message_hub::AstarteMessage;
+        use proto_message_hub::AstarteUnset;
 
         let payload: Payload = match value.data {
             Aggregation::Individual(astarte_type) => {
@@ -247,14 +247,14 @@ impl TryFrom<astarte_device_sdk::AstarteDeviceDataEvent> for proto_message_hub::
 /// It can be useful when a method accept an astarte_device_sdk::AstarteAggregate.
 pub fn map_values_to_astarte_type(
     value: HashMap<String, proto_message_hub::AstarteDataTypeIndividual>,
-) -> Result<HashMap<String, astarte_device_sdk::types::AstarteType>, AstarteMessageHubError> {
+) -> Result<HashMap<String, astarte_device_sdk::types::AstarteType>, AstarteMessageHubProtoError> {
     let mut map: HashMap<String, AstarteType> = Default::default();
     for (key, astarte_data) in value.into_iter() {
         map.insert(
             key,
             astarte_data
                 .individual_data
-                .ok_or(AstarteMessageHubError::ConversionError)?
+                .ok_or(AstarteMessageHubProtoError::ConversionError)?
                 .try_into()?,
         );
     }
@@ -264,7 +264,7 @@ pub fn map_values_to_astarte_type(
 impl TryFrom<astarte_device_sdk::types::AstarteType>
     for proto_message_hub::astarte_message::Payload
 {
-    type Error = AstarteMessageHubError;
+    type Error = AstarteMessageHubProtoError;
 
     fn try_from(
         astarte_device_sdk_type: astarte_device_sdk::types::AstarteType,
@@ -288,7 +288,7 @@ impl TryFrom<astarte_device_sdk::types::AstarteType>
 }
 
 impl TryFrom<HashMap<String, AstarteType>> for proto_message_hub::astarte_message::Payload {
-    type Error = AstarteMessageHubError;
+    type Error = AstarteMessageHubProtoError;
 
     fn try_from(value: HashMap<String, AstarteType>) -> Result<Self, Self::Error> {
         use crate::proto_message_hub::astarte_data_type::Data::AstarteObject;
@@ -309,7 +309,7 @@ impl TryFrom<HashMap<String, AstarteType>> for proto_message_hub::astarte_messag
 
 #[cfg(test)]
 mod test {
-    use crate::error::AstarteMessageHubError;
+    use crate::error::AstarteMessageHubProtoError;
     use crate::proto_message_hub;
     use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
     use crate::proto_message_hub::astarte_message::Payload;
@@ -772,13 +772,13 @@ mod test {
     fn convert_astarte_type_unset_give_conversion_error() {
         let expected_data = AstarteType::Unset;
 
-        let result: Result<AstarteDataTypeIndividual, AstarteMessageHubError> =
+        let result: Result<AstarteDataTypeIndividual, AstarteMessageHubProtoError> =
             expected_data.try_into();
 
         assert!(result.is_err());
         assert!(matches!(
             result.err().unwrap(),
-            AstarteMessageHubError::ConversionError
+            AstarteMessageHubProtoError::ConversionError
         ));
     }
 
@@ -808,12 +808,12 @@ mod test {
 
     fn get_individual_data_from_payload(
         payload: Payload,
-    ) -> Result<AstarteType, AstarteMessageHubError> {
+    ) -> Result<AstarteType, AstarteMessageHubProtoError> {
         payload
             .take_data()
             .and_then(AstarteDataType::take_individual)
             .and_then(|data| data.individual_data)
-            .ok_or(AstarteMessageHubError::ConversionError)?
+            .ok_or(AstarteMessageHubProtoError::ConversionError)?
             .try_into()
     }
 
@@ -1247,7 +1247,8 @@ mod test {
             astarte_device_sdk::types::AstarteType::Double(expected_data),
         )]);
 
-        let payload_result: Result<Payload, AstarteMessageHubError> = astarte_type_map.try_into();
+        let payload_result: Result<Payload, AstarteMessageHubProtoError> =
+            astarte_type_map.try_into();
         assert!(payload_result.is_ok());
 
         let double_data = payload_result

@@ -25,13 +25,13 @@
 //! However, nothing stops third parties from developing their own handler by implementing
 //! the traits in this file.
 
+use astarte_message_hub_proto::proto_message_hub;
 use async_trait::async_trait;
 use tokio::sync::mpsc::Receiver;
 use tonic::Status;
 
 use crate::astarte_message_hub::AstarteNode;
 use crate::error::AstarteMessageHubError;
-use crate::proto_message_hub;
 
 #[async_trait]
 pub trait AstarteRunner {

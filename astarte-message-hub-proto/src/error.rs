@@ -1,7 +1,7 @@
 /*
  * This file is part of Astarte.
  *
- * Copyright 2022 SECO Mind Srl
+ * Copyright 2023 SECO Mind Srl
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,21 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#![doc = include_str!("../README.md")]
-#![warn(missing_docs)]
 
-pub use crate::astarte_message_hub::AstarteMessageHub;
-pub use crate::data::astarte_handler::AstarteHandler;
-pub use crate::proto_message_hub::message_hub_server::MessageHubServer;
+use thiserror::Error;
 
-mod astarte_device_sdk_types;
-mod astarte_message_hub;
-pub mod config;
-mod data;
-mod device;
-pub mod error;
-#[allow(missing_docs)]
-pub mod proto_message_hub;
-mod types;
+/// A list specifying general categories of Astarte Message Hub error.
+#[derive(Error, Debug)]
+pub enum AstarteMessageHubProtoError {
+    /// An infallible error
+    #[error(transparent)]
+    Infallible(#[from] std::convert::Infallible),
+
+    /// Wrapper for integer conversion errors
+    #[error(transparent)]
+    TryFromIntError(#[from] core::num::TryFromIntError),
+
+    /// Failed to convert between types
+    #[error("unable to convert type")]
+    ConversionError,
+}

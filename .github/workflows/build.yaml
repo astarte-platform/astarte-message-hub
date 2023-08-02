@@ -82,7 +82,7 @@ jobs:
         run: rustup component add clippy
       - name: Run cargo clippy
         run: |
-          cargo clippy --all-targets -- -Dwarnings
+          cargo clippy --all-targets --workspace -- -Dwarnings
 
   test:
     name: cargo test

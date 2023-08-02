@@ -325,20 +325,20 @@ mod test {
 
     #[test]
     fn create_note_from_interface_files() {
-        let uid = uuid::Uuid::new_v4();
+        let uuid = uuid::Uuid::new_v4();
 
         let interface_jsons = [
             include_str!(
-                "../examples/client/interfaces/org.astarte-platform.rust.examples.datastream.DeviceDatastream.json"
+                "../../examples/client/interfaces/org.astarte-platform.rust.examples.datastream.DeviceDatastream.json"
             ),
             include_str!(
-                "../examples/client/interfaces/org.astarte-platform.rust.examples.datastream.ServerDatastream.json"
+                "../../examples/client/interfaces/org.astarte-platform.rust.examples.datastream.ServerDatastream.json"
             ),
         ];
 
-        let node = Node::new(uid, &interface_jsons);
+        let node = Node::new(uuid, &interface_jsons);
 
-        assert_eq!(node.uuid, uid.to_string());
+        assert_eq!(node.uuid, uuid.to_string());
         assert_eq!(node.interface_jsons.len(), 2);
 
         for (interface, &expected) in node.interface_jsons.iter().zip(interface_jsons.iter()) {

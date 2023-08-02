@@ -573,7 +573,7 @@ mod test {
     /// Make sure the example config is keep in sync with the code
     #[test]
     fn deserialize_example_config() {
-        let config = include_str!("../../examples/message-hub-config.toml");
+        let config = include_str!("../../../examples/message-hub-config.toml");
 
         let opts = toml::from_str::<MessageHubOptions>(config);
 

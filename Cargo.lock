@@ -100,6 +100,7 @@ name = "astarte-message-hub"
 version = "0.5.1"
 dependencies = [
  "astarte-device-sdk",
+ "astarte-message-hub-proto",
  "async-trait",
  "axum",
  "chrono",
@@ -119,10 +120,23 @@ dependencies = [
  "tokio-stream",
  "toml",
  "tonic",
- "tonic-build",
  "uuid",
  "zbus",
  "zvariant",
+]
+
+[[package]]
+name = "astarte-message-hub-proto"
+version = "0.5.1"
+dependencies = [
+ "astarte-device-sdk",
+ "chrono",
+ "pbjson-types",
+ "prost",
+ "thiserror",
+ "tonic",
+ "tonic-build",
+ "uuid",
 ]
 
 [[package]]

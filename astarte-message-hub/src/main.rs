@@ -32,10 +32,10 @@ use log::info;
 
 use astarte_device_sdk::options::AstarteOptions;
 use astarte_device_sdk::AstarteDeviceSdk;
-
 use astarte_message_hub::config::MessageHubOptions;
 use astarte_message_hub::error::AstarteMessageHubError;
-use astarte_message_hub::proto_message_hub::message_hub_server::MessageHubServer;
+use astarte_message_hub_proto::proto_message_hub::message_hub_server::MessageHubServer;
+
 use astarte_message_hub::AstarteHandler;
 use astarte_message_hub::AstarteMessageHub;
 
