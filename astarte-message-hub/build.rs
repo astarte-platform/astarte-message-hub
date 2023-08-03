@@ -21,12 +21,7 @@
 //! message hub.
 
 fn main() {
-    let proto_files = &[
-        "proto/astarteplatform/msghub/message_hub_service.proto",
-        "proto/astarteplatform/msghub/node.proto",
-        "proto/astarteplatform/msghub/astarte_message.proto",
-        "proto/astarteplatform/msghub/astarte_type.proto",
-    ];
+    let proto_files = &["proto/astarteplatform/msghub/config.proto"];
 
     let mut config = tonic_build::configure();
 

@@ -32,6 +32,7 @@ use crate::error::{AstarteMessageHubError, ConfigValidationError};
 
 pub mod file;
 pub mod http;
+#[allow(missing_docs)]
 pub mod protobuf;
 
 use file::CONFIG_FILE_NAMES;
