@@ -36,7 +36,7 @@ jobs:
       matrix:
         toolchain:
           - stable
-          - 1.59
+          - 1.66.1
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -62,7 +62,7 @@ jobs:
     strategy:
       matrix:
         toolchain:
-        - 1.59.0
+        - 1.66.1
         - stable
     steps:
       - name: Checkout sources
@@ -91,7 +91,7 @@ jobs:
       matrix:
         toolchain:
           - stable
-          - 1.59
+          - 1.66.1
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2

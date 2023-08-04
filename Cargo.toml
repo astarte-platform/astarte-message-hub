@@ -9,3 +9,29 @@ members = [
     "astarte-message-hub",
     "astarte-message-hub-proto"
 ]
+
+[workspace.package]
+version = "0.5.1"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/astarte-platform/astarte-message-hub"
+description ="A central service that runs on (Linux) devices for collecting and delivering messages from N apps using 1 MQTT connection to Astarte"
+homepage = "https://astarte.cloud/"
+documentation = "https://docs.rs/astarte-message-hub"
+readme ="README.md"
+keywords = ["sdk", "iot", "astarte"]
+categories = ["network-programming"]
+# The minimum supported Rust version.
+# One of the effects of this flag is to disable lints pertaining to newer features.
+# See: https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field
+rust-version = "1.66.1"
+
+[workspace.dependencies]
+astarte-device-sdk = {version = "0.5.1" , features = ["derive"]}
+chrono = "0.4.24"
+pbjson-types = "0.5"
+prost = "0.11.3"
+thiserror = "1.0"
+tonic = "0.8.2"
+tonic-build = "0.8.2"
+uuid = "1.3.4"
