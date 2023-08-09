@@ -37,6 +37,7 @@ use crate::error::AstarteMessageHubError;
 
 #[cfg(test)]
 use crate::data::mock_astarte_sdk::MockAstarteDeviceSdk as AstarteDeviceSdk;
+use astarte_device_sdk::store::memory::MemoryStore;
 #[cfg(not(test))]
 use astarte_device_sdk::AstarteDeviceSdk;
 
@@ -44,7 +45,7 @@ use astarte_device_sdk::AstarteDeviceSdk;
 /// Uses the Astarte Device SDK to provide subscribe and publish functionality.
 #[derive(Clone)]
 pub struct AstarteHandler {
-    device_sdk: AstarteDeviceSdk,
+    device_sdk: AstarteDeviceSdk<MemoryStore>,
     subscribers: Arc<RwLock<HashMap<Uuid, Subscriber>>>,
 }
 
@@ -101,7 +102,7 @@ impl AstarteSubscriber for AstarteHandler {
                         .iter()
                         .filter(|(id, _)| astarte_node.id.ne(id))
                         .find_map(|(_, subscriber)| {
-                            subscriber.introspection.contains(interface).then(|| ())
+                            subscriber.introspection.contains(interface).then_some(())
                         })
                         .is_none()
                 })
@@ -110,7 +111,7 @@ impl AstarteSubscriber for AstarteHandler {
 
         for interface in interfaces_to_remove.iter() {
             self.device_sdk
-                .remove_interface(&interface.get_name())
+                .remove_interface(interface.interface_name())
                 .await?;
         }
 
@@ -139,15 +140,23 @@ impl AstartePublisher for AstarteHandler {
         use astarte_message_hub_proto::proto_message_hub::astarte_data_type::Data;
         use astarte_message_hub_proto::proto_message_hub::astarte_message::Payload;
 
-        match astarte_message.payload.clone().ok_or_else(|| {
-            AstarteMessageHubError::AstarteInvalidData("Invalid payload".to_string())
-        })? {
+        let Some(astarte_message_payload) = astarte_message.clone().payload else {
+            return Err(AstarteMessageHubError::AstarteInvalidData("Invalid payload".to_string()));
+        };
+
+        match astarte_message_payload {
+            Payload::AstarteUnset(_) => self
+                .device_sdk
+                .unset(&astarte_message.interface_name, &astarte_message.path)
+                .await
+                .map_err(AstarteMessageHubError::AstarteError),
             Payload::AstarteData(astarte_data) => {
-                match astarte_data.data.ok_or_else(|| {
-                    AstarteMessageHubError::AstarteInvalidData(
-                        "Invalid Astarte data type".to_string(),
-                    )
-                })? {
+                let Some(astarte_data) = astarte_data.data else {
+                return Err(AstarteMessageHubError::AstarteInvalidData(
+                    "Invalid Astarte data type".to_string()));
+                };
+
+                match astarte_data {
                     Data::AstarteIndividual(data) => {
                         self.publish_astarte_individual(
                             data,
@@ -168,12 +177,6 @@ impl AstartePublisher for AstarteHandler {
                     }
                 }
             }
-            Payload::AstarteUnset(_) => {
-                self.device_sdk
-                    .unset(&astarte_message.interface_name, &astarte_message.path)
-                    .await
-            }
-            .map_err(AstarteMessageHubError::AstarteError),
         }
     }
 }
@@ -193,31 +196,32 @@ impl AstarteRunner for AstarteHandler {
     async fn run(&mut self) {
         use astarte_message_hub_proto::proto_message_hub::AstarteMessage;
 
-        if let Ok(astarte_data_event) = self.device_sdk.handle_events().await {
-            println!("incoming: {:?}", astarte_data_event);
+        let Ok(astarte_data_event) = self.device_sdk.handle_events().await else {
+            warn!("Received empty event");
+            return;
+        };
 
-            if let Ok(astarte_message) = AstarteMessage::try_from(astarte_data_event.clone()) {
-                let subscribers_guard = self.subscribers.read().await;
-                let subscribers = subscribers_guard
+        println!("incoming: {:?}", astarte_data_event);
+
+        let Ok(astarte_message) = AstarteMessage::try_from(astarte_data_event.clone()) else {
+                warn!("Unable to convert astarte_data_event to AstarteMessage: {:?}",astarte_data_event);
+                return;
+        };
+
+        let subscribers_guard = self.subscribers.read().await;
+        let subscribers = subscribers_guard
+            .iter()
+            .filter(|(_, subscriber)| {
+                subscriber
+                    .introspection
                     .iter()
-                    .filter(|(_, subscriber)| {
-                        subscriber
-                            .introspection
-                            .iter()
-                            .map(|iface| iface.get_name())
-                            .collect::<String>()
-                            .contains(&astarte_data_event.interface)
-                    })
-                    .map(|(_, subscriber)| subscriber);
-                for subscriber in subscribers {
-                    let _ = subscriber.sender.send(Ok(astarte_message.clone())).await;
-                }
-            } else {
-                warn!(
-                    "Unable to convert astarte_data_event to AstarteMessage: {:?}",
-                    astarte_data_event
-                );
-            }
+                    .map(|iface| iface.interface_name())
+                    .collect::<String>()
+                    .contains(&astarte_data_event.interface)
+            })
+            .map(|(_, subscriber)| subscriber);
+        for subscriber in subscribers {
+            let _ = subscriber.sender.send(Ok(astarte_message.clone())).await;
         }
     }
 }
@@ -225,7 +229,7 @@ impl AstarteRunner for AstarteHandler {
 impl AstarteHandler {
     /// Constructs a new handler from the [AstarteDeviceSdk]
     #[allow(dead_code)]
-    pub fn new(device_sdk: AstarteDeviceSdk) -> Self {
+    pub fn new(device_sdk: AstarteDeviceSdk<MemoryStore>) -> Self {
         AstarteHandler {
             device_sdk,
             subscribers: Arc::new(Default::default()),
@@ -301,8 +305,9 @@ mod test {
     use std::collections::HashMap;
     use std::str::FromStr;
 
+    use astarte_device_sdk::error::Error as AstarteSDKError;
     use astarte_device_sdk::types::AstarteType;
-    use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent, AstarteError};
+    use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent};
     use chrono::Utc;
     use tokio::sync::mpsc::Receiver;
     use tonic::Status;
@@ -344,12 +349,12 @@ mod test {
             "aggregation": "object",
             "mappings": [
                 {
-                    "endpoint": "/button",
+                    "endpoint": "/request/button",
                     "type": "boolean",
                     "explicit_timestamp": true
                 },
                 {
-                    "endpoint": "/uptimeSeconds",
+                    "endpoint": "/request/uptimeSeconds",
                     "type": "integer",
                     "explicit_timestamp": true
                 }
@@ -381,9 +386,7 @@ mod test {
         let mut device_sdk = MockAstarteDeviceSdk::new();
         let interfaces = vec!["".to_string().into_bytes()];
 
-        device_sdk
-            .expect_add_interface()
-            .returning(|_| Err(AstarteError::Unreported));
+        device_sdk.expect_add_interface().returning(|_| Ok(()));
 
         let astarte_node = AstarteNode::new(
             "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
@@ -397,9 +400,7 @@ mod test {
 
         assert!(matches!(
             result.err().unwrap(),
-            AstarteMessageHubError::AstarteError(astarte_device_sdk::AstarteError::InterfaceError(
-                _
-            ))
+            AstarteMessageHubError::AstarteError(AstarteSDKError::Interface(_))
         ))
     }
 
@@ -409,7 +410,7 @@ mod test {
         use super::proto_message_hub::AstarteMessage;
 
         let prop_interface = astarte_device_sdk::Interface::from_str(SERV_PROPS_IFACE).unwrap();
-        let expected_interface_name = prop_interface.get_name();
+        let expected_interface_name = prop_interface.interface_name();
         let path = "test";
         let value: i32 = 5;
 
@@ -422,10 +423,10 @@ mod test {
             interfaces,
         );
 
-        let interface_cloned = expected_interface_name.clone();
+        let interface_string = expected_interface_name.to_string();
         device_sdk.expect_handle_events().returning(move || {
             Ok(AstarteDeviceDataEvent {
-                interface: interface_cloned.to_string(),
+                interface: interface_string.clone(),
                 path: path.to_string(),
                 data: Aggregation::Individual(value.into()),
             })
@@ -471,9 +472,11 @@ mod test {
             interfaces,
         );
 
-        device_sdk
-            .expect_handle_events()
-            .returning(move || Err(AstarteError::DeserializationError));
+        device_sdk.expect_handle_events().returning(move || {
+            Err(astarte_device_sdk::error::Error::ReceiveError(
+                "Unable to receive event".to_string(),
+            ))
+        });
 
         device_sdk.expect_add_interface().returning(|_| Ok(()));
 
@@ -622,7 +625,7 @@ mod test {
                 interface_name == expected_interface_name
             })
             .returning(|_: &str, _: &str, _: AstarteType| {
-                Err(AstarteError::SendError(
+                Err(AstarteSDKError::SendError(
                     "Unable to send individual data".to_string(),
                 ))
             });
@@ -634,7 +637,7 @@ mod test {
 
         let _result_err = result.err().unwrap();
         assert!(matches!(
-            AstarteError::SendError("Unable to send individual data".to_string()),
+            AstarteSDKError::SendError("Unable to send individual data".to_string()),
             _result_err
         ));
     }
@@ -664,7 +667,7 @@ mod test {
             )
             .returning(
                 |_: &str, _: &str, _: AstarteType, _: chrono::DateTime<Utc>| {
-                    Err(AstarteError::SendError(
+                    Err(AstarteSDKError::SendError(
                         "Unable to send individual data".to_string(),
                     ))
                 },
@@ -677,7 +680,7 @@ mod test {
 
         let _result_err = result.err().unwrap();
         assert!(matches!(
-            AstarteError::SendError("Unable to send individual data".to_string()),
+            AstarteSDKError::SendError("Unable to send individual data".to_string()),
             _result_err
         ));
     }
@@ -796,7 +799,9 @@ mod test {
                 },
             )
             .returning(|_: &str, _: &str, _: HashMap<String, AstarteType>| {
-                Err(AstarteError::SendError("Unable to send object".to_string()))
+                Err(AstarteSDKError::SendError(
+                    "Unable to send object".to_string(),
+                ))
             });
 
         let astarte_handler = AstarteHandler::new(device_sdk);
@@ -806,7 +811,7 @@ mod test {
 
         let _result_err = result.err().unwrap();
         assert!(matches!(
-            AstarteError::SendError("Unable to send object".to_string()),
+            AstarteSDKError::SendError("Unable to send object".to_string()),
             _result_err
         ));
     }
@@ -846,7 +851,9 @@ mod test {
             )
             .returning(
                 |_: &str, _: &str, _: HashMap<String, AstarteType>, _: chrono::DateTime<Utc>| {
-                    Err(AstarteError::SendError("Unable to send object".to_string()))
+                    Err(AstarteSDKError::SendError(
+                        "Unable to send object".to_string(),
+                    ))
                 },
             );
 
@@ -857,7 +864,7 @@ mod test {
 
         let _result_err = result.err().unwrap();
         assert!(matches!(
-            AstarteError::SendError("Unable to send object".to_string()),
+            AstarteSDKError::SendError("Unable to send object".to_string()),
             _result_err
         ));
     }
@@ -908,7 +915,9 @@ mod test {
             .expect_unset()
             .withf(move |interface_name: &str, _: &str| interface_name == expected_interface_name)
             .returning(|_: &str, _: &str| {
-                Err(AstarteError::SendError("Unable to unset path".to_string()))
+                Err(AstarteSDKError::SendError(
+                    "Unable to unset path".to_string(),
+                ))
             });
 
         let astarte_handler = AstarteHandler::new(device_sdk);
@@ -918,7 +927,7 @@ mod test {
 
         let _result_err = result.err().unwrap();
         assert!(matches!(
-            AstarteError::SendError("Unable to unset path".to_string()),
+            AstarteSDKError::SendError("Unable to unset path".to_string()),
             _result_err
         ));
     }

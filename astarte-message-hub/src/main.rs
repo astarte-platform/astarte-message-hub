@@ -31,6 +31,7 @@ use clap::Parser;
 use log::info;
 
 use astarte_device_sdk::options::AstarteOptions;
+use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::AstarteDeviceSdk;
 use astarte_message_hub::config::MessageHubOptions;
 use astarte_message_hub::error::AstarteMessageHubError;
@@ -83,7 +84,7 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
-) -> Result<AstarteDeviceSdk, AstarteMessageHubError> {
+) -> Result<AstarteDeviceSdk<MemoryStore>, AstarteMessageHubError> {
     msg_hub_opts.obtain_device_id().await?;
     // Obtain the credentials secret, the store defaults to the current directory
     msg_hub_opts.obtain_credential_secret().await?;
@@ -104,7 +105,7 @@ async fn initialize_astarte_device_sdk(
         device_sdk_opts = device_sdk_opts.interface_directory(&int_dir.to_string_lossy())?;
     }
 
-    let sdk = AstarteDeviceSdk::new(&device_sdk_opts).await?;
+    let sdk = AstarteDeviceSdk::new(device_sdk_opts).await?;
 
     Ok(sdk)
 }

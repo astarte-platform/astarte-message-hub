@@ -135,18 +135,20 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
         })?;
 
         let astarte_node = AstarteNode::new(id, node.interface_jsons);
-        let subscribe_result = self.astarte_handler.subscribe(&astarte_node).await;
 
-        if let Ok(rx) = subscribe_result {
-            let mut nodes = self.nodes.write().await;
-            nodes.insert(astarte_node.id.to_owned(), astarte_node);
-            Ok(Response::new(ReceiverStream::new(rx)))
-        } else {
-            Err(Status::aborted(format!(
-                "Unable to subscribe, err: {:?}",
-                subscribe_result.err()
-            )))
-        }
+        let rx = match self.astarte_handler.subscribe(&astarte_node).await {
+            Ok(rx) => rx,
+            Err(err) => {
+                return Err(Status::aborted(format!(
+                    "Unable to subscribe, err: {:?}",
+                    err
+                )))
+            }
+        };
+
+        let mut nodes = self.nodes.write().await;
+        nodes.insert(astarte_node.id.to_owned(), astarte_node);
+        Ok(Response::new(ReceiverStream::new(rx)))
     }
 
     /// Send a message to Astarte for a node attached to the Astarte Message Hub.
@@ -415,7 +417,7 @@ mod test {
         assert!(attach_result.is_err());
         let err: Status = attach_result.err().unwrap();
         assert_eq!(
-            "Unable to subscribe, err: Some(AstarteInvalidData(\"interface not found\"))",
+            "Unable to subscribe, err: AstarteInvalidData(\"interface not found\")",
             err.message()
         )
     }

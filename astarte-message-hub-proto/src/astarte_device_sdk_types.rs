@@ -142,22 +142,21 @@ pub fn map_values_to_astarte_data_type_individual(
 }
 
 impl TryFrom<crate::types::InterfaceJson> for astarte_device_sdk::Interface {
-    type Error = AstarteMessageHubProtoError;
+    type Error = astarte_device_sdk::error::Error;
 
     fn try_from(interface: crate::types::InterfaceJson) -> Result<Self, Self::Error> {
+        use astarte_device_sdk::error::Error;
         use astarte_device_sdk::Interface;
         use std::str::FromStr;
 
         let interface_str = String::from_utf8_lossy(&interface.0);
-        Interface::from_str(interface_str.as_ref())
-            .map_err(|_| AstarteMessageHubProtoError::ConversionError)
+        Interface::from_str(interface_str.as_ref()).map_err(Error::Interface)
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::astarte_device_sdk_types::map_values_to_astarte_data_type_individual;
-    use crate::error::AstarteMessageHubProtoError;
     use astarte_device_sdk::types::AstarteType;
     use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent};
     use chrono::{DateTime, Utc};
@@ -543,10 +542,10 @@ mod test {
         let astarte_interface: Interface = interface.try_into().unwrap();
 
         assert_eq!(
-            astarte_interface.get_name(),
+            astarte_interface.interface_name(),
             "org.astarte-platform.test.test"
         );
-        assert_eq!(astarte_interface.get_version_major(), 1);
+        assert_eq!(astarte_interface.version_major(), 1);
     }
 
     #[test]
@@ -578,10 +577,10 @@ mod test {
         let astarte_interface: Interface = interface.try_into().unwrap();
 
         assert_eq!(
-            astarte_interface.get_name(),
+            astarte_interface.interface_name(),
             "org.astarte-platform.test.test"
         );
-        assert_eq!(astarte_interface.get_version_major(), 1);
+        assert_eq!(astarte_interface.version_major(), 1);
     }
 
     #[test]
@@ -594,7 +593,7 @@ mod test {
 
         let interface = InterfaceJson(IFACE_BAD.into());
 
-        let astarte_interface_bad_result: Result<Interface, AstarteMessageHubProtoError> =
+        let astarte_interface_bad_result: Result<Interface, astarte_device_sdk::error::Error> =
             interface.try_into();
 
         assert!(astarte_interface_bad_result.is_err());

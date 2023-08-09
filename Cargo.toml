@@ -27,7 +27,7 @@ categories = ["network-programming"]
 rust-version = "1.66.1"
 
 [workspace.dependencies]
-astarte-device-sdk = {version = "0.5.1" , features = ["derive"]}
+astarte-device-sdk = {version = "0.6.0" , features = ["derive"]}
 chrono = "0.4.24"
 pbjson-types = "0.5"
 prost = "0.11.3"
