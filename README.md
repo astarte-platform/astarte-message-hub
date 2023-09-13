@@ -23,7 +23,7 @@ using 1 MQTT connection to Astarte.
 ## Requirements
 
 - protobuf >= 3.15
-- Rust version >= 1.59
+- Rust version >= 1.66.1
 
 ## Configuration
 

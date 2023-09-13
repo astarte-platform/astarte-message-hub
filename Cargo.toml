@@ -19,7 +19,7 @@ categories = ["network-programming"]
 # The minimum supported Rust version.
 # One of the effects of this flag is to disable lints pertaining to newer features.
 # See: https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field
-rust-version = "1.59.0"
+rust-version = "1.66.1"
 
 [dependencies]
 tonic = "0.8.2"
