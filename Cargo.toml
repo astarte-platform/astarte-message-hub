@@ -6,7 +6,7 @@
 
 [package]
 name = "astarte-message-hub"
-version = "0.5.2"
+version = "0.6.0-dev"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/astarte-platform/astarte-message-hub"
