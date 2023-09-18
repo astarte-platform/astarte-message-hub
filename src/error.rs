@@ -42,11 +42,11 @@ pub enum AstarteMessageHubError {
 
     /// Error returned by the Astarte SDK
     #[error(transparent)]
-    AstarteError(#[from] astarte_device_sdk::AstarteError),
+    AstarteError(#[from] astarte_device_sdk::error::Error),
 
     /// Error returned by the options
     #[error(transparent)]
-    AstarteOptionsError(#[from] astarte_device_sdk::options::AstarteOptionsError),
+    AstarteOptionsError(#[from] astarte_device_sdk::options::OptionsError),
 
     /// Invalid date
     #[error("{0}")]

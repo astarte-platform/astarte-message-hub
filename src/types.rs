@@ -175,6 +175,7 @@ macro_rules! impl_astarte_type_to_individual_data_conversion_traits {
                     $(
                     AstarteType::$typ(val) => Ok(val.into()),
                     )*
+                    AstarteType::EmptyArray => Err(ConversionError),
                     AstarteType::Unset => Err(ConversionError)
                 }
             }
