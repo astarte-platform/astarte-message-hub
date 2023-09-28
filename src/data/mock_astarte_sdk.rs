@@ -19,7 +19,7 @@
  */
 
 use astarte_device_sdk::types::AstarteType;
-use astarte_device_sdk::{error::Error, AstarteDeviceDataEvent, Interface};
+use astarte_device_sdk::{error::Error, Interface};
 use mockall::mock;
 
 #[derive(Clone)]
@@ -27,7 +27,7 @@ pub struct AstarteDeviceSdk {}
 
 mock! {
     pub AstarteDeviceSdk<S:'static> {
-        pub async fn handle_events(&mut self) -> Result<AstarteDeviceDataEvent, Error>;
+        pub async fn handle_events(&mut self) -> Result<(), Error>;
         pub async fn send<D: 'static>(
             &self,
             _interface_name: &str,

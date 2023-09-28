@@ -38,7 +38,7 @@ pub enum AstarteMessageHubError {
 
     /// Failed to convert between types
     #[error("unable to convert type")]
-    ConversionError,
+    ConversionError(#[from] astarte_message_hub_proto::error::AstarteMessageHubProtoError),
 
     /// Error returned by the Astarte SDK
     #[error(transparent)]

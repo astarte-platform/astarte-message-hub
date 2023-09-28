@@ -29,8 +29,8 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
-use crate::proto_message_hub;
-use crate::types::InterfaceJson;
+use astarte_message_hub_proto;
+use astarte_message_hub_proto::types::InterfaceJson;
 
 /// Main struct for the Astarte message hub.
 pub struct AstarteMessageHub<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber> {
@@ -84,17 +84,17 @@ where
 
 #[tonic::async_trait]
 impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
-    proto_message_hub::message_hub_server::MessageHub for AstarteMessageHub<T>
+    astarte_message_hub_proto::message_hub_server::MessageHub for AstarteMessageHub<T>
 {
-    type AttachStream = ReceiverStream<Result<proto_message_hub::AstarteMessage, Status>>;
+    type AttachStream = ReceiverStream<Result<astarte_message_hub_proto::AstarteMessage, Status>>;
 
     /// Attach a node to the Message hub. If the node was successfully attached,
     /// the method returns a gRPC stream into which the events received
     /// from Astarte(based on the declared Introspection) will be redirected.
     ///
     /// ```no_run
-    /// use astarte_message_hub::proto_message_hub::message_hub_client::MessageHubClient;
-    /// use astarte_message_hub::proto_message_hub::Node;
+    /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
+    /// use astarte_message_hub_proto::Node;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), tonic::Status> {
@@ -122,7 +122,7 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
     /// ```
     async fn attach(
         &self,
-        request: Request<proto_message_hub::Node>,
+        request: Request<astarte_message_hub_proto::Node>,
     ) -> Result<Response<Self::AttachStream>, Status> {
         info!("Node Attach Request => {:?}", request);
         let node = request.into_inner();
@@ -154,13 +154,13 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
     /// Send a message to Astarte for a node attached to the Astarte Message Hub.
     ///
     /// ```no_run
-    /// use astarte_message_hub::proto_message_hub::message_hub_client::MessageHubClient;
-    /// use astarte_message_hub::proto_message_hub::Node;
+    /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
+    /// use astarte_message_hub_proto::Node;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), tonic::Status> {
-    /// use astarte_message_hub::proto_message_hub::astarte_message::Payload;
-    /// use astarte_message_hub::proto_message_hub::AstarteMessage;
+    /// use astarte_message_hub_proto::astarte_message::Payload;
+    /// use astarte_message_hub_proto::AstarteMessage;
     ///
     ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
     ///
@@ -191,7 +191,7 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
     /// }
     async fn send(
         &self,
-        request: Request<proto_message_hub::AstarteMessage>,
+        request: Request<astarte_message_hub_proto::AstarteMessage>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
         info!("Node Send Request => {:?}", request);
 
@@ -208,7 +208,7 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
     /// Remove an existing Node from Astarte Message Hub.
     async fn detach(
         &self,
-        request: Request<proto_message_hub::Node>,
+        request: Request<astarte_message_hub_proto::Node>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
         info!("Node Detach Request => {:?}", request);
         let node = request.into_inner();
@@ -249,7 +249,7 @@ mod test {
     use crate::astarte_message_hub::AstarteNode;
     use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
     use crate::error::AstarteMessageHubError;
-    use crate::proto_message_hub;
+    use astarte_message_hub_proto;
 
     mock! {
         AstarteHandler { }
@@ -267,7 +267,7 @@ mod test {
         impl AstartePublisher for AstarteHandler {
             async fn publish(
                 &self,
-                data: &proto_message_hub::AstarteMessage
+                data: &astarte_message_hub_proto::AstarteMessage
             ) -> Result<(), AstarteMessageHubError>;
         }
 
@@ -276,7 +276,7 @@ mod test {
             async fn subscribe(
                 &self,
                 astarte_node: &AstarteNode,
-            ) -> Result<Receiver<Result<proto_message_hub::AstarteMessage, Status>>, AstarteMessageHubError>;
+            ) -> Result<Receiver<Result<astarte_message_hub_proto::AstarteMessage, Status>>, AstarteMessageHubError>;
 
             async fn unsubscribe(&self, astarte_node: &AstarteNode) -> Result<(), AstarteMessageHubError>;
         }
@@ -329,8 +329,8 @@ mod test {
 
     #[tokio::test]
     async fn attach_success_node() {
-        use crate::proto_message_hub::message_hub_server::MessageHub;
-        use crate::proto_message_hub::Node;
+        use astarte_message_hub_proto::message_hub_server::MessageHub;
+        use astarte_message_hub_proto::Node;
 
         let mut mock_astarte = MockAstarteHandler::new();
         mock_astarte.expect_subscribe().returning(|_| {
@@ -362,8 +362,8 @@ mod test {
 
     #[tokio::test]
     async fn attach_reject_invalid_uuid_node() {
-        use crate::proto_message_hub::message_hub_server::MessageHub;
-        use crate::proto_message_hub::Node;
+        use astarte_message_hub_proto::message_hub_server::MessageHub;
+        use astarte_message_hub_proto::Node;
 
         let mut mock_astarte = MockAstarteHandler::new();
         mock_astarte
@@ -388,8 +388,8 @@ mod test {
 
     #[tokio::test]
     async fn attach_reject_node() {
-        use crate::proto_message_hub::message_hub_server::MessageHub;
-        use crate::proto_message_hub::Node;
+        use astarte_message_hub_proto::message_hub_server::MessageHub;
+        use astarte_message_hub_proto::Node;
 
         let mut mock_astarte = MockAstarteHandler::new();
         mock_astarte.expect_subscribe().returning(|_| {
@@ -424,8 +424,8 @@ mod test {
 
     #[tokio::test]
     async fn send_message_success() {
-        use crate::proto_message_hub::astarte_message::Payload;
-        use crate::proto_message_hub::message_hub_server::MessageHub;
+        use astarte_message_hub_proto::astarte_message::Payload;
+        use astarte_message_hub_proto::message_hub_server::MessageHub;
 
         let mut mock_astarte = MockAstarteHandler::new();
         mock_astarte.expect_publish().returning(|_| Ok(()));
@@ -438,7 +438,7 @@ mod test {
 
         let interface_name = "io.demo.Values".to_owned();
 
-        let astarte_message = proto_message_hub::AstarteMessage {
+        let astarte_message = astarte_message_hub_proto::AstarteMessage {
             interface_name,
             path: "/test".to_string(),
             payload: Some(Payload::AstarteData(5.into())),
@@ -453,8 +453,8 @@ mod test {
 
     #[tokio::test]
     async fn send_message_reject() {
-        use crate::proto_message_hub::astarte_message::Payload;
-        use crate::proto_message_hub::message_hub_server::MessageHub;
+        use astarte_message_hub_proto::astarte_message::Payload;
+        use astarte_message_hub_proto::message_hub_server::MessageHub;
 
         let mut mock_astarte = MockAstarteHandler::new();
         mock_astarte.expect_publish().returning(|_| {
@@ -473,7 +473,7 @@ mod test {
         let interface_name = "io.demo.Values".to_owned();
 
         let value: i32 = 5;
-        let astarte_message = proto_message_hub::AstarteMessage {
+        let astarte_message = astarte_message_hub_proto::AstarteMessage {
             interface_name,
             path: "/test".to_string(),
             payload: Some(Payload::AstarteData(value.into())),
@@ -490,8 +490,8 @@ mod test {
 
     #[tokio::test]
     async fn detach_node_success() {
-        use crate::proto_message_hub::message_hub_server::MessageHub;
-        use crate::proto_message_hub::Node;
+        use astarte_message_hub_proto::message_hub_server::MessageHub;
+        use astarte_message_hub_proto::Node;
 
         let mut mock_astarte = MockAstarteHandler::new();
         mock_astarte
@@ -523,8 +523,8 @@ mod test {
 
     #[tokio::test]
     async fn detach_failed_invalid_uuid_node() {
-        use crate::proto_message_hub::message_hub_server::MessageHub;
-        use crate::proto_message_hub::Node;
+        use astarte_message_hub_proto::message_hub_server::MessageHub;
+        use astarte_message_hub_proto::Node;
 
         let mut mock_astarte = MockAstarteHandler::new();
         mock_astarte
@@ -552,7 +552,7 @@ mod test {
 
     #[tokio::test]
     async fn detach_node_not_found() {
-        use crate::proto_message_hub::message_hub_server::MessageHub;
+        use astarte_message_hub_proto::message_hub_server::MessageHub;
 
         let mut mock_astarte = MockAstarteHandler::new();
         mock_astarte.expect_unsubscribe().returning(|_| {
@@ -569,7 +569,7 @@ mod test {
 
         let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
 
-        let node = proto_message_hub::Node {
+        let node = astarte_message_hub_proto::Node {
             uuid: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
             interface_jsons: interfaces,
         };
@@ -584,8 +584,8 @@ mod test {
 
     #[tokio::test]
     async fn detach_node_unsubscribe_failed() {
-        use crate::proto_message_hub::message_hub_server::MessageHub;
-        use crate::proto_message_hub::Node;
+        use astarte_message_hub_proto::message_hub_server::MessageHub;
+        use astarte_message_hub_proto::Node;
 
         let mut mock_astarte = MockAstarteHandler::new();
 

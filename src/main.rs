@@ -32,13 +32,13 @@ use log::info;
 
 use astarte_device_sdk::options::AstarteOptions;
 use astarte_device_sdk::store::memory::MemoryStore;
-use astarte_device_sdk::AstarteDeviceSdk;
+use astarte_device_sdk::{AstarteDeviceSdk, EventReceiver};
 
 use astarte_message_hub::config::MessageHubOptions;
 use astarte_message_hub::error::AstarteMessageHubError;
-use astarte_message_hub::proto_message_hub::message_hub_server::MessageHubServer;
 use astarte_message_hub::AstarteHandler;
 use astarte_message_hub::AstarteMessageHub;
+use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 
 /// A central service that runs on (Linux) devices for collecting and delivering messages from N
 /// apps using 1 MQTT connection to Astarte.
@@ -70,7 +70,7 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     let handler = AstarteHandler::new(device_sdk);
 
     // Create a new message hub
-    let message_hub = AstarteMessageHub::new(handler.clone());
+    let message_hub = AstarteMessageHub::new(handler);
 
     // Run the protobuf server
     let addrs = (Ipv6Addr::LOCALHOST, options.grpc_socket_port).into();
@@ -84,7 +84,7 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
-) -> Result<AstarteDeviceSdk<MemoryStore>, AstarteMessageHubError> {
+) -> Result<(AstarteDeviceSdk<MemoryStore>, EventReceiver), AstarteMessageHubError> {
     msg_hub_opts.obtain_device_id().await?;
     // Obtain the credentials secret, the store defaults to the current directory
     msg_hub_opts.obtain_credential_secret().await?;

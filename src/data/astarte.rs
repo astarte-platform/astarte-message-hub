@@ -31,7 +31,6 @@ use tonic::Status;
 
 use crate::astarte_message_hub::AstarteNode;
 use crate::error::AstarteMessageHubError;
-use crate::proto_message_hub;
 
 #[async_trait]
 pub trait AstarteRunner {
@@ -47,7 +46,7 @@ pub trait AstartePublisher: Send + Sync {
     /// defined in `./proto/astarteplatform/msghub/astarte_message.proto`
     async fn publish(
         &self,
-        astarte_message: &proto_message_hub::AstarteMessage,
+        astarte_message: &astarte_message_hub_proto::AstarteMessage,
     ) -> Result<(), AstarteMessageHubError>;
 }
 
@@ -59,7 +58,10 @@ pub trait AstarteSubscriber {
     async fn subscribe(
         &self,
         astarte_node: &AstarteNode,
-    ) -> Result<Receiver<Result<proto_message_hub::AstarteMessage, Status>>, AstarteMessageHubError>;
+    ) -> Result<
+        Receiver<Result<astarte_message_hub_proto::AstarteMessage, Status>>,
+        AstarteMessageHubError,
+    >;
 
     /// Unsubscribe a previously subscribed node to Astarte.
     async fn unsubscribe(&self, astarte_node: &AstarteNode) -> Result<(), AstarteMessageHubError>;

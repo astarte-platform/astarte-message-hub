@@ -24,10 +24,10 @@ use std::time;
 
 use clap::Parser;
 
-use astarte_message_hub::proto_message_hub::astarte_message::Payload;
-use astarte_message_hub::proto_message_hub::message_hub_client::MessageHubClient;
-use astarte_message_hub::proto_message_hub::AstarteMessage;
-use astarte_message_hub::proto_message_hub::Node;
+use astarte_message_hub_proto::astarte_message::Payload;
+use astarte_message_hub_proto::message_hub_client::MessageHubClient;
+use astarte_message_hub_proto::AstarteMessage;
+use astarte_message_hub_proto::Node;
 use log::info;
 
 /// Create a ProtoBuf client for the Astarte message hub.
