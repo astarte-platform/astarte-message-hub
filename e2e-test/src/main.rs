@@ -22,6 +22,7 @@ use std::panic;
 
 mod hub;
 mod mock_data_datastream;
+mod mock_data_property;
 mod node;
 mod utils;
 
