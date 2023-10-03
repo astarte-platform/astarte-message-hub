@@ -15,3 +15,5 @@ target/
 *.pdb
 
 .idea/
+
+.pre-commit-config.yaml
