@@ -18,6 +18,12 @@ keywords = ["sdk", "iot", "astarte"]
 categories = ["network-programming"]
 rust-version = { workspace = true }
 
+[workspace]
+resolver = "2"
+members = [
+    "e2e-test",
+]
+
 [workspace.package]
 edition = "2021"
 license = "Apache-2.0"
@@ -27,13 +33,17 @@ homepage = "https://astarte.cloud/"
 # See: https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field
 rust-version = "1.66.1"
 
-[dependencies]
+[workspace.dependencies]
+astarte-device-sdk = {version = "0.6.0", features = ["derive"]}
 tonic = "0.8.2"
+tonic-build = "0.8.2"
+
+[dependencies]
+astarte-device-sdk = { workspace = true, features = ["derive"] }
 prost = "0.11.3"
 pbjson-types = "0.5"
 chrono = "0.4.24"
 thiserror = "1.0"
-astarte-device-sdk = {version = "0.6.0", features = ["derive"]}
 serde = "1.0.160"
 tokio = { version = "1.27.0", features = ["rt-multi-thread", "sync", "macros"] }
 tokio-stream = { version = "0.1.12", features = ["net"] }
@@ -47,6 +57,7 @@ axum = "0.5.17"
 clap = { version = "3.2.0", features = ["derive"] }
 zbus = { version = "=2.2.0", default-features = false, features = ["tokio"] }
 zvariant = "=3.2.1"
+tonic.workspace = true
 
 [dev-dependencies]
 mockall = "0.11.4"
@@ -55,4 +66,4 @@ serial_test = "2"
 tempfile = "3.5.0"
 
 [build-dependencies]
-tonic-build = "0.8.2"
+tonic-build.workspace = true
