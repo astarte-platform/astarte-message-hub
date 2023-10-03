@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use astarte_device_sdk::types::AstarteType;
-use astarte_device_sdk::AstarteDeviceDataEvent;
+use astarte_device_sdk::{AstarteAggregate, AstarteDeviceDataEvent};
 use colored::Colorize;
 use log::{debug, info};
 use serde_json::Value;
@@ -36,6 +36,7 @@ use astarte_message_hub::proto_message_hub::astarte_message::Payload;
 use astarte_message_hub::proto_message_hub::message_hub_client::MessageHubClient;
 use astarte_message_hub::proto_message_hub::{AstarteMessage, Node};
 
+use crate::mock_data_aggregate::MockDataAggregate;
 use crate::mock_data_datastream::MockDataDatastream;
 use crate::mock_data_property::MockDataProperty;
 
@@ -51,6 +52,8 @@ struct TestCfg {
     interface_datastream_do: String,
     interface_property_so: String,
     interface_property_do: String,
+    interface_aggregate_so: String,
+    interface_aggregate_do: String,
     appengine_token: String,
 }
 
@@ -72,6 +75,10 @@ impl TestCfg {
             "org.astarte-platform.rust.e2etest.DeviceDatastream".to_string();
         let interface_property_do = "org.astarte-platform.rust.e2etest.DeviceProperty".to_string();
         let interface_property_so = "org.astarte-platform.rust.e2etest.ServerProperty".to_string();
+        let interface_aggregate_do =
+            "org.astarte-platform.rust.e2etest.DeviceAggregate".to_string();
+        let interface_aggregate_so =
+            "org.astarte-platform.rust.e2etest.ServerAggregate".to_string();
 
         Ok(TestCfg {
             realm,
@@ -82,6 +89,8 @@ impl TestCfg {
             interface_datastream_do,
             interface_property_so,
             interface_property_do,
+            interface_aggregate_so,
+            interface_aggregate_do,
             appengine_token,
         })
     }
@@ -99,6 +108,8 @@ pub async fn run() {
         include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerDatastream.json"),
         include_str!("../interfaces/org.astarte-platform.rust.e2etest.DeviceProperty.json"),
         include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerProperty.json"),
+        include_str!("../interfaces/org.astarte-platform.rust.e2etest.DeviceAggregate.json"),
+        include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerAggregate.json"),
     ];
 
     let node = Node::new(&NODE_UUID, &interface_jsons);
@@ -108,9 +119,11 @@ pub async fn run() {
     let test_cfg_cpy = test_cfg.clone();
     let rx_data_ind_datastream = Arc::new(Mutex::new(HashMap::new()));
     let rx_data_ind_prop = Arc::new(Mutex::new((String::new(), HashMap::new())));
+    let rx_data_agg_datastream = Arc::new(Mutex::new((String::new(), HashMap::new())));
 
     let rx_data_ind_datastream_cpy = rx_data_ind_datastream.clone();
     let rx_data_ind_prop_cpy = rx_data_ind_prop.clone();
+    let rx_data_agg_datastream_cpy = rx_data_agg_datastream.clone();
 
     // Start a separate task to handle incoming data
     let reply_handle = tokio::spawn(async move {
@@ -149,6 +162,22 @@ pub async fn run() {
                 } else {
                     panic!("Received unexpected message!");
                 }
+            } else if astarte_message.interface_name == test_cfg.interface_aggregate_so {
+                let astarte_device_data_event: AstarteDeviceDataEvent =
+                    astarte_message.try_into().unwrap();
+                if let astarte_device_sdk::Aggregation::Object(var) =
+                    astarte_device_data_event.data.clone()
+                {
+                    let mut rx_data = rx_data_agg_datastream.lock().unwrap();
+                    let mut sensor_n = astarte_device_data_event.path.clone();
+                    sensor_n.remove(0);
+                    rx_data.0 = sensor_n;
+                    for (key, value) in var {
+                        rx_data.1.insert(key, value);
+                    }
+                } else {
+                    panic!("Received unexpected message!");
+                }
             } else {
                 panic!("Received unexpected message!");
             }
@@ -170,6 +199,13 @@ pub async fn run() {
         .await
         .unwrap();
     test_property_server_to_device(&test_cfg_cpy, &rx_data_ind_prop_cpy)
+        .await
+        .unwrap();
+    // Run aggregate tests
+    test_aggregate_device_to_server(&mut client, &test_cfg_cpy)
+        .await
+        .unwrap();
+    test_aggregate_server_to_device(&test_cfg_cpy, &rx_data_agg_datastream_cpy)
         .await
         .unwrap();
 
@@ -440,6 +476,106 @@ async fn test_property_server_to_device(
         }
     }
     Ok(())
+}
+
+/// Run the end to end tests from device to server for aggregate datastreams.
+///
+/// # Arguments
+/// - *device*: the Astarte SDK instance to use for the test.
+/// - *test_cfg*: struct containing configuration settings for the tests.
+async fn test_aggregate_device_to_server(
+    client: &mut MessageHubClient<Channel>,
+    test_cfg: &TestCfg,
+) -> Result<(), String> {
+    let mock_data = MockDataAggregate::init();
+    let tx_data = mock_data.get_device_to_server_data_as_struct();
+    let sensor_number: i8 = 45;
+
+    // Send all the mock test data
+    debug!("Sending device owned aggregate from device to server");
+    let astarte_message_payload = Payload::try_from(tx_data.clone().astarte_aggregate().unwrap())
+        .map_err(|e| e.to_string())?;
+
+    let astarte_message = AstarteMessage {
+        interface_name: test_cfg.interface_aggregate_do.to_string(),
+        path: format!("/{sensor_number}"),
+        timestamp: None,
+        payload: Some(astarte_message_payload),
+    };
+
+    client
+        .send(astarte_message)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    time::sleep(Duration::from_secs(1)).await;
+
+    // Get the stored data using http requests
+    debug!("Checking data stored on the server.");
+    let http_get_response = http_get_intf(test_cfg, &test_cfg.interface_aggregate_do).await?;
+
+    // Check if the sent and received data match
+    let data_json: Value = serde_json::from_str(&http_get_response)
+        .map_err(|_| "Reply from server is a bad json.".to_string())?;
+
+    let rx_data = MockDataAggregate::init()
+        .fill_device_to_server_data_from_json(&data_json, sensor_number)?
+        .get_device_to_server_data_as_struct();
+
+    if tx_data != rx_data {
+        Err([
+            "Mismatch between server and device.",
+            &format!("Expected data: {tx_data:?}. Server data: {rx_data:?}."),
+        ]
+        .join(" "))
+    } else {
+        Ok(())
+    }
+}
+
+/// Run the end to end tests from server to device for aggregate datastreams.
+///
+/// # Arguments
+/// - *test_cfg*: struct containing configuration settings for the tests.
+/// - *rx_data*: shared memory containing the received datastreams.
+/// A different process will poll the device and then store the matching received messages
+/// in this shared memory location.
+async fn test_aggregate_server_to_device(
+    test_cfg: &TestCfg,
+    rx_data: &Arc<Mutex<(String, HashMap<String, AstarteType>)>>,
+) -> Result<(), String> {
+    let mock_data = MockDataAggregate::init();
+    let sensor_number: i8 = 11;
+
+    // Send the data using http requests
+    debug!("Sending server owned aggregate from server to device.");
+    http_post_to_intf(
+        test_cfg,
+        &test_cfg.interface_aggregate_so,
+        &format!("{sensor_number}"),
+        mock_data.get_server_to_device_data_as_json(),
+    )
+    .await?;
+
+    time::sleep(Duration::from_secs(1)).await;
+
+    // Lock the shared data and check if everything sent has been correctly received
+    debug!("Checking data received by the device.");
+    let rx_data_rw_acc = rx_data
+        .lock()
+        .map_err(|e| format!("Failed to lock the shared data. {e}"))?;
+
+    let exp_data = mock_data.get_server_to_device_data_as_astarte();
+
+    if (sensor_number.to_string() != rx_data_rw_acc.0) || (exp_data != rx_data_rw_acc.1) {
+        Err([
+            "Mismatch between expected and received data.",
+            &format!("Expected data: {exp_data:?}. Server data: {rx_data_rw_acc:?}."),
+        ]
+        .join(" "))
+    } else {
+        Ok(())
+    }
 }
 
 /// Perform an HTTP GET request to an Astarte interface.
