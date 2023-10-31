@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Install Protoc
         run: |
           curl -LO $PB_REL/download/v22.2/protoc-22.2-linux-x86_64.zip
