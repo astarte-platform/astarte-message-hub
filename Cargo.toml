@@ -27,7 +27,7 @@ prost = "0.11.3"
 pbjson-types = "0.5"
 chrono = "0.4.24"
 thiserror = "1.0"
-astarte-device-sdk = {version = "0.6.0", features = ["derive"]}
+astarte-device-sdk = {version = "0.6.2", features = ["derive"]}
 serde = "1.0.190"
 tokio = { version = "1.29.1", features = ["rt-multi-thread", "sync", "macros"] }
 tokio-stream = { version = "0.1.12", features = ["net"] }
