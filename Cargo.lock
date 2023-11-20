@@ -120,7 +120,7 @@ dependencies = [
  "log",
  "mockall",
  "pbjson-types",
- "prost",
+ "prost 0.12.2",
  "reqwest",
  "serde",
  "serde_json",
@@ -1739,7 +1739,7 @@ checksum = "bdbb7b706f2afc610f3853550cdbbf6372fd324824a087806bd4480ea4996e24"
 dependencies = [
  "heck",
  "itertools 0.10.5",
- "prost",
+ "prost 0.11.3",
  "prost-types",
 ]
 
@@ -1753,7 +1753,7 @@ dependencies = [
  "chrono",
  "pbjson",
  "pbjson-build",
- "prost",
+ "prost 0.11.3",
  "prost-build",
  "serde",
 ]
@@ -1937,7 +1937,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0b18e655c21ff5ac2084a5ad0611e827b3f92badf79f4910b5a5c58f4d87ff0"
 dependencies = [
  "bytes",
- "prost-derive",
+ "prost-derive 0.11.0",
+]
+
+[[package]]
+name = "prost"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a5a410fc7882af66deb8d01d01737353cf3ad6204c408177ba494291a626312"
+dependencies = [
+ "bytes",
+ "prost-derive 0.12.2",
 ]
 
 [[package]]
@@ -1954,7 +1964,7 @@ dependencies = [
  "multimap",
  "petgraph",
  "prettyplease",
- "prost",
+ "prost 0.11.3",
  "prost-types",
  "regex",
  "syn 1.0.109",
@@ -1976,13 +1986,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "065717a5dfaca4a83d2fe57db3487b311365200000551d7a364e715dbf4346bc"
+dependencies = [
+ "anyhow",
+ "itertools 0.11.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.32",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "747761bc3dc48f9a34553bf65605cf6cb6288ba219f3450b4275dbd81539551a"
 dependencies = [
  "bytes",
- "prost",
+ "prost 0.11.3",
 ]
 
 [[package]]
@@ -2894,8 +2917,8 @@ dependencies = [
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
- "prost",
- "prost-derive",
+ "prost 0.11.3",
+ "prost-derive 0.11.0",
  "tokio",
  "tokio-stream",
  "tokio-util",
