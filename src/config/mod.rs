@@ -17,24 +17,25 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-//! Helper module to retreive the configuration of the Astarte message hub.
+//! Helper module to retrieve the configuration of the Astarte message hub.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::{fs, io};
 
 use log::debug;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::channel;
+use tokio::sync::Notify;
 
 use crate::config::http::HttpConfigProvider;
 use crate::config::protobuf::ProtobufConfigProvider;
 use crate::error::{AstarteMessageHubError, ConfigValidationError};
 
+use self::file::CONFIG_FILE_NAMES;
+
 pub mod file;
 pub mod http;
 pub mod protobuf;
-
-use file::CONFIG_FILE_NAMES;
 
 const CREDENTIAL_FILE: &str = "credentials_secret";
 
@@ -88,7 +89,7 @@ impl MessageHubOptions {
         store_directory: Option<&Path>,
     ) -> Result<MessageHubOptions, AstarteMessageHubError> {
         let mut opt = if let Some(toml_file) = toml_file {
-            let toml_str = std::fs::read_to_string(toml_file)?;
+            let toml_str = tokio::fs::read_to_string(toml_file).await?;
             file::get_options_from_toml(&toml_str)
         } else if let Some(store_directory) = store_directory {
             if !store_directory.is_dir() {
@@ -97,23 +98,25 @@ impl MessageHubOptions {
             }
             let configuration_file = store_directory.join(CONFIG_FILE_NAMES[0]);
             if !configuration_file.exists() {
-                let (tx, mut rx) = channel(1);
+                let notify_config = Arc::new(Notify::new());
 
-                let web_server = HttpConfigProvider::new(
+                let web_server = HttpConfigProvider::serve(
                     "127.0.0.1:40041",
-                    tx.clone(),
+                    Arc::clone(&notify_config),
                     configuration_file.to_str().unwrap(),
-                );
+                )
+                .await?;
+
                 let protobuf_server = ProtobufConfigProvider::new(
                     "[::1]:50051",
-                    tx.clone(),
+                    Arc::clone(&notify_config),
                     configuration_file.to_str().unwrap(),
                 )
                 .await;
 
-                rx.recv().await.unwrap();
+                notify_config.notified().await;
 
-                web_server.stop().await;
+                web_server.stop().await?;
                 protobuf_server.stop().await;
             }
             let toml_str = std::fs::read_to_string(configuration_file)?;

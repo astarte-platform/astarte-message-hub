@@ -25,16 +25,14 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::config::http::HttpError;
+
 /// A list specifying general categories of Astarte Message Hub error.
 #[derive(Error, Debug)]
 pub enum AstarteMessageHubError {
     /// An infallible error
     #[error(transparent)]
     Infallible(#[from] std::convert::Infallible),
-
-    /// Wrapper for integer conversion errors
-    #[error(transparent)]
-    TryFromIntError(#[from] core::num::TryFromIntError),
 
     /// Failed to convert between types
     #[error("unable to convert type")]
@@ -71,6 +69,14 @@ pub enum AstarteMessageHubError {
     /// Error returned by Zbus
     #[error(transparent)]
     ZbusError(#[from] zbus::Error),
+
+    /// Http server error
+    #[error("HTTP server error, {0}")]
+    HttpServer(#[from] HttpError),
+
+    /// Wrapper for integer conversion errors
+    #[error("couldn't convert timestamp, {0}")]
+    Timestamp(&'static str),
 }
 
 /// Reason why a configuration is invalid.

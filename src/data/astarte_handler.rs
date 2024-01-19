@@ -23,6 +23,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use astarte_device_sdk::store::memory::MemoryStore;
+#[cfg(not(test))]
+use astarte_device_sdk::AstarteDeviceSdk;
 use async_trait::async_trait;
 use log::{info, warn};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -32,14 +35,10 @@ use uuid::Uuid;
 
 use crate::astarte_message_hub::AstarteNode;
 use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
-use crate::error::AstarteMessageHubError;
-use crate::proto_message_hub;
-
 #[cfg(test)]
 use crate::data::mock_astarte_sdk::MockAstarteDeviceSdk as AstarteDeviceSdk;
-use astarte_device_sdk::store::memory::MemoryStore;
-#[cfg(not(test))]
-use astarte_device_sdk::AstarteDeviceSdk;
+use crate::error::AstarteMessageHubError;
+use crate::proto_message_hub;
 
 /// An Astarte Device SDK based implementation of an Astarte handler.
 /// Uses the Astarte Device SDK to provide subscribe and publish functionality.
@@ -266,8 +265,11 @@ impl AstarteHandler {
             .try_into()?;
 
         if let Some(timestamp) = timestamp {
+            let timestamp = timestamp
+                .try_into()
+                .map_err(AstarteMessageHubError::Timestamp)?;
             self.device_sdk
-                .send_with_timestamp(interface_name, path, astarte_type, timestamp.try_into()?)
+                .send_with_timestamp(interface_name, path, astarte_type, timestamp)
                 .await
         } else {
             self.device_sdk
@@ -294,8 +296,11 @@ impl AstarteHandler {
 
         let aggr = crate::types::map_values_to_astarte_type(astarte_data_individual_map)?;
         if let Some(timestamp) = timestamp {
+            let timestamp = timestamp
+                .try_into()
+                .map_err(AstarteMessageHubError::Timestamp)?;
             self.device_sdk
-                .send_object_with_timestamp(interface_name, path, aggr, timestamp.try_into()?)
+                .send_object_with_timestamp(interface_name, path, aggr, timestamp)
                 .await
         } else {
             self.device_sdk
@@ -308,8 +313,6 @@ impl AstarteHandler {
 
 #[cfg(test)]
 mod test {
-    use super::AstarteHandler;
-
     use std::collections::HashMap;
     use std::str::FromStr;
 
@@ -324,6 +327,8 @@ mod test {
     use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
     use crate::data::mock_astarte_sdk::MockAstarteDeviceSdk;
     use crate::error::AstarteMessageHubError;
+
+    use super::AstarteHandler;
 
     const SERV_PROPS_IFACE: &str = r#"
         {

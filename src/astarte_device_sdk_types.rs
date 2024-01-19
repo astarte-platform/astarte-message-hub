@@ -22,8 +22,6 @@
 
 use std::collections::HashMap;
 
-use chrono::DateTime;
-
 use crate::error::AstarteMessageHubError;
 use crate::proto_message_hub;
 
@@ -50,10 +48,13 @@ macro_rules! impl_individual_data_to_astarte_type_conversion_traits {
                         Ok(AstarteType::$astartearraydatatype(val.values.try_into()?))
                     }
                     )?
+                    IndividualData::AstarteDateTime(val) => {
+                        Ok(AstarteType::DateTime(val.try_into().map_err(AstarteMessageHubError::Timestamp)?))
+                    }
                     proto_message_hub::astarte_data_type_individual::IndividualData::AstarteDateTimeArray(val) => {
-                        let mut times: Vec<DateTime<chrono::Utc>> = vec![];
+                        let mut times: Vec<chrono::DateTime<chrono::Utc>> = vec![];
                         for time in val.values.iter() {
-                            times.push(time.clone().try_into()?);
+                            times.push(time.clone().try_into().map_err(AstarteMessageHubError::Timestamp)?);
                         }
                         Ok(astarte_device_sdk::types::AstarteType::DateTimeArray(times))
                     }
@@ -70,8 +71,7 @@ impl_individual_data_to_astarte_type_conversion_traits!(
     AstarteBoolean, Boolean,
     AstarteLongInteger,LongInteger,
     AstarteString, String,
-    AstarteBinaryBlob, BinaryBlob,
-    AstarteDateTime, DateTime ;
+    AstarteBinaryBlob, BinaryBlob;
     vector
     AstarteDoubleArray, DoubleArray,
     AstarteIntegerArray, IntegerArray,
@@ -153,12 +153,13 @@ impl TryFrom<crate::types::InterfaceJson> for astarte_device_sdk::Interface {
 
 #[cfg(test)]
 mod test {
-    use crate::astarte_device_sdk_types::map_values_to_astarte_data_type_individual;
+    use std::collections::HashMap;
+
     use astarte_device_sdk::types::AstarteType;
     use astarte_device_sdk::{Aggregation, AstarteDeviceDataEvent};
     use chrono::{DateTime, Utc};
-    use std::collections::HashMap;
 
+    use crate::astarte_device_sdk_types::map_values_to_astarte_data_type_individual;
     use crate::proto_message_hub::astarte_data_type_individual::IndividualData;
     use crate::proto_message_hub::astarte_message::Payload;
     use crate::proto_message_hub::AstarteMessage;
