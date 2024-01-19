@@ -11,6 +11,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Update Astarte Device Sdk to 0.8.1 release.
 - Bump MSRV to 1.72.0.
+- Introduce Node ID check for gRPC metadata.
 
 ## [0.5.3] - 2024-01-31
 

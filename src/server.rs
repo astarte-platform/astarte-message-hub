@@ -19,16 +19,28 @@
  */
 //! Contains the implementation for the Astarte message hub.
 
+use hyper::{http, Body};
+use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
+use std::ops::Deref;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use astarte_message_hub_proto::types::InterfaceJson;
 use astarte_message_hub_proto::AstarteMessage;
-use log::info;
+use clap::__macro_refs::once_cell::sync::Lazy;
+use log::{debug, info, trace};
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
+use tonic::body::BoxBody;
+use tonic::metadata::errors::InvalidMetadataValueBytes;
+use tonic::metadata::MetadataMap;
 use tonic::{Request, Response, Status};
+use tower::{Layer, Service};
 use uuid::Uuid;
+use zbus::export::futures_util::FutureExt;
 
 use crate::astarte::{AstartePublisher, AstarteSubscriber};
 
@@ -41,6 +53,7 @@ pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber> {
 }
 
 /// A single node that can be connected to the Astarte message hub.
+#[derive(Clone)]
 pub struct AstarteNode {
     /// Identifier for the node
     pub id: Uuid,
@@ -70,6 +83,180 @@ where
             nodes: Arc::new(RwLock::new(HashMap::new())),
             astarte_handler,
         }
+    }
+
+    /// Create a [tower] layer to intercept the Node ID in the gRPC requests
+    pub fn make_interceptor_layer(&self) -> NodeIdInterceptorLayer {
+        NodeIdInterceptorLayer::new(Arc::clone(&self.nodes))
+    }
+}
+
+/// Errors related to the interception of the NodeId into gRPC request
+#[derive(thiserror::Error, Debug, displaydoc::Display)]
+pub enum InterceptorError {
+    /// Node ID not specified in the gRPC request
+    AbsentId,
+    /// Invalid Uuid bytes value for Node ID, {0}
+    Uuid(#[from] uuid::Error),
+    /// Invalid Uuid str value for Node ID, {0}
+    ParseStr(#[from] tonic::metadata::errors::ToStrError),
+    /// The Node ID does not exist
+    IdNotFound,
+    /// Couldn't decode metadata binary value
+    MetadataBytes(#[from] InvalidMetadataValueBytes),
+    /// Error returned by the inner service
+    #[error(transparent)]
+    Inner(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+#[derive(Clone, Default)]
+pub struct NodeIdInterceptorLayer {
+    msg_hub_nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
+}
+
+impl NodeIdInterceptorLayer {
+    fn new(msg_hub_nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>) -> NodeIdInterceptorLayer {
+        Self { msg_hub_nodes }
+    }
+}
+
+impl<S> Layer<S> for NodeIdInterceptorLayer {
+    type Service = NodeIdInterceptor<S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        NodeIdInterceptor {
+            inner: service,
+            msg_hub_nodes: self.msg_hub_nodes.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct NodeIdInterceptor<S> {
+    inner: S,
+    msg_hub_nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
+}
+
+impl<S> NodeIdInterceptor<S> {
+    pub async fn handle_req(
+        mut self,
+        req: hyper::Request<Body>,
+    ) -> Result<S::Response, InterceptorError>
+    where
+        S: Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>>
+            + Clone
+            + Send
+            + 'static,
+        S::Future: Send + 'static,
+        S::Error: Into<InterceptorError>,
+    {
+        static ATTACH_PATH: Lazy<http::uri::PathAndQuery> = Lazy::new(|| {
+            http::uri::PathAndQuery::from_static("/astarteplatform.msghub.MessageHub/Attach")
+        });
+
+        // check that the Node ID is present inside the metadata on all gRPC requests apart from the
+        // attach ones
+        if req.uri().path_and_query() == Some(&ATTACH_PATH) {
+            return self.inner.call(req).await.map_err(Into::into);
+        }
+
+        debug!("checking the NodeId in the request metadata");
+        // use tonic::Metadata to access the metadata and avoid to manually perform a base64
+        // conversion of the uuid.
+        let (mut parts, body) = req.into_parts();
+        let metadata = MetadataMap::from_headers(parts.headers);
+
+        // retrieve the node id from the metadata
+        let node_uuid = match node_id_from_bin(&metadata)? {
+            Some(node_uuid) => node_uuid,
+            None => node_id_from_ascii(&metadata)?.ok_or(InterceptorError::AbsentId)?,
+        };
+
+        trace!("NodeId: {node_uuid}");
+
+        if !self.msg_hub_nodes.read().await.contains_key(&node_uuid) {
+            debug!("NodeId not found");
+            return Err(InterceptorError::IdNotFound);
+        }
+
+        debug!("NodeId checked");
+
+        // reconstruct the http::Request
+        parts.headers = metadata.into_headers();
+        parts.extensions.insert(NodeId(node_uuid));
+        let req = http::Request::from_parts(parts, body);
+
+        self.inner.call(req).await.map_err(Into::into)
+    }
+}
+
+/// Node Id
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+pub(crate) struct NodeId(Uuid);
+
+impl Display for NodeId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Borrow<Uuid> for NodeId {
+    fn borrow(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Deref for NodeId {
+    type Target = Uuid;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+fn node_id_from_bin(metadata: &MetadataMap) -> Result<Option<Uuid>, InterceptorError> {
+    let Some(node_id) = metadata.get_bin("node-id-bin") else {
+        return Ok(None);
+    };
+
+    let bytes = node_id.to_bytes()?;
+
+    Uuid::from_slice(&bytes)
+        .map(Some)
+        .map_err(InterceptorError::Uuid)
+}
+
+fn node_id_from_ascii(metadata: &MetadataMap) -> Result<Option<Uuid>, InterceptorError> {
+    let Some(node_id) = metadata.get("node-id") else {
+        return Ok(None);
+    };
+
+    Uuid::from_slice(node_id.as_bytes())
+        .map(Some)
+        .map_err(InterceptorError::Uuid)
+}
+
+type BoxFuture<'a, T> = Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
+
+impl<S> Service<hyper::Request<Body>> for NodeIdInterceptor<S>
+where
+    S: Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>> + Clone + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<InterceptorError>,
+{
+    type Response = S::Response;
+    type Error = InterceptorError;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx).map_err(S::Error::into)
+    }
+
+    fn call(&mut self, req: hyper::Request<Body>) -> Self::Future {
+        let clone = self.clone();
+        let service = std::mem::replace(self, clone);
+
+        service.handle_req(req).boxed()
     }
 }
 
@@ -175,7 +362,7 @@ impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
     ///         payload: Some(Payload::AstarteData(100.into()))
     ///     };
     ///
-    ///     let  _ = message_hub_client.send(astarte_message).await;
+    ///     let _ = message_hub_client.send(astarte_message).await;
     ///
     ///     Ok(())
     ///
