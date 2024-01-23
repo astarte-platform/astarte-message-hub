@@ -25,13 +25,13 @@
 //! However, nothing stops third parties from developing their own handler by implementing
 //! the traits in this file.
 
+use astarte_message_hub_proto::AstarteMessage;
 use async_trait::async_trait;
 use tokio::sync::mpsc::Receiver;
 use tonic::Status;
 
 use crate::astarte_message_hub::AstarteNode;
 use crate::error::AstarteMessageHubError;
-use crate::proto_message_hub;
 
 #[async_trait]
 pub trait AstarteRunner {
@@ -45,10 +45,8 @@ pub trait AstartePublisher: Send + Sync {
     ///
     /// The `astarte_message` argument format is
     /// defined in `./proto/astarteplatform/msghub/astarte_message.proto`
-    async fn publish(
-        &self,
-        astarte_message: &proto_message_hub::AstarteMessage,
-    ) -> Result<(), AstarteMessageHubError>;
+    async fn publish(&self, astarte_message: &AstarteMessage)
+        -> Result<(), AstarteMessageHubError>;
 }
 
 /// A **trait** required for all Astarte handlers that want to subscribe and unsubscribe a
@@ -59,7 +57,7 @@ pub trait AstarteSubscriber {
     async fn subscribe(
         &self,
         astarte_node: &AstarteNode,
-    ) -> Result<Receiver<Result<proto_message_hub::AstarteMessage, Status>>, AstarteMessageHubError>;
+    ) -> Result<Receiver<Result<AstarteMessage, Status>>, AstarteMessageHubError>;
 
     /// Unsubscribe a previously subscribed node to Astarte.
     async fn unsubscribe(&self, astarte_node: &AstarteNode) -> Result<(), AstarteMessageHubError>;

@@ -112,6 +112,7 @@ name = "astarte-message-hub"
 version = "0.6.0-dev"
 dependencies = [
  "astarte-device-sdk",
+ "astarte-message-hub-proto",
  "async-trait",
  "axum 0.7.4",
  "chrono",
@@ -137,6 +138,20 @@ dependencies = [
  "uuid",
  "zbus",
  "zvariant",
+]
+
+[[package]]
+name = "astarte-message-hub-proto"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52e07380d301c432da34765373a2a566566d3a0d8590df1dce9aadd60cecd138"
+dependencies = [
+ "chrono",
+ "pbjson-types",
+ "prost",
+ "thiserror",
+ "tonic",
+ "uuid",
 ]
 
 [[package]]

@@ -22,12 +22,11 @@
 
 use std::time;
 
+use astarte_message_hub_proto::astarte_message::Payload;
+use astarte_message_hub_proto::message_hub_client::MessageHubClient;
+use astarte_message_hub_proto::AstarteMessage;
+use astarte_message_hub_proto::Node;
 use clap::Parser;
-
-use astarte_message_hub::proto_message_hub::astarte_message::Payload;
-use astarte_message_hub::proto_message_hub::message_hub_client::MessageHubClient;
-use astarte_message_hub::proto_message_hub::AstarteMessage;
-use astarte_message_hub::proto_message_hub::Node;
 use log::info;
 
 /// Create a ProtoBuf client for the Astarte message hub.
@@ -84,7 +83,7 @@ async fn main() {
         let now = time::SystemTime::now();
         let mut count = 0;
         // Consistent interval of 3 seconds
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(args.time));
+        let mut interval = tokio::time::interval(time::Duration::from_millis(args.time));
 
         while args.count.is_none() || Some(count) < args.count {
             // Wait a little

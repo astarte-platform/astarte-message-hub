@@ -27,16 +27,15 @@
 use std::net::Ipv6Addr;
 use std::path::PathBuf;
 
-use clap::Parser;
-use log::info;
-
 use astarte_device_sdk::options::AstarteOptions;
 use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::AstarteDeviceSdk;
+use astarte_message_hub_proto::message_hub_server::MessageHubServer;
+use clap::Parser;
+use log::info;
 
 use astarte_message_hub::config::MessageHubOptions;
 use astarte_message_hub::error::AstarteMessageHubError;
-use astarte_message_hub::proto_message_hub::message_hub_server::MessageHubServer;
 use astarte_message_hub::AstarteHandler;
 use astarte_message_hub::AstarteMessageHub;
 
@@ -70,7 +69,7 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     let handler = AstarteHandler::new(device_sdk);
 
     // Create a new message hub
-    let message_hub = AstarteMessageHub::new(handler.clone());
+    let message_hub = AstarteMessageHub::new(handler);
 
     // Run the protobuf server
     let addrs = (Ipv6Addr::LOCALHOST, options.grpc_socket_port).into();
