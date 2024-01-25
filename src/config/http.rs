@@ -218,7 +218,7 @@ async fn set_config(
 
     let cfg = toml::to_string(&message_hub_options)?;
 
-    tokio::fs::write(state.toml_file.as_ref(), format!("{cfg}")).await?;
+    tokio::fs::write(state.toml_file.as_ref(), cfg).await?;
 
     state.configuration_ready_channel.notify_one();
 

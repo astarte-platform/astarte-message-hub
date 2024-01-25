@@ -18,59 +18,130 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use astarte_device_sdk::types::AstarteType;
-use astarte_device_sdk::{error::Error, AstarteDeviceDataEvent, Interface};
-use mockall::mock;
+use std::path::Path;
 
-#[derive(Clone)]
-pub struct AstarteDeviceSdk {}
+use astarte_device_sdk::{types::AstarteType, AstarteAggregate, Error, Interface};
+use async_trait::async_trait;
+use mockall::{automock, mock};
+
+#[automock]
+#[async_trait]
+pub trait Client {
+    async fn send_object_with_timestamp<D: 'static>(
+        &self,
+        interface_name: &str,
+        interface_path: &str,
+        data: D,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), Error>
+    where
+        D: AstarteAggregate + Send;
+
+    async fn send_object<D: 'static>(
+        &self,
+        interface_name: &str,
+        interface_path: &str,
+        data: D,
+    ) -> Result<(), Error>
+    where
+        D: AstarteAggregate + Send;
+
+    async fn send<D: 'static>(
+        &self,
+        interface_name: &str,
+        interface_path: &str,
+        data: D,
+    ) -> Result<(), Error>
+    where
+        D: TryInto<AstarteType> + Send;
+
+    async fn send_with_timestamp<D: 'static>(
+        &self,
+        interface_name: &str,
+        interface_path: &str,
+        data: D,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), Error>
+    where
+        D: TryInto<AstarteType> + Send;
+
+    async fn unset(&self, interface_name: &str, interface_path: &str) -> Result<(), Error>;
+
+    async fn handle_events(&mut self) -> Result<(), Error>;
+    async fn add_interface(&self, interface: Interface) -> Result<(), Error>;
+
+    // ---------------------------------------------
+    async fn add_interface_from_file<P: 'static>(&self, file_path: P) -> Result<(), Error>
+    where
+        P: AsRef<Path> + Send;
+
+    // ---------------------------------------------
+    async fn add_interface_from_str(&self, json_str: &str) -> Result<(), Error>;
+
+    async fn remove_interface(&self, interface_name: &str) -> Result<(), Error>;
+}
 
 mock! {
-    pub AstarteDeviceSdk<S:'static> {
-        pub async fn handle_events(&mut self) -> Result<AstarteDeviceDataEvent, Error>;
-        pub async fn send<D: 'static>(
+    pub AstarteDeviceSdk<S:'static + Sync + Send, C:'static + Sync + Send> {}
+
+    #[async_trait]
+    impl<S: 'static + Sync + Send, C: 'static + Sync + Send> Client for AstarteDeviceSdk<S,C> {
+        async fn send_object_with_timestamp<D>(
             &self,
-            _interface_name: &str,
-            _interface_path: &str,
-            _data: D
+            interface_name: &str,
+            interface_path: &str,
+            data: D,
+            timestamp: chrono::DateTime<chrono::Utc>,
         ) -> Result<(), Error>
         where
-            D: Into<AstarteType>;
-        pub async fn send_with_timestamp<D: 'static>(
+            D: AstarteAggregate + Send + 'static;
+
+        async fn send_object<D: 'static>(
             &self,
-            _interface_name: &str,
-            _interface_path: &str,
-            _data: D,
-            _timestamp: chrono::DateTime<chrono::Utc>
+            interface_name: &str,
+            interface_path: &str,
+            data: D,
         ) -> Result<(), Error>
         where
-            D: Into<AstarteType>;
-        pub async fn send_object<T: 'static>(
+            D: AstarteAggregate + Send;
+
+        async fn send<D: 'static>(
             &self,
-            _interface_name: &str,
-            _interface_path: &str,
-            _data: T,
+            interface_name: &str,
+            interface_path: &str,
+            data: D,
         ) -> Result<(), Error>
         where
-            T: astarte_device_sdk::AstarteAggregate;
-        pub async fn send_object_with_timestamp<T: 'static>(
+            D: TryInto<AstarteType> + Send;
+
+        async fn send_with_timestamp<D: 'static>(
             &self,
-            _interface_name: &str,
-            _interface_path: &str,
-            _data: T,
-            _timestamp: chrono::DateTime<chrono::Utc>,
+            interface_name: &str,
+            interface_path: &str,
+            data: D,
+            timestamp: chrono::DateTime<chrono::Utc>,
         ) -> Result<(), Error>
         where
-            T: astarte_device_sdk::AstarteAggregate;
-        pub async fn unset(
-            &self,
-            _interface_name: &str,
-            _interface_path: &str,
-        ) -> Result<(), Error>;
-        pub async fn add_interface(&self, _interface: Interface) -> Result<(), Error>;
-        pub async fn remove_interface(&self, _interface: &str) -> Result<(), Error>;
+            D: TryInto<AstarteType> + Send;
+
+        async fn unset(&self, interface_name: &str, interface_path: &str) -> Result<(), Error>;
+
+        async fn handle_events(&mut self) -> Result<(), Error>;
+        async fn add_interface(&self, interface: Interface) -> Result<(), Error>;
+
+        // ---------------------------------------------
+        async fn add_interface_from_file<P: 'static>(&self, file_path: P) -> Result<(), Error>
+        where
+            P: AsRef<Path> + Send;
+
+        // ---------------------------------------------
+        async fn add_interface_from_str(&self, json_str: &str) -> Result<(), Error>;
+
+        async fn remove_interface(&self, interface_name: &str) -> Result<(), Error>;
     }
-    impl<S> Clone for AstarteDeviceSdk<S> {
+
+
+    impl<S: 'static + Sync + Send, C: 'static + Sync + Send> Clone for AstarteDeviceSdk<S,C> {
         fn clone(&self) -> Self;
     }
 }

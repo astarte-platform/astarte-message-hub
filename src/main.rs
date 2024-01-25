@@ -24,20 +24,19 @@
 
 #![warn(missing_docs)]
 
+use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
+use astarte_device_sdk::store::memory::MemoryStore;
+use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
+use astarte_device_sdk::{AstarteDeviceSdk, EventReceiver};
 use std::net::Ipv6Addr;
 use std::path::PathBuf;
 
-use astarte_device_sdk::options::AstarteOptions;
-use astarte_device_sdk::store::memory::MemoryStore;
-use astarte_device_sdk::AstarteDeviceSdk;
+use astarte_message_hub::config::MessageHubOptions;
+use astarte_message_hub::error::AstarteMessageHubError;
+use astarte_message_hub::{AstarteHandler, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::Parser;
 use log::info;
-
-use astarte_message_hub::config::MessageHubOptions;
-use astarte_message_hub::error::AstarteMessageHubError;
-use astarte_message_hub::AstarteHandler;
-use astarte_message_hub::AstarteMessageHub;
 
 /// A central service that runs on (Linux) devices for collecting and delivering messages from N
 /// apps using 1 MQTT connection to Astarte.
@@ -62,11 +61,13 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
 
     // Initialize an Astarte device
-    let device_sdk = initialize_astarte_device_sdk(&mut options).await?;
+    let (device, rx_events) = initialize_astarte_device_sdk(&mut options).await?;
     info!("Connection to Astarte established.");
 
     // Create a new Astarte handler
-    let handler = AstarteHandler::new(device_sdk);
+    let handler = AstarteHandler::new(device, rx_events);
+
+    // let handler = AstarteMessageHub::connect(&mut options).await?;
 
     // Create a new message hub
     let message_hub = AstarteMessageHub::new(handler);
@@ -83,13 +84,14 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
-) -> Result<AstarteDeviceSdk<MemoryStore>, AstarteMessageHubError> {
+) -> Result<(AstarteDeviceSdk<MemoryStore, Mqtt>, EventReceiver), AstarteMessageHubError> {
+    // retrieve the device id
     msg_hub_opts.obtain_device_id().await?;
     // Obtain the credentials secret, the store defaults to the current directory
     msg_hub_opts.obtain_credential_secret().await?;
 
-    // Create the configuration options for the device and then instantiate a new device
-    let mut device_sdk_opts = AstarteOptions::new(
+    // initialize the device options and mqtt config
+    let mut mqtt_config = MqttConfig::new(
         &msg_hub_opts.realm,
         msg_hub_opts.device_id.as_ref().unwrap(),
         msg_hub_opts.credentials_secret.as_ref().unwrap(),
@@ -97,14 +99,20 @@ async fn initialize_astarte_device_sdk(
     );
 
     if msg_hub_opts.astarte_ignore_ssl {
-        device_sdk_opts = device_sdk_opts.ignore_ssl_errors();
+        mqtt_config.ignore_ssl_errors();
     }
 
-    if let Some(int_dir) = &msg_hub_opts.interfaces_directory {
-        device_sdk_opts = device_sdk_opts.interface_directory(&int_dir.to_string_lossy())?;
-    }
+    let Some(int_dir) = &msg_hub_opts.interfaces_directory else {
+        return Err(AstarteMessageHubError::MissingConfig("interface directory"));
+    };
 
-    let sdk = AstarteDeviceSdk::new(device_sdk_opts).await?;
+    // create a device instance
+    let (device, rx_events) = DeviceBuilder::new()
+        .interface_directory(int_dir)?
+        .store(MemoryStore::new())
+        .connect(mqtt_config)
+        .await?
+        .build();
 
-    Ok(sdk)
+    Ok((device, rx_events))
 }

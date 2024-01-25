@@ -23,6 +23,8 @@
 
 use std::path::PathBuf;
 
+use astarte_device_sdk::builder::BuilderError;
+use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
 use thiserror::Error;
 
 use crate::config::http::HttpError;
@@ -42,13 +44,16 @@ pub enum AstarteMessageHubError {
     #[error(transparent)]
     AstarteError(#[from] astarte_device_sdk::error::Error),
 
-    /// Error returned by the options
-    #[error(transparent)]
-    AstarteOptionsError(#[from] astarte_device_sdk::options::OptionsError),
-
+    // /// Error returned by the options
+    // #[error(transparent)]
+    // AstarteOptionsError(#[from] astarte_device_sdk::options::OptionsError),\
     /// Invalid date
     #[error("{0}")]
     AstarteInvalidData(String),
+
+    /// Missing config options.
+    #[error("missing {0} option")]
+    MissingConfig(&'static str),
 
     /// Wrapper for an io error
     #[error(transparent)]
@@ -77,6 +82,14 @@ pub enum AstarteMessageHubError {
     /// Wrapper for integer conversion errors
     #[error("couldn't convert timestamp, {0}")]
     Timestamp(&'static str),
+
+    /// Astarte Message Hub proto error
+    #[error("Astarte Message Hub proto error, {0}")]
+    Proto(#[from] MessageHubProtoError),
+
+    /// Failed to build an Astarte device
+    #[error("failed to build an astarte device, {0}")]
+    BuildDevice(#[from] BuilderError),
 }
 
 /// Reason why a configuration is invalid.

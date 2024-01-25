@@ -239,7 +239,7 @@ impl MessageHubOptions {
         pairing_token: &str,
     ) -> Result<String, AstarteMessageHubError> {
         // Call extracted to allow mocking in tests
-        astarte_device_sdk::registration::register_device(
+        astarte_device_sdk::transport::mqtt::registration::register_device(
             pairing_token,
             &self.pairing_url,
             &self.realm,
