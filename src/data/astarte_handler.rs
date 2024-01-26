@@ -60,7 +60,7 @@ struct Subscriber {
 #[async_trait]
 impl<T> AstarteSubscriber for AstarteHandler<T>
 where
-    T: Client + Sync,
+    T: Client + Sync + Send,
 {
     async fn subscribe(
         &self,

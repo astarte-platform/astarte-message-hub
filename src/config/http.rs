@@ -86,7 +86,7 @@ impl IntoResponse for ErrorResponse {
             ),
             ErrorResponse::Channel(err) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("channel error, {}", err),
+                format!("Channel error, {}", err),
             ),
         };
 
