@@ -19,7 +19,7 @@
  */
 //! Contains the error types used in this crate.
 
-//! Errors for the message hub
+//! Errors for the message hub.
 
 use std::path::PathBuf;
 
@@ -44,9 +44,6 @@ pub enum AstarteMessageHubError {
     #[error(transparent)]
     AstarteError(#[from] astarte_device_sdk::error::Error),
 
-    // /// Error returned by the options
-    // #[error(transparent)]
-    // AstarteOptionsError(#[from] astarte_device_sdk::options::OptionsError),\
     /// Invalid date
     #[error("{0}")]
     AstarteInvalidData(String),

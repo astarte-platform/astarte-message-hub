@@ -32,8 +32,6 @@ use uuid::Uuid;
 
 use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
 
-// use crate::types::InterfaceJson;
-
 /// Main struct for the Astarte message hub.
 pub struct AstarteMessageHub<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber> {
     /// The nodes connected to the message hub.
@@ -64,46 +62,10 @@ impl<T: 'static> AstarteMessageHub<T>
 where
     T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber,
 {
-    // /// Create a device and connect it to Astarte, [AstarteHandler]
-    // pub async fn connect(
-    //     msg_hub_opts: &mut MessageHubOptions,
-    // ) -> Result<T, AstarteMessageHubError> {
-    //     // retrieve the device id
-    //     msg_hub_opts.obtain_device_id().await?;
-    //     // Obtain the credentials secret, the store defaults to the current directory
-    //     msg_hub_opts.obtain_credential_secret().await?;
-    //
-    //     // initialize the device options and mqtt config
-    //     let mut mqtt_config = MqttConfig::new(
-    //         &msg_hub_opts.realm,
-    //         &msg_hub_opts.device_id.as_ref().unwrap(),
-    //         msg_hub_opts.credentials_secret.as_ref().unwrap(),
-    //         &msg_hub_opts.pairing_url,
-    //     );
-    //
-    //     if msg_hub_opts.astarte_ignore_ssl {
-    //         mqtt_config.ignore_ssl_errors();
-    //     }
-    //
-    //     let Some(int_dir) = &msg_hub_opts.interfaces_directory else {
-    //         return Err(AstarteMessageHubError::MissingConfig("interface directory"));
-    //     };
-    //
-    //     // create a device instance
-    //     let (device, rx_events) = DeviceBuilder::new()
-    //         .interface_directory(int_dir)?
-    //         .store(MemoryStore::new())
-    //         .connect(mqtt_config)
-    //         .await?
-    //         .build();
-    //
-    //     Ok(AstarteHandler::new(device, rx_events))
-    // }
-
     /// Instantiate a new Astarte message hub.
     ///
     /// The `astarte_handler` should satisfy the required traits for an Astarte handler.
-    /// See the [AstarteHandler] for a ready-to-use Astarte
+    /// See the [AstarteHandler](crate::data::astarte_handler::AstarteHandler) for a ready-to-use Astarte
     /// handler.
     pub fn new(astarte_handler: T) -> Self {
         let mut astarte_handler_cpy = astarte_handler.clone();

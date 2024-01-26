@@ -18,12 +18,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use std::path::Path;
+//! Mocking of the Astarte Device Sdk.
 
 use astarte_device_sdk::{types::AstarteType, AstarteAggregate, Error, Interface};
 use async_trait::async_trait;
 use mockall::{automock, mock};
 
+/// Equivalent version of the [`Client`](astarte_device_sdk::Client) trait.
+///
+/// This trait has been redefined because of some mocking constraints regarding generic parameters that prevented
+/// it to be mocked.
 #[automock]
 #[async_trait]
 pub trait Client {
@@ -69,14 +73,6 @@ pub trait Client {
 
     async fn handle_events(&mut self) -> Result<(), Error>;
     async fn add_interface(&self, interface: Interface) -> Result<(), Error>;
-
-    // ---------------------------------------------
-    async fn add_interface_from_file<P: 'static>(&self, file_path: P) -> Result<(), Error>
-    where
-        P: AsRef<Path> + Send;
-
-    // ---------------------------------------------
-    async fn add_interface_from_str(&self, json_str: &str) -> Result<(), Error>;
 
     async fn remove_interface(&self, interface_name: &str) -> Result<(), Error>;
 }
@@ -128,14 +124,6 @@ mock! {
 
         async fn handle_events(&mut self) -> Result<(), Error>;
         async fn add_interface(&self, interface: Interface) -> Result<(), Error>;
-
-        // ---------------------------------------------
-        async fn add_interface_from_file<P: 'static>(&self, file_path: P) -> Result<(), Error>
-        where
-            P: AsRef<Path> + Send;
-
-        // ---------------------------------------------
-        async fn add_interface_from_str(&self, json_str: &str) -> Result<(), Error>;
 
         async fn remove_interface(&self, interface_name: &str) -> Result<(), Error>;
     }

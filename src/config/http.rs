@@ -39,11 +39,14 @@ use tokio_util::sync::CancellationToken;
 use crate::config::MessageHubOptions;
 use crate::error::ConfigValidationError;
 
+/// HTTP server error
 #[derive(thiserror::Error, Debug, displaydoc::Display)]
 pub enum HttpError {
     /// couldn't bind the address {addr}
     Bind {
+        /// address
         addr: String,
+        /// backtrace error
         #[source]
         backtrace: io::Error,
     },
@@ -53,13 +56,14 @@ pub enum HttpError {
     Join(#[from] JoinError),
 }
 
+/// HTTP errors that will be mapped into an HTTP [Response]
 #[derive(thiserror::Error, Debug, displaydoc::Display)]
 pub enum ErrorResponse {
     /// invalid configuration
     InvalidConfig(#[from] ConfigValidationError),
     /// failed to serialize config
     Serialize(#[from] toml::ser::Error),
-    /// Write config file
+    /// write config file
     Write(#[from] io::Error),
     /// failed to send over channel
     Channel(#[from] SendError<()>),

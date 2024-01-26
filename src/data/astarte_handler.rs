@@ -43,7 +43,7 @@ use crate::data::mock_astarte_sdk::Client;
 use crate::error::AstarteMessageHubError;
 
 /// An Astarte Device SDK based implementation of an Astarte handler.
-/// Uses the Astarte Device SDK to provide subscribe and publish functionality.
+/// Uses the [`Astarte Device SDK`](astarte_device_sdk::AstarteDeviceSdk) to provide subscribe and publish functionality.
 #[derive(Clone)]
 pub struct AstarteHandler<T> {
     device_sdk: T,
@@ -209,6 +209,7 @@ where
     }
 }
 
+/// Handler responsible for receiving and managing [AstarteDeviceDataEvent](astarte_device_sdk::AstarteDeviceDataEvent)s
 async fn handle_rx_events(
     mut rx_event: EventReceiver,
     subscribers: Arc<RwLock<HashMap<Uuid, Subscriber>>>,
@@ -255,7 +256,7 @@ impl<T> AstarteHandler<T>
 where
     T: Client + Send + Sync,
 {
-    /// Constructs a new handler from the [AstarteDeviceSdk]
+    /// Constructs a new handler from the [AstarteDeviceSdk](astarte_device_sdk::AstarteDeviceSdk)
     #[allow(dead_code)]
     pub fn new(device_sdk: T, rx_event: EventReceiver) -> Self {
         let subscribers: Arc<RwLock<HashMap<Uuid, Subscriber>>> = Arc::new(Default::default());
@@ -269,9 +270,7 @@ where
         }
     }
 
-    /// Publish an AstarteDataTypeIndividual on specific interface and path.
-    ///
-    /// The AstarteDataTypeIndividual are defined in the `astarte_type.proto` file.
+    /// Publish an [`AstarteDataTypeIndividual`] on specific interface and path.
     async fn publish_astarte_individual(
         &self,
         data: AstarteDataTypeIndividual,
@@ -301,9 +300,7 @@ where
         .map_err(AstarteMessageHubError::AstarteError)
     }
 
-    /// Publish an AstarteDataTypeObject on specific interface and path.
-    ///
-    /// The AstarteDataTypeObject is defined in the `astarte_type.proto` file.
+    /// Publish an [`AstarteDataTypeObject`](astarte_message_hub_proto::AstarteDataTypeObject) on specific interface and path.
     async fn publish_astarte_object(
         &self,
         object_data: astarte_message_hub_proto::AstarteDataTypeObject,
@@ -314,9 +311,6 @@ where
         let astarte_data_individual_map: HashMap<String, AstarteDataTypeIndividual> =
             object_data.object_data;
 
-        // let aggr = crate::astarte_device_sdk::types::map_values_to_astarte_type(
-        //     astarte_data_individual_map,
-        // )?;
         // TODO: move `map_values_to_astarte_type` from grpc::convert to mod.rs
         let aggr = astarte_device_sdk::transport::grpc::convert::map_values_to_astarte_type(
             astarte_data_individual_map,

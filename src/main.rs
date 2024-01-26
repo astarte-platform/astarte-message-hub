@@ -67,8 +67,6 @@ async fn main() -> Result<(), AstarteMessageHubError> {
     // Create a new Astarte handler
     let handler = AstarteHandler::new(device, rx_events);
 
-    // let handler = AstarteMessageHub::connect(&mut options).await?;
-
     // Create a new message hub
     let message_hub = AstarteMessageHub::new(handler);
 
