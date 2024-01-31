@@ -51,10 +51,13 @@ device_id = "[DEVICE_ID]"
 pairing_token = "[PAIRING_TOKEN]"
 # Credential secret, if not provided the `pairing_token` is required
 credentials_secret = "[CREDENTIALS_SECRET]"
-# Ignore SSL errors, defaults to false
-astarte_ignore_ssl = false
 # Path to store persistent data, defaults to "./"
-store_directory = "<STORE_PAHT>"
+store_directory = "<STORE_PATH>"
+
+
+[astarte]
+# Ignore SSL errors, defaults to false
+ignore_ssl = false
 ```
 
 An example configuration file can be found in the

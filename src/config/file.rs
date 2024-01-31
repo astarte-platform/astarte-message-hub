@@ -69,6 +69,9 @@ mod test {
             credentials_secret = "4"
             astarte_ignore_ssl = false
             grpc_socket_port = 5
+
+            [astarte]
+            ignore_ssl = false
         "#;
 
         let res = get_options_from_toml(TOML_FILE);
@@ -78,7 +81,10 @@ mod test {
         assert_eq!(options.pairing_url, "3");
         assert_eq!(options.credentials_secret, Some("4".to_string()));
         assert_eq!(options.pairing_token, None);
-        assert!(!options.astarte_ignore_ssl);
+        #[allow(deprecated)]
+        let ignore_ssl = !options.astarte_ignore_ssl;
+        assert!(ignore_ssl);
+        assert!(!options.astarte.ignore_ssl);
         assert_eq!(options.grpc_socket_port, 5);
     }
 
@@ -91,6 +97,8 @@ mod test {
             pairing_token = "4"
             astarte_ignore_ssl = true
             grpc_socket_port = 5
+            [astarte]
+            ignore_ssl = true
         "#;
 
         let res = get_options_from_toml(TOML_FILE);
@@ -100,7 +108,10 @@ mod test {
         assert_eq!(options.pairing_url, "3");
         assert_eq!(options.credentials_secret, None);
         assert_eq!(options.pairing_token, Some("4".to_string()));
-        assert!(options.astarte_ignore_ssl);
+        #[allow(deprecated)]
+        let ignore_ssl = options.astarte_ignore_ssl;
+        assert!(ignore_ssl);
+        assert!(options.astarte.ignore_ssl);
         assert_eq!(options.grpc_socket_port, 5);
     }
 
@@ -114,6 +125,8 @@ mod test {
             pairing_token = "5"
             astarte_ignore_ssl = true
             grpc_socket_port = 6
+            [astarte]
+            ignore_ssl = true
         "#;
 
         let res = get_options_from_toml(TOML_FILE);
@@ -123,7 +136,10 @@ mod test {
         assert_eq!(options.pairing_url, "3");
         assert_eq!(options.credentials_secret, Some("4".to_string()));
         assert_eq!(options.pairing_token, Some("5".to_string()));
-        assert!(options.astarte_ignore_ssl);
+        #[allow(deprecated)]
+        let ignore_ssl = options.astarte_ignore_ssl;
+        assert!(ignore_ssl);
+        assert!(options.astarte.ignore_ssl);
         assert_eq!(options.grpc_socket_port, 6);
     }
 
@@ -135,6 +151,8 @@ mod test {
             pairing_url = "3"
             astarte_ignore_ssl = true
             grpc_socket_port = 4
+            [astarte]
+            ignore_ssl = true
         "#;
 
         let res = get_options_from_toml(TOML_FILE);
@@ -150,6 +168,8 @@ mod test {
             pairing_token = "4"
             astarte_ignore_ssl = true
             grpc_socket_port = 5
+            [astarte]
+            ignore_ssl = true
         "#;
 
         let res = get_options_from_toml(TOML_FILE);
