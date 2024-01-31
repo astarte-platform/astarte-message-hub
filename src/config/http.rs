@@ -35,6 +35,8 @@ use tokio::sync::mpsc::{channel, Sender};
 
 use crate::config::MessageHubOptions;
 
+use super::DeviceSdkOptions;
+
 #[derive(Deserialize, Serialize)]
 struct ConfigResponse {
     result: String,
@@ -77,6 +79,7 @@ impl HttpConfigProvider {
         Extension(state): Extension<ConfigServerExtension>,
         Json(payload): Json<ConfigPayload>,
     ) -> impl IntoResponse {
+        #[allow(deprecated)]
         let message_hub_options = MessageHubOptions {
             realm: payload.realm,
             device_id: payload.device_id,
@@ -87,6 +90,7 @@ impl HttpConfigProvider {
             astarte_ignore_ssl: false,
             grpc_socket_port: payload.grpc_socket_port,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         if let Err(err) = message_hub_options.validate() {

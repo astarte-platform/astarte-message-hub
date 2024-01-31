@@ -17,7 +17,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-//! Helper module to retreive the configuration of the Astarte message hub.
+//! Helper module to retrieve the configuration of the Astarte message hub.
 
 use std::path::{Path, PathBuf};
 use std::{fs, io};
@@ -63,6 +63,10 @@ pub struct MessageHubOptions {
     /// Directory containing the Astarte interfaces.
     pub interfaces_directory: Option<PathBuf>,
     /// Whether to ignore SSL errors when connecting to Astarte.
+    #[deprecated(
+        since = "0.5.3",
+        note = "Use the astarte map 'ignore_ssl' to configure the SDK"
+    )]
     #[serde(default)]
     pub astarte_ignore_ssl: bool,
     /// The gRPC port to use.
@@ -70,6 +74,9 @@ pub struct MessageHubOptions {
     /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
     #[serde(default = "MessageHubOptions::default_store_directory")]
     pub store_directory: PathBuf,
+    /// Astarte device SDK options.
+    #[serde(skip_serializing_if = "DeviceSdkOptions::is_default", default)]
+    pub astarte: DeviceSdkOptions,
 }
 
 impl MessageHubOptions {
@@ -301,12 +308,27 @@ impl MessageHubOptions {
     }
 }
 
+/// Options to pass to the [Astarte device SDK](`astarte_device_sdk`).
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct DeviceSdkOptions {
+    /// Whether to ignore SSL errors when connecting to Astarte.
+    #[serde(default)]
+    pub ignore_ssl: bool,
+}
+
+impl DeviceSdkOptions {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn test_is_valid_cred_sec_ok() {
+        #[allow(deprecated)]
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -317,6 +339,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         let res = expected_msg_hub_opts.validate();
@@ -325,6 +348,7 @@ mod test {
 
     #[test]
     fn test_is_valid_pairing_token_ok() {
+        #[allow(deprecated)]
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -335,6 +359,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         let res = expected_msg_hub_opts.validate();
@@ -343,6 +368,7 @@ mod test {
 
     #[test]
     fn test_is_valid_empty_realm_err() {
+        #[allow(deprecated)]
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "".to_string(),
             device_id: Some("2".to_string()),
@@ -353,12 +379,14 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
         assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
     fn test_is_valid_empty_device_id() {
+        #[allow(deprecated)]
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("".to_string()),
@@ -369,12 +397,14 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
         assert!(expected_msg_hub_opts.validate().is_ok());
     }
 
     #[test]
     fn test_is_valid_empty_pairing_url_err() {
+        #[allow(deprecated)]
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -385,12 +415,14 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
         assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
     fn test_is_valid_empty_credentials_secred_err() {
+        #[allow(deprecated)]
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -401,12 +433,14 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
         assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
     fn test_is_valid_empty_pairing_token_err() {
+        #[allow(deprecated)]
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -417,12 +451,14 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
         assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
     fn test_is_valid_invalid_interf_dir_err() {
+        #[allow(deprecated)]
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -433,12 +469,14 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 5,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
         assert!(expected_msg_hub_opts.validate().is_err());
     }
 
     #[test]
     fn test_is_valid_missing_credentials_secret_and_pairing_token_err() {
+        #[allow(deprecated)]
         let expected_msg_hub_opts = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -449,6 +487,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
         assert!(expected_msg_hub_opts.validate().is_err());
     }
@@ -460,6 +499,7 @@ mod test {
         let dir = tempfile::TempDir::new().unwrap();
         fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
 
+        #[allow(deprecated)]
         let mut opt = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -470,6 +510,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
             store_directory: dir.path().to_path_buf(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         let secret = opt.obtain_credential_secret().await;
@@ -486,6 +527,7 @@ mod test {
     async fn obtain_credential_secret_register_device() {
         let dir = tempfile::TempDir::new().unwrap();
 
+        #[allow(deprecated)]
         let mut opt = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -496,6 +538,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
             store_directory: dir.path().to_path_buf(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         let secret = opt.obtain_credential_secret().await;
@@ -515,6 +558,7 @@ mod test {
 
     #[tokio::test]
     async fn load_toml_config() {
+        #[allow(deprecated)]
         let expected = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -525,6 +569,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         let dir = tempfile::TempDir::new().unwrap();
@@ -543,6 +588,7 @@ mod test {
 
     #[tokio::test]
     async fn load_from_store_path() {
+        #[allow(deprecated)]
         let mut expected = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -553,6 +599,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         let dir = tempfile::TempDir::new().unwrap();
@@ -580,6 +627,7 @@ mod test {
         assert!(opts.is_ok(), "error deserializing config: {:?}", opts);
         let opts = opts.unwrap();
 
+        #[allow(deprecated)]
         let expected = MessageHubOptions {
             realm: "example_realm".to_string(),
             device_id: Some("YOUR_UNIQUE_DEVICE_ID".to_string()),
@@ -590,6 +638,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 50051,
             store_directory: PathBuf::from("/var/lib/message-hub"),
+            astarte: DeviceSdkOptions::default(),
         };
 
         assert_ne!(opts, expected);
@@ -602,6 +651,7 @@ mod test {
         let dir = tempfile::TempDir::new().unwrap();
         fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
 
+        #[allow(deprecated)]
         let mut opt = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
@@ -612,6 +662,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
             store_directory: dir.path().to_path_buf(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         let device_id = opt.obtain_device_id().await;
@@ -631,6 +682,7 @@ mod test {
         let dir = tempfile::TempDir::new().unwrap();
         fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
 
+        #[allow(deprecated)]
         let mut opt = MessageHubOptions {
             realm: "1".to_string(),
             device_id: None,
@@ -641,6 +693,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
             store_directory: dir.path().to_path_buf(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         let device_id = opt.obtain_device_id().await;
@@ -660,6 +713,7 @@ mod test {
         let dir = tempfile::TempDir::new().unwrap();
         fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
 
+        #[allow(deprecated)]
         let mut opt = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("".to_string()),
@@ -670,6 +724,7 @@ mod test {
             astarte_ignore_ssl: false,
             grpc_socket_port: 655,
             store_directory: dir.path().to_path_buf(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         let device_id = opt.obtain_device_id().await;
