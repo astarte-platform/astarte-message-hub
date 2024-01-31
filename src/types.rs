@@ -560,8 +560,8 @@ mod test {
             .unwrap();
 
         if let IndividualData::AstarteDateTime(date_time_value) = data {
-            let resul_date_time: DateTime<Utc> = date_time_value.try_into().unwrap();
-            assert_eq!(expected_datetime_value, resul_date_time);
+            let result_date_time: DateTime<Utc> = date_time_value.try_into().unwrap();
+            assert_eq!(expected_datetime_value, result_date_time);
         } else {
             panic!();
         }
