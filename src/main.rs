@@ -26,6 +26,7 @@
 
 use std::net::Ipv6Addr;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use clap::Parser;
 use log::info;
@@ -99,6 +100,14 @@ async fn initialize_astarte_device_sdk(
     #[allow(deprecated)]
     if msg_hub_opts.astarte_ignore_ssl || msg_hub_opts.astarte.ignore_ssl {
         device_sdk_opts = device_sdk_opts.ignore_ssl_errors();
+    }
+
+    if let Some(timeout) = msg_hub_opts.astarte.timeout_secs {
+        device_sdk_opts = device_sdk_opts.connection_timeout(Duration::from_secs(timeout));
+    }
+
+    if let Some(keep_alive) = msg_hub_opts.astarte.keep_alive_secs {
+        device_sdk_opts = device_sdk_opts.keepalive(Duration::from_secs(keep_alive));
     }
 
     if let Some(int_dir) = &msg_hub_opts.interfaces_directory {
