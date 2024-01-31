@@ -313,7 +313,16 @@ impl MessageHubOptions {
 
 /// Options to pass to the [Astarte device SDK](`astarte_device_sdk`).
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename = "astarte")]
 pub struct DeviceSdkOptions {
+    /// Keep alive interval.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keep_alive_secs: Option<u64>,
+    /// Connection timeout.
+    ///
+    /// Should be less than the keep alive interval.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
     /// Whether to ignore SSL errors when connecting to Astarte.
     #[serde(default)]
     pub ignore_ssl: bool,

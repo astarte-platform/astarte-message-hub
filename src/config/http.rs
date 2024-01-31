@@ -219,7 +219,10 @@ async fn set_config(
         astarte_ignore_ssl: false,
         grpc_socket_port: payload.grpc_socket_port,
         store_directory: MessageHubOptions::default_store_directory(),
-        astarte: DeviceSdkOptions { ignore_ssl: false },
+        astarte: DeviceSdkOptions {
+            ignore_ssl: false,
+            ..Default::default()
+        },
     };
 
     message_hub_options.validate()?;
