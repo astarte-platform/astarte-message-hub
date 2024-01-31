@@ -7,8 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 ### Changed
-- Update Astarte Device Sdk to 0.7.0 release.
+- Update Astarte Device Sdk to 0.7.1 release.
+- Bump MSRV to 1.72.0.
 
+## [0.5.3] - 2024-01-31
 ### Added
 - Option to configure the timeout and keep alive interval for the MQTT connection to astarte.
 
