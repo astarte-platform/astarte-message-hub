@@ -418,14 +418,14 @@ mod test {
         let expected_data_f64: f64 = 15.5;
         let expected_data_i32: i32 = 15;
         let mut object_map: HashMap<String, AstarteDataTypeIndividual> = HashMap::new();
-        object_map.insert("1".to_string(), expected_data_f64.try_into().unwrap());
-        object_map.insert("2".to_string(), expected_data_i32.try_into().unwrap());
+        object_map.insert("1".to_string(), expected_data_f64.into());
+        object_map.insert("2".to_string(), expected_data_i32.into());
 
         let astarte_message = AstarteMessage {
             interface_name: interface_name.clone(),
             path: interface_path.clone(),
             timestamp: None,
-            payload: Some(Payload::AstarteData(object_map.try_into().unwrap())),
+            payload: Some(Payload::AstarteData(object_map.into())),
         };
 
         let astarte_device_data_event: AstarteDeviceDataEvent = astarte_message.try_into().unwrap();
