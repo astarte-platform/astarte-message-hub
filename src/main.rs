@@ -107,7 +107,8 @@ async fn initialize_astarte_device_sdk(
         &msg_hub_opts.pairing_url,
     );
 
-    if msg_hub_opts.astarte_ignore_ssl {
+    #[allow(deprecated)]
+    if msg_hub_opts.astarte_ignore_ssl || msg_hub_opts.astarte.ignore_ssl {
         mqtt_config.ignore_ssl_errors();
     }
 

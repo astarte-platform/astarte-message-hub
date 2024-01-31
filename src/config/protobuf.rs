@@ -36,6 +36,8 @@ use tonic::{Code, Request, Response, Status};
 
 use crate::config::MessageHubOptions;
 
+use super::DeviceSdkOptions;
+
 #[derive(Debug)]
 struct AstarteMessageHubConfig {
     configuration_ready_channel: Arc<Notify>,
@@ -64,6 +66,7 @@ impl MessageHubConfig for AstarteMessageHubConfig {
                 Status::new(Code::InvalidArgument, format!("Invalid grpc port: {}", err))
             })?;
 
+        #[allow(deprecated)]
         let message_hub_options = MessageHubOptions {
             realm: req.realm,
             device_id: req.device_id,
@@ -74,6 +77,7 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             astarte_ignore_ssl: false,
             grpc_socket_port: port,
             store_directory: MessageHubOptions::default_store_directory(),
+            astarte: DeviceSdkOptions::default(),
         };
 
         if let Err(err) = message_hub_options.validate() {
