@@ -9,9 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - Update Astarte Device Sdk to 0.7.0 release.
 
+### Added
+- Option to configure the timeout and keep alive interval for the MQTT connection to astarte.
+
 ## [0.5.2] - 2023-07-03
 ### Added
 - Add support to receive `device_id` option from dbus.
+
 ### Changed
 - Make `device_id` options as optional field.
 
