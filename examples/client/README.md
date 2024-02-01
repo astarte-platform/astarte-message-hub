@@ -55,9 +55,9 @@ With `send-data` we can publish new values on a server-owned interface of our lo
 instance.
 The syntax is the following:
 ```
-astartectl appengine --appengine-url http://localhost:4002/                       \
-    --realm-management-url http://localhost:4000/ --realm-key <REALM>_private.pem \
-    --realm-name <REALM> devices send-data <DEVICE_ID>                            \
+astartectl appengine --appengine-url http://api.astarte.localhost/appengine            \
+    --realm-management-url http://api.astarte.localhost/realmmanagement                \
+    --realm-key <REALM>_private.pem --realm-name <REALM> devices send-data <DEVICE_ID> \
     org.astarte-platform.rust.examples.datastream.ServerDatastream <ENDPOINT> <VALUE>
 ```
 Where `<REALM>` is your realm name, `<DEVICE_ID>` is the device ID to send the data to,
