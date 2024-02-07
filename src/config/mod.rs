@@ -97,12 +97,13 @@ impl MessageHubOptions {
         store_directory: Option<&Path>,
     ) -> Result<MessageHubOptions, AstarteMessageHubError> {
         let mut opt = if let Some(toml_file) = toml_file {
-            let toml_str = tokio::fs::read_to_string(toml_file).await?;
+            let toml_str = fs::read_to_string(toml_file).await?;
             file::get_options_from_toml(&toml_str)
         } else if let Some(store_directory) = store_directory {
             if !store_directory.is_dir() {
-                let err_msg = "Provided store directory for HTTP and ProtoBuf does not exists.";
-                return Err(AstarteMessageHubError::FatalError(err_msg.to_string()));
+                let err_msg =
+                    "Provided store directory for HTTP and ProtoBuf does not exists.".to_string();
+                return Err(AstarteMessageHubError::FatalError(err_msg));
             }
             let configuration_file = store_directory.join(CONFIG_FILE_NAMES[0]);
             if !configuration_file.exists() {
@@ -120,18 +121,18 @@ impl MessageHubOptions {
                     Arc::clone(&notify_config),
                     configuration_file.to_str().unwrap(),
                 )
-                .await;
+                .await?;
 
                 notify_config.notified().await;
 
                 web_server.stop().await?;
-                protobuf_server.stop().await;
+                protobuf_server.stop().await?;
             }
-            let toml_str = std::fs::read_to_string(configuration_file)?;
+            let toml_str = fs::read_to_string(configuration_file).await?;
 
             file::get_options_from_toml(&toml_str)
         } else {
-            file::get_options_from_base_toml()
+            file::get_options_from_base_toml().await
         }?;
 
         if let Some(store_directory) = store_directory {

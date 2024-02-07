@@ -20,7 +20,6 @@
 
 //! Load the toml file in the [MessageHubOptions] struct.
 
-use std::fs;
 use std::path::Path;
 
 use crate::config::MessageHubOptions;
@@ -31,11 +30,11 @@ pub const CONFIG_FILE_NAMES: [&str; 2] =
     ["message-hub-config.toml", "/etc/message-hub/config.toml"];
 
 /// Get the message hub options from one of the default locations for .toml configuration files.
-pub fn get_options_from_base_toml() -> Result<MessageHubOptions, AstarteMessageHubError> {
+pub async fn get_options_from_base_toml() -> Result<MessageHubOptions, AstarteMessageHubError> {
     let existing_toml_path = CONFIG_FILE_NAMES.iter().map(Path::new).find(|f| f.exists());
 
     if let Some(toml_path) = existing_toml_path {
-        let toml_str = fs::read_to_string(toml_path)?;
+        let toml_str = tokio::fs::read_to_string(toml_path).await?;
         get_options_from_toml(&toml_str)
     } else {
         let err_msg = "No configuration file found in the base locations.";
