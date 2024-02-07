@@ -37,7 +37,7 @@ the Astarte cluster.
 
 Let's use `get-samples` as follows:
 ```
-astartectl appengine --appengine-url http://localhost:4002/ --realm-key <REALM>_private.pem \
+astartectl appengine --appengine-url http://api.astarte.localhost/appengine --realm-key <REALM>_private.pem \
     --realm-name <REALM> devices get-samples <DEVICE_ID>                                    \
     org.astarte-platform.rust.examples.datastream.DeviceDatastream <ENDPOINT> -c 10
 ```

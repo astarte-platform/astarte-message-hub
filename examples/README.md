@@ -28,10 +28,10 @@ until right before the *installing the interfaces* step.
 An interface can be installed by running the following command:
 
 ```
-astartectl realm-management                       \
-    --realm-management-url http://localhost:4000/ \
-    --realm-key <REALM>_private.pem               \
-    --realm-name <REALM>                          \
+astartectl realm-management                                             \
+    --realm-management-url http://api.astarte.localhost/realmmanagement \
+    --realm-key <REALM>_private.pem                                     \
+    --realm-name <REALM>                                                \
     interfaces install <INTERFACE_FILE_PATH>
 ```
 Where `<REALM>` is the name of the realm, and `<INTERFACE_FILE_PATH>` is the path name to the
@@ -53,10 +53,10 @@ performed by the message hub requiring a pairing JWT.
 To manually register the device on the Astarte instance you can use the following `astartectl`
 command:
 ```
-astartectl pairing                       \
-    --pairing-url http://localhost:4003/ \
-    --realm-key <REALM>_private.pem      \
-    --realm-name <REALM>                 \
+astartectl pairing                                     \
+    --pairing-url http://api.astarte.localhost/pairing \
+    --realm-key <REALM>_private.pem                    \
+    --realm-name <REALM>                               \
     agent register <DEVICE_ID>
 ```
 **NB**: The device id should follow a specific format. See the
@@ -115,13 +115,13 @@ You can check the device used by the message hub has been correctly registered a
 the Astarte instance using `astartectl`.
 To list the all registered devices run:
 ```
-astartectl appengine --appengine-url http://localhost:4002/ \
-    --realm-key <REALM>_private.pem --realm-name <REALM>    \
+astartectl appengine --appengine-url http://api.astarte.localhost/appengine \
+    --realm-key <REALM>_private.pem --realm-name <REALM>                    \
     devices list
 ```
 You can check the status of a specific device with the command:
 ```
-astartectl appengine --appengine-url http://localhost:4002/ \
-    --realm-key <REALM>_private.pem --realm-name <REALM>    \
+astartectl appengine --appengine-url http://api.astarte.localhost/appengine \
+    --realm-key <REALM>_private.pem --realm-name <REALM>                    \
     devices show <DEVICE_ID>
 ```
