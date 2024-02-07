@@ -19,9 +19,9 @@
  */
 //! Helper module to retrieve the configuration of the Astarte message hub.
 
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fs, io};
 
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -100,8 +100,9 @@ impl MessageHubOptions {
             file::get_options_from_toml(&toml_str)
         } else if let Some(store_directory) = store_directory {
             if !store_directory.is_dir() {
-                let err_msg = "Provided store directory for HTTP and ProtoBuf does not exists.";
-                return Err(AstarteMessageHubError::FatalError(err_msg.to_string()));
+                let err_msg =
+                    "Provided store directory for HTTP and ProtoBuf does not exists.".to_string();
+                return Err(AstarteMessageHubError::FatalError(err_msg));
             }
             let configuration_file = store_directory.join(CONFIG_FILE_NAMES[0]);
             if !configuration_file.exists() {
@@ -119,18 +120,18 @@ impl MessageHubOptions {
                     Arc::clone(&notify_config),
                     configuration_file.to_str().unwrap(),
                 )
-                .await;
+                .await?;
 
                 notify_config.notified().await;
 
                 web_server.stop().await?;
-                protobuf_server.stop().await;
+                protobuf_server.stop().await?;
             }
-            let toml_str = std::fs::read_to_string(configuration_file)?;
+            let toml_str = tokio::fs::read_to_string(configuration_file).await?;
 
             file::get_options_from_toml(&toml_str)
         } else {
-            file::get_options_from_base_toml()
+            file::get_options_from_base_toml().await
         }?;
 
         if let Some(store_directory) = store_directory {
@@ -194,7 +195,7 @@ impl MessageHubOptions {
 
         let path = self.store_directory.join(CREDENTIAL_FILE);
 
-        let credential = match fs::read_to_string(&path) {
+        let credential = match tokio::fs::read_to_string(&path).await {
             Ok(cred) => {
                 debug!("using stored credentials from {:?}", path);
 
@@ -229,13 +230,15 @@ impl MessageHubOptions {
 
         debug!("device registered, storing credentials to {:?}", cred_file);
 
-        fs::write(cred_file, &credentials).map_err(|err| {
-            AstarteMessageHubError::FatalError(format!(
-                "failed to write credentials to {}: {}",
-                cred_file.to_string_lossy(),
-                err
-            ))
-        })?;
+        tokio::fs::write(cred_file, &credentials)
+            .await
+            .map_err(|err| {
+                AstarteMessageHubError::FatalError(format!(
+                    "failed to write credentials to {}: {}",
+                    cred_file.to_string_lossy(),
+                    err
+                ))
+            })?;
 
         Ok(credentials)
     }
@@ -509,7 +512,9 @@ mod test {
         let expected = "32".to_string();
 
         let dir = tempfile::TempDir::new().unwrap();
-        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+        tokio::fs::write(dir.path().join(CREDENTIAL_FILE), &expected)
+            .await
+            .unwrap();
 
         #[allow(deprecated)]
         let mut opt = MessageHubOptions {
@@ -563,7 +568,9 @@ mod test {
 
         let secret = secret.unwrap();
 
-        let res = fs::read_to_string(dir.path().join(CREDENTIAL_FILE)).unwrap();
+        let res = tokio::fs::read_to_string(dir.path().join(CREDENTIAL_FILE))
+            .await
+            .unwrap();
 
         assert_eq!(secret, res);
     }
@@ -588,7 +595,9 @@ mod test {
 
         let path = dir.path().join(CONFIG_FILE_NAMES[0]);
 
-        fs::write(&path, toml::to_string(&expected).unwrap()).unwrap();
+        tokio::fs::write(&path, toml::to_string(&expected).unwrap())
+            .await
+            .unwrap();
 
         let path = Some(path.to_string_lossy().to_string());
 
@@ -618,7 +627,9 @@ mod test {
 
         let path = dir.path().join(CONFIG_FILE_NAMES[0]);
 
-        fs::write(&path, toml::to_string(&expected).unwrap()).unwrap();
+        tokio::fs::write(&path, toml::to_string(&expected).unwrap())
+            .await
+            .unwrap();
 
         let options = MessageHubOptions::get(None, Some(dir.path())).await;
 
@@ -661,7 +672,9 @@ mod test {
         let expected = "2".to_string();
 
         let dir = tempfile::TempDir::new().unwrap();
-        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+        tokio::fs::write(dir.path().join(CREDENTIAL_FILE), &expected)
+            .await
+            .unwrap();
 
         #[allow(deprecated)]
         let mut opt = MessageHubOptions {
@@ -692,7 +705,9 @@ mod test {
         let expected = "mock-id".to_string();
 
         let dir = tempfile::TempDir::new().unwrap();
-        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+        tokio::fs::write(dir.path().join(CREDENTIAL_FILE), &expected)
+            .await
+            .unwrap();
 
         #[allow(deprecated)]
         let mut opt = MessageHubOptions {
@@ -723,7 +738,9 @@ mod test {
         let expected = "mock-id".to_string();
 
         let dir = tempfile::TempDir::new().unwrap();
-        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+        tokio::fs::write(dir.path().join(CREDENTIAL_FILE), &expected)
+            .await
+            .unwrap();
 
         #[allow(deprecated)]
         let mut opt = MessageHubOptions {
