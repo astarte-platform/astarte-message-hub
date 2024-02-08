@@ -25,17 +25,17 @@
 #![warn(missing_docs)]
 
 use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
-use astarte_device_sdk::store::memory::MemoryStore;
+use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{AstarteDeviceSdk, EventReceiver};
 use std::net::Ipv6Addr;
 use std::path::PathBuf;
 
 use astarte_message_hub::config::MessageHubOptions;
-use astarte_message_hub::error::AstarteMessageHubError;
 use astarte_message_hub::{AstarteHandler, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::Parser;
+use eyre::{eyre, WrapErr};
 use log::info;
 
 /// A central service that runs on (Linux) devices for collecting and delivering messages from N
@@ -52,8 +52,10 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), AstarteMessageHubError> {
-    env_logger::init();
+async fn main() -> eyre::Result<()> {
+    stable_eyre::install()?;
+    env_logger::try_init()?;
+
     let args = Cli::parse();
 
     let store_directory = args.store_directory.as_deref();
@@ -82,7 +84,16 @@ async fn main() -> Result<(), AstarteMessageHubError> {
 
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
-) -> Result<(AstarteDeviceSdk<MemoryStore, Mqtt>, EventReceiver), AstarteMessageHubError> {
+) -> eyre::Result<(AstarteDeviceSdk<SqliteStore, Mqtt>, EventReceiver)> {
+    tokio::fs::create_dir_all(&msg_hub_opts.store_directory)
+        .await
+        .wrap_err_with(|| {
+            format!(
+                "couldn't create store directory {}",
+                msg_hub_opts.store_directory.display()
+            )
+        })?;
+
     // retrieve the device id
     msg_hub_opts.obtain_device_id().await?;
     // Obtain the credentials secret, the store defaults to the current directory
@@ -100,14 +111,23 @@ async fn initialize_astarte_device_sdk(
         mqtt_config.ignore_ssl_errors();
     }
 
-    let Some(int_dir) = &msg_hub_opts.interfaces_directory else {
-        return Err(AstarteMessageHubError::MissingConfig("interface directory"));
-    };
+    let int_dir = msg_hub_opts
+        .interfaces_directory
+        .as_ref()
+        .ok_or_else(|| eyre!("missing interface directory option"))?;
+
+    let store_path = msg_hub_opts
+        .store_directory
+        .to_str()
+        .map(|d| format!("sqlite://{d}/database.db"))
+        .ok_or_else(|| eyre!("non UTF-8 store directory option"))?;
+
+    let store = SqliteStore::new(&store_path).await?;
 
     // create a device instance
     let (device, rx_events) = DeviceBuilder::new()
         .interface_directory(int_dir)?
-        .store(MemoryStore::new())
+        .store(store)
         .connect(mqtt_config)
         .await?
         .build();
