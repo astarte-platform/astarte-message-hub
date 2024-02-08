@@ -20,15 +20,19 @@
 
 //! Astarte Message Hub client example, will send the uptime every 3 seconds to Astarte.
 
+use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
+use astarte_device_sdk::store::memory::MemoryStore;
+use astarte_device_sdk::transport::grpc::GrpcConfig;
+use astarte_device_sdk::types::AstarteType;
+use astarte_device_sdk::Client;
 use std::time;
 
 use clap::Parser;
-
-use astarte_message_hub::proto_message_hub::astarte_message::Payload;
-use astarte_message_hub::proto_message_hub::message_hub_client::MessageHubClient;
-use astarte_message_hub::proto_message_hub::AstarteMessage;
-use astarte_message_hub::proto_message_hub::Node;
-use log::info;
+use log::{error, info, warn};
+use tokio::select;
+use tokio::signal::ctrl_c;
+use tokio::task::JoinHandle;
+use uuid::Uuid;
 
 /// Create a ProtoBuf client for the Astarte message hub.
 #[derive(Parser, Debug)]
@@ -36,6 +40,10 @@ use log::info;
 struct Cli {
     /// UUID to be used when registering the client as an Astarte message hub node.
     uuid: String,
+
+    /// Endpoint of the Astarte Message Hub server instance
+    #[clap(default_value = "http://[::1]:50051")]
+    endpoint: String,
 
     /// Stop after sending COUNT messages.
     #[clap(short, long)]
@@ -46,76 +54,98 @@ struct Cli {
     time: u64,
 }
 
+type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), DynError> {
     env_logger::init();
     let args = Cli::parse();
+    let node_id = Uuid::parse_str(&args.uuid).expect("Node id not specified");
 
-    let mut client = MessageHubClient::connect("http://[::1]:50051")
+    let grpc_cfg = GrpcConfig::new(node_id, args.endpoint);
+
+    let (mut node, mut rx_events) = DeviceBuilder::new()
+        .store(MemoryStore::new())
+        .interface_directory("examples/client/interfaces")
+        .expect("failed to use interface directory")
+        .connect(grpc_cfg)
         .await
-        .unwrap();
+        .expect("failed to connect")
+        .build();
 
-    let interface_jsons = [
-        include_str!(
-            "./interfaces/org.astarte-platform.rust.examples.datastream.DeviceDatastream.json"
-        ),
-        include_str!(
-            "./interfaces/org.astarte-platform.rust.examples.datastream.ServerDatastream.json"
-        ),
-    ];
-
-    let node = Node::new(&args.uuid, &interface_jsons);
-
-    let mut stream = client.attach(node.clone()).await.unwrap().into_inner();
-
-    // Start a separate task to handle incoming data
-    let reply_handle = tokio::spawn(async move {
-        info!("Waiting for messages from the message hub.");
-
-        while let Some(astarte_message) = stream.message().await.unwrap() {
-            println!("Received AstarteMessage = {:?}", astarte_message);
+    let receive_handle = tokio::spawn(async move {
+        info!("start receiving messages from the Astarte Message Hub Server");
+        while let Some(res) = rx_events.recv().await {
+            match res {
+                Ok(data) => {
+                    if let astarte_device_sdk::Aggregation::Individual(AstarteType::Boolean(val)) =
+                        data.data
+                    {
+                        info!("received {val}");
+                    }
+                }
+                Err(err) => {
+                    error!("error while receiving data from Astarte Message Hub Server: {err:?}")
+                }
+            }
         }
-
-        info!("Done receiving messages, closing the connection.");
     });
 
-    // Start a separate task to publish data
+    let node_cpy = node.clone();
+
+    // Create a task to transmit
     let send_handle = tokio::spawn(async move {
         let now = time::SystemTime::now();
         let mut count = 0;
         // Consistent interval of 3 seconds
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(args.time));
+        let mut interval = tokio::time::interval(time::Duration::from_millis(args.time));
 
         while args.count.is_none() || Some(count) < args.count {
-            // Wait a little
             interval.tick().await;
 
-            println!("Publishing the uptime through the message hub.");
+            info!("Publishing the uptime through the message hub.");
 
             let elapsed = now.elapsed().unwrap().as_secs();
 
             let elapsed_str = format!("Uptime for node {}: {}", args.uuid, elapsed);
-            let msg = AstarteMessage {
-                interface_name: "org.astarte-platform.rust.examples.datastream.DeviceDatastream"
-                    .to_string(),
-                path: "/uptime".to_string(),
-                timestamp: None,
-                payload: Some(Payload::AstarteData(elapsed_str.into())),
-            };
-            client.send(msg).await.unwrap();
+
+            node_cpy
+                .send(
+                    "org.astarte-platform.rust.examples.datastream.DeviceDatastream",
+                    "/uptime",
+                    elapsed_str,
+                )
+                .await
+                .expect("failed to send Astarte message");
 
             count += 1;
         }
 
-        info!("Done sending messages, closing the connection.");
-        client.detach(node).await.expect("Detach failed");
+        info!("Done sending messages");
     });
 
-    let res = tokio::join!(reply_handle, send_handle);
-
-    match res {
-        (Ok(_), Ok(_)) => (),
-        (Err(e), Ok(_)) | (Ok(_), Err(e)) => panic!("Error: {}", e),
-        (Err(e1), Err(e2)) => panic!("Error:\n\t{}\n\t{}", e1, e2),
+    // wait for CTRL C to terminate the node execution
+    select! {
+        _ = ctrl_c() => {
+            send_handle.abort();
+            receive_handle.abort();
+        }
+        res = node.handle_events() => {
+            warn!("disconnected from Astarte");
+            return res.map_err(Into::into);
+        }
     }
+
+    handle_task(receive_handle).await;
+    handle_task(send_handle).await;
+
+    Ok(())
+}
+
+async fn handle_task(h: JoinHandle<()>) {
+    match h.await {
+        Ok(()) => {}
+        Err(err) if err.is_cancelled() => {}
+        Err(err) => error!("join error: {err:?}"),
+    };
 }

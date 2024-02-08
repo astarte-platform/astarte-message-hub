@@ -22,14 +22,9 @@
 
 pub use crate::astarte_message_hub::AstarteMessageHub;
 pub use crate::data::astarte_handler::AstarteHandler;
-pub use crate::proto_message_hub::message_hub_server::MessageHubServer;
 
-mod astarte_device_sdk_types;
 mod astarte_message_hub;
 pub mod config;
 mod data;
 mod device;
 pub mod error;
-#[allow(missing_docs)]
-pub mod proto_message_hub;
-mod types;

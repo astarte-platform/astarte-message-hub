@@ -20,46 +20,92 @@
 
 //! Provides an HTTP API to set The Message Hub configurations
 
-use std::io::Write;
-use std::net::SocketAddr;
-use std::panic;
-use std::path::Path;
-use std::str::FromStr;
+use std::io;
+use std::sync::Arc;
 
+use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{Extension, Json, Router, Server};
+use axum::{Json, Router};
+use log::debug;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::{channel, Sender};
+use tokio::net::TcpListener;
+use tokio::sync::mpsc::error::SendError;
+use tokio::sync::Notify;
+use tokio::task::{JoinError, JoinHandle};
+use tokio_util::sync::CancellationToken;
 
 use crate::config::MessageHubOptions;
+use crate::error::ConfigValidationError;
 
-#[derive(Deserialize, Serialize)]
+/// HTTP server error
+#[derive(thiserror::Error, Debug, displaydoc::Display)]
+pub enum HttpError {
+    /// couldn't bind the address {addr}
+    Bind {
+        /// address
+        addr: String,
+        /// backtrace error
+        #[source]
+        backtrace: io::Error,
+    },
+    /// couldn't start the HTTP server
+    Serve(#[source] io::Error),
+    /// server panicked
+    Join(#[from] JoinError),
+}
+
+/// HTTP errors that will be mapped into an HTTP [Response]
+#[derive(thiserror::Error, Debug, displaydoc::Display)]
+pub enum ErrorResponse {
+    /// invalid configuration
+    InvalidConfig(#[from] ConfigValidationError),
+    /// failed to serialize config
+    Serialize(#[from] toml::ser::Error),
+    /// write config file
+    Write(#[from] io::Error),
+    /// failed to send over channel
+    Channel(#[from] SendError<()>),
+}
+
+impl IntoResponse for ErrorResponse {
+    fn into_response(self) -> Response {
+        let (status, msg) = match self {
+            ErrorResponse::InvalidConfig(err) => (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid configuration: {}", err),
+            ),
+            ErrorResponse::Serialize(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Error in config serialization, {}", err),
+            ),
+            ErrorResponse::Write(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Unable to write in toml file, {}", err),
+            ),
+            ErrorResponse::Channel(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Channel error, {}", err),
+            ),
+        };
+
+        let t = (
+            status,
+            Json(ConfigResponse {
+                result: "KO".to_string(),
+                message: Some(msg),
+            }),
+        );
+
+        t.into_response()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct ConfigResponse {
     result: String,
     message: Option<String>,
-}
-
-#[derive(Clone)]
-struct ConfigServerExtension {
-    configuration_ready_channel: Sender<()>,
-    toml_file: String,
-}
-
-/// Provides an HTTP API to set The Message Hub configurations
-pub struct HttpConfigProvider {
-    shutdown_channel: Sender<()>,
-}
-
-#[derive(Deserialize)]
-struct ConfigPayload {
-    realm: String,
-    device_id: Option<String>,
-    credentials_secret: Option<String>,
-    pairing_url: String,
-    pairing_token: Option<String>,
-    grpc_socket_port: u16,
 }
 
 impl Default for ConfigResponse {
@@ -71,135 +117,135 @@ impl Default for ConfigResponse {
     }
 }
 
-impl HttpConfigProvider {
-    /// HTTP API endpoint that allows to set The Message Hub configurations
-    pub(self) async fn set_config(
-        Extension(state): Extension<ConfigServerExtension>,
-        Json(payload): Json<ConfigPayload>,
-    ) -> impl IntoResponse {
-        let message_hub_options = MessageHubOptions {
-            realm: payload.realm,
-            device_id: payload.device_id,
-            credentials_secret: payload.credentials_secret,
-            pairing_url: payload.pairing_url,
-            pairing_token: payload.pairing_token,
-            interfaces_directory: None,
-            astarte_ignore_ssl: false,
-            grpc_socket_port: payload.grpc_socket_port,
-            store_directory: MessageHubOptions::default_store_directory(),
-        };
+#[derive(Debug, Clone)]
+struct ConfigServer {
+    configuration_ready_channel: Arc<Notify>,
+    toml_file: Arc<String>,
+}
 
-        if let Err(err) = message_hub_options.validate() {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ConfigResponse {
-                    result: "KO".to_string(),
-                    message: Some(format!("Invalid configuration: {}", err)),
-                }),
-            );
-        }
-
-        let result = std::fs::File::create(Path::new(&state.toml_file));
-        if result.is_err() {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ConfigResponse {
-                    result: "KO".to_string(),
-                    message: Some(format!("Unable to create file {}", state.toml_file)),
-                }),
-            );
-        }
-
-        let mut file = result.unwrap();
-
-        let result = toml::to_string(&message_hub_options);
-        if result.is_err() {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ConfigResponse {
-                    result: "KO".to_string(),
-                    message: Some("Error in config serialization".to_string()),
-                }),
-            );
-        }
-
-        let cfg = result.unwrap();
-
-        if write!(file, "{cfg}").is_err() {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ConfigResponse {
-                    result: "KO".to_string(),
-                    message: Some(format!("Unable to write in file {}", state.toml_file)),
-                }),
-            );
-        }
-
-        let _ = state.configuration_ready_channel.send(()).await;
-
-        (StatusCode::OK, Json(ConfigResponse::default()))
-    }
-
-    /// HTTP API endpoint that respond on a request done on the root (used for test purposes)
-    async fn root() -> impl IntoResponse {
-        (StatusCode::OK, Json(ConfigResponse::default()))
-    }
-
-    /// Start a new HTTP API Server to allow a third party to feed the Message Hub configurations
-    pub fn new(
-        address: &str,
-        configuration_ready_channel: Sender<()>,
-        toml_file: &str,
-    ) -> HttpConfigProvider {
-        let extension = ConfigServerExtension {
+impl ConfigServer {
+    fn new(configuration_ready_channel: Arc<Notify>, toml_file: &str) -> Self {
+        Self {
             configuration_ready_channel,
-            toml_file: toml_file.to_string(),
-        };
+            toml_file: Arc::new(toml_file.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ConfigPayload {
+    realm: String,
+    device_id: Option<String>,
+    credentials_secret: Option<String>,
+    pairing_url: String,
+    pairing_token: Option<String>,
+    grpc_socket_port: u16,
+}
+
+/// Provides an HTTP API to set The Message Hub configurations
+#[derive(Debug)]
+pub struct HttpConfigProvider {
+    handle: JoinHandle<Result<(), HttpError>>,
+    stop: CancellationToken,
+}
+
+impl HttpConfigProvider {
+    /// Start a new HTTP API Server to allow a third party to feed the Message Hub configurations
+    pub async fn serve(
+        address: &str,
+        configuration_ready_channel: Arc<Notify>,
+        toml_file: &str,
+    ) -> Result<HttpConfigProvider, HttpError> {
+        let cfg_server = ConfigServer::new(configuration_ready_channel, toml_file);
+
         let app = Router::new()
-            .route("/", get(Self::root))
-            .route("/config", post(Self::set_config))
-            .layer(Extension(extension));
+            .route("/", get(root))
+            .route("/config", post(set_config))
+            .with_state(cfg_server);
 
-        let (tx, mut rx) = channel::<()>(1);
-        let addr = SocketAddr::from_str(address).unwrap();
+        let c_token = CancellationToken::new();
+        let c_token_cl = c_token.clone();
 
-        tokio::spawn(async move {
-            Server::bind(&addr)
-                .serve(app.into_make_service())
-                .with_graceful_shutdown(async { rx.recv().await.unwrap() })
+        let listener = TcpListener::bind(address)
+            .await
+            .map_err(|e| HttpError::Bind {
+                addr: address.to_string(),
+                backtrace: e,
+            })?;
+
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    c_token_cl.cancelled().await;
+                    debug!("cancelled, shutting down");
+                })
                 .await
-                .unwrap_or_else(|e| panic!("Unable to start http service: {}", e));
+                .map_err(HttpError::Serve)
         });
 
-        HttpConfigProvider {
-            shutdown_channel: tx,
-        }
+        Ok(HttpConfigProvider {
+            handle,
+            stop: c_token,
+        })
     }
 
     /// Stop the HTTP API Server
-    pub async fn stop(&self) {
-        let shutdown_channel = self.shutdown_channel.clone();
-        let _ = shutdown_channel.send(()).await;
+    pub async fn stop(self) -> Result<(), HttpError> {
+        self.stop.cancel();
+        self.handle.await.map_err(HttpError::Join)?
     }
+}
+
+/// HTTP API endpoint that respond on a request done on the root (used for test purposes)
+async fn root() -> (StatusCode, Json<ConfigResponse>) {
+    (StatusCode::OK, Json(ConfigResponse::default()))
+}
+
+/// HTTP API endpoint that allows to set The Message Hub configurations
+async fn set_config(
+    State(state): State<ConfigServer>,
+    Json(payload): Json<ConfigPayload>,
+) -> Result<(StatusCode, Json<ConfigResponse>), ErrorResponse> {
+    let message_hub_options = MessageHubOptions {
+        realm: payload.realm,
+        device_id: payload.device_id,
+        credentials_secret: payload.credentials_secret,
+        pairing_url: payload.pairing_url,
+        pairing_token: payload.pairing_token,
+        interfaces_directory: None,
+        astarte_ignore_ssl: false,
+        grpc_socket_port: payload.grpc_socket_port,
+        store_directory: MessageHubOptions::default_store_directory(),
+    };
+
+    message_hub_options.validate()?;
+
+    let cfg = toml::to_string(&message_hub_options)?;
+
+    tokio::fs::write(state.toml_file.as_ref(), cfg).await?;
+
+    state.configuration_ready_channel.notify_one();
+
+    Ok((StatusCode::OK, Json(ConfigResponse::default())))
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
-
-    use serial_test::serial;
     use std::collections::HashMap;
     use std::time::Duration;
-    use tempfile::TempDir;
 
     use serde_json::{Map, Number, Value};
+    use serial_test::serial;
+    use tempfile::TempDir;
 
     use crate::config::file::CONFIG_FILE_NAMES;
+
+    use super::*;
 
     #[tokio::test]
     #[serial]
     async fn server_test() {
-        let (tx, mut rx) = channel(1);
+        let notify = Arc::new(Notify::new());
 
         let dir = TempDir::new().unwrap();
         let toml_file = dir
@@ -208,7 +254,9 @@ mod test {
             .to_string_lossy()
             .to_string();
 
-        let server = HttpConfigProvider::new("127.0.0.1:8080", tx, &toml_file);
+        let server = HttpConfigProvider::serve("127.0.0.1:8080", Arc::clone(&notify), &toml_file)
+            .await
+            .expect("failed to create server");
 
         let mut body = Map::new();
         body.insert("realm".to_string(), Value::String("realm".to_string()));
@@ -241,8 +289,8 @@ mod test {
         assert!(status.is_success());
         let json: ConfigResponse = resp.json().await.unwrap();
         assert_eq!(json.result, "OK".to_string());
-        assert!(rx.recv().await.is_some());
-        server.stop().await;
+        notify.notified().await;
+        server.stop().await.expect("failed to stop server");
         tokio::time::sleep(Duration::from_secs(2)).await;
         let resp = reqwest::get("http://localhost:8080/").await;
         assert!(resp.is_err());
@@ -251,7 +299,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn bad_request_test() {
-        let (tx, _) = channel(1);
+        let notify = Arc::new(Notify::new());
 
         let dir = TempDir::new().unwrap();
         let toml_file = dir
@@ -260,7 +308,9 @@ mod test {
             .to_string_lossy()
             .to_string();
 
-        let server = HttpConfigProvider::new("127.0.0.1:8081", tx, &toml_file);
+        let server = HttpConfigProvider::serve("127.0.0.1:8081", Arc::clone(&notify), &toml_file)
+            .await
+            .expect("failed to create server");
 
         let mut body = HashMap::new();
         body.insert("device_id", "device_id");
@@ -276,7 +326,7 @@ mod test {
 
         let status = resp.status();
         assert!(!status.is_success());
-        server.stop().await;
+        server.stop().await.expect("failed to stop server");
         tokio::time::sleep(Duration::from_secs(2)).await;
         let resp = reqwest::get("http://localhost:8081/").await;
         assert!(resp.is_err());
@@ -285,7 +335,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_set_config_invalid_cfg() {
-        let (tx, _) = channel(1);
+        let notify = Arc::new(Notify::new());
 
         let dir = TempDir::new().unwrap();
         let toml_file = dir
@@ -294,7 +344,9 @@ mod test {
             .to_string_lossy()
             .to_string();
 
-        let server = HttpConfigProvider::new("127.0.0.1:8080", tx, &toml_file);
+        let server = HttpConfigProvider::serve("127.0.0.1:8080", Arc::clone(&notify), &toml_file)
+            .await
+            .expect("failed to create server");
 
         let mut body = Map::new();
         body.insert("realm".to_string(), Value::String("".to_string()));
@@ -324,9 +376,9 @@ mod test {
             .unwrap();
 
         let status = resp.status();
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
         let json: ConfigResponse = resp.json().await.unwrap();
         assert_eq!(json.result, "KO".to_string());
-        server.stop().await;
+        server.stop().await.expect("failed to stop server");
     }
 }

@@ -19,11 +19,15 @@
  */
 //! Contains the error types used in this crate.
 
-//! Errors for the message hub
+//! Errors for the message hub.
 
 use std::path::PathBuf;
 
+use astarte_device_sdk::builder::BuilderError;
+use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
 use thiserror::Error;
+
+use crate::config::http::HttpError;
 
 /// A list specifying general categories of Astarte Message Hub error.
 #[derive(Error, Debug)]
@@ -31,10 +35,6 @@ pub enum AstarteMessageHubError {
     /// An infallible error
     #[error(transparent)]
     Infallible(#[from] std::convert::Infallible),
-
-    /// Wrapper for integer conversion errors
-    #[error(transparent)]
-    TryFromIntError(#[from] core::num::TryFromIntError),
 
     /// Failed to convert between types
     #[error("unable to convert type")]
@@ -44,13 +44,13 @@ pub enum AstarteMessageHubError {
     #[error(transparent)]
     AstarteError(#[from] astarte_device_sdk::error::Error),
 
-    /// Error returned by the options
-    #[error(transparent)]
-    AstarteOptionsError(#[from] astarte_device_sdk::options::OptionsError),
-
     /// Invalid date
     #[error("{0}")]
     AstarteInvalidData(String),
+
+    /// Missing config options.
+    #[error("missing {0} option")]
+    MissingConfig(&'static str),
 
     /// Wrapper for an io error
     #[error(transparent)]
@@ -71,6 +71,22 @@ pub enum AstarteMessageHubError {
     /// Error returned by Zbus
     #[error(transparent)]
     ZbusError(#[from] zbus::Error),
+
+    /// Http server error
+    #[error("HTTP server error, {0}")]
+    HttpServer(#[from] HttpError),
+
+    /// Wrapper for integer conversion errors
+    #[error("couldn't convert timestamp, {0}")]
+    Timestamp(&'static str),
+
+    /// Astarte Message Hub proto error
+    #[error("Astarte Message Hub proto error, {0}")]
+    Proto(#[from] MessageHubProtoError),
+
+    /// Failed to build an Astarte device
+    #[error("failed to build an astarte device, {0}")]
+    BuildDevice(#[from] BuilderError),
 }
 
 /// Reason why a configuration is invalid.

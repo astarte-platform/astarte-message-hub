@@ -23,17 +23,22 @@
 use std::io::Write;
 use std::num::TryFromIntError;
 use std::path::Path;
+use std::sync::Arc;
 
+use astarte_message_hub_proto::message_hub_config_server::{
+    MessageHubConfig, MessageHubConfigServer,
+};
+use astarte_message_hub_proto::ConfigMessage;
 use tokio::sync::mpsc::{channel, Sender};
+use tokio::sync::Notify;
 use tonic::transport::Server;
 use tonic::{Code, Request, Response, Status};
 
 use crate::config::MessageHubOptions;
-use crate::proto_message_hub;
 
 #[derive(Debug)]
 struct AstarteMessageHubConfig {
-    configuration_ready_channel: Sender<()>,
+    configuration_ready_channel: Arc<Notify>,
     toml_file: String,
 }
 
@@ -43,11 +48,11 @@ pub struct ProtobufConfigProvider {
 }
 
 #[tonic::async_trait]
-impl proto_message_hub::message_hub_config_server::MessageHubConfig for AstarteMessageHubConfig {
+impl MessageHubConfig for AstarteMessageHubConfig {
     /// Protobuf API that allows to set The Message Hub configurations
     async fn set_config(
         &self,
-        request: Request<proto_message_hub::ConfigMessage>,
+        request: Request<ConfigMessage>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
         let req = request.into_inner();
 
@@ -88,7 +93,8 @@ impl proto_message_hub::message_hub_config_server::MessageHubConfig for AstarteM
         let cfg = result.unwrap();
 
         write!(file, "{cfg}")?;
-        let _ = self.configuration_ready_channel.send(()).await;
+
+        self.configuration_ready_channel.notify_one();
 
         Ok(Response::new(pbjson_types::Empty {}))
     }
@@ -99,11 +105,9 @@ impl ProtobufConfigProvider {
     /// configurations
     pub async fn new(
         address: &str,
-        configuration_ready_channel: Sender<()>,
+        configuration_ready_channel: Arc<Notify>,
         toml_file: &str,
     ) -> ProtobufConfigProvider {
-        use crate::proto_message_hub::message_hub_config_server::MessageHubConfigServer;
-
         let addr = address.parse().unwrap();
         let service = AstarteMessageHubConfig {
             configuration_ready_channel,
@@ -130,21 +134,18 @@ impl ProtobufConfigProvider {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-
+    use astarte_message_hub_proto::message_hub_config_client::MessageHubConfigClient;
     use serial_test::serial;
     use tempfile::TempDir;
-    use tokio::sync::mpsc;
     use tonic::transport::Endpoint;
 
     use crate::config::file::CONFIG_FILE_NAMES;
 
+    use super::*;
+
     #[tokio::test]
     #[serial]
     async fn set_config_test() {
-        use crate::proto_message_hub::message_hub_config_server::MessageHubConfig;
-        use crate::proto_message_hub::ConfigMessage;
-
         let dir = TempDir::new().unwrap();
         let toml_file = dir
             .path()
@@ -152,11 +153,13 @@ mod test {
             .to_string_lossy()
             .to_string();
 
-        let (tx, _) = mpsc::channel(1);
+        let notify = Arc::new(Notify::new());
+
         let config_server = AstarteMessageHubConfig {
-            configuration_ready_channel: tx,
+            configuration_ready_channel: notify,
             toml_file,
         };
+
         let msg = ConfigMessage {
             realm: "rpc_realm".to_string(),
             device_id: Some("rpc_device_id".to_string()),
@@ -165,6 +168,7 @@ mod test {
             pairing_token: Some("rpc_pairing_token".to_string()),
             grpc_socket_port: 42,
         };
+
         let result = config_server.set_config(Request::new(msg)).await;
         assert!(result.is_ok());
     }
@@ -172,9 +176,6 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_set_config_invalid_config() {
-        use crate::proto_message_hub::message_hub_config_server::MessageHubConfig;
-        use crate::proto_message_hub::ConfigMessage;
-
         let dir = TempDir::new().unwrap();
         let toml_file = dir
             .path()
@@ -182,9 +183,9 @@ mod test {
             .to_string_lossy()
             .to_string();
 
-        let (tx, _) = mpsc::channel(1);
+        let notify = Arc::new(Notify::new());
         let config_server = AstarteMessageHubConfig {
-            configuration_ready_channel: tx,
+            configuration_ready_channel: notify,
             toml_file,
         };
         let msg = ConfigMessage {
@@ -202,9 +203,6 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn server_test() {
-        use crate::proto_message_hub::message_hub_config_client::MessageHubConfigClient;
-        use crate::proto_message_hub::ConfigMessage;
-
         let dir = TempDir::new().unwrap();
         let toml_file = dir
             .path()
@@ -212,8 +210,9 @@ mod test {
             .to_string_lossy()
             .to_string();
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let server = ProtobufConfigProvider::new("127.0.0.1:1400", tx, &toml_file).await;
+        let notify = Arc::new(Notify::new());
+        let server =
+            ProtobufConfigProvider::new("127.0.0.1:1400", Arc::clone(&notify), &toml_file).await;
         let channel = Endpoint::from_static("http://localhost:1400")
             .connect()
             .await
@@ -229,7 +228,7 @@ mod test {
         };
         let response = client.set_config(msg).await;
         assert!(response.is_ok());
-        assert!(rx.recv().await.is_some());
+        notify.notified().await;
         server.stop().await;
         assert!(MessageHubConfigClient::connect("http://localhost:1400")
             .await
