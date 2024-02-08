@@ -8,7 +8,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/astarte-message-hub)](https://crates.io/crates/astarte-message-hub)
 [![docs.rs](https://img.shields.io/docsrs/astarte-message-hub)](https://docs.rs/astarte-message-hub/)
-[![CI](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/build.yaml/badge.svg?branch=master)](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/build.yaml?branch=master)
+[![CI](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/ci.yaml/badge.svg?branch=master)](https://github.com/astarte-platform/astarte-message-hub/actions/workflows/ci.yaml?branch=master)
 [![codecov](https://codecov.io/gh/astarte-platform/astarte-message-hub/branch/master/graph/badge.svg)](https://app.codecov.io/gh/astarte-message-hub)
 [![LICENSE](https://img.shields.io/github/license/astarte-platform/astarte-message-hub)](./LICENSE)
 
