@@ -27,16 +27,19 @@
 use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
-use astarte_device_sdk::{AstarteDeviceSdk, EventReceiver};
+use astarte_device_sdk::{AstarteDeviceSdk, Client, EventReceiver};
+use eyre::Context;
+use std::convert::identity;
 use std::net::Ipv6Addr;
 use std::path::PathBuf;
 use std::time::Duration;
+use tokio::task::JoinSet;
 
 use astarte_message_hub::config::MessageHubOptions;
-use astarte_message_hub::{AstarteHandler, AstarteMessageHub};
+use astarte_message_hub::{init_pub_sub, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::Parser;
-use eyre::{eyre, WrapErr};
+use eyre::eyre;
 use log::{debug, info};
 
 /// A central service that runs on (Linux) devices for collecting and delivering messages from N
@@ -64,21 +67,48 @@ async fn main() -> eyre::Result<()> {
     let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
 
     // Initialize an Astarte device
-    let (device, rx_events) = initialize_astarte_device_sdk(&mut options).await?;
+    let (mut device, rx_events) = initialize_astarte_device_sdk(&mut options).await?;
     info!("Connection to Astarte established.");
 
-    // Create a new Astarte handler
-    let handler = AstarteHandler::new(device, rx_events);
+    let (publisher, mut subscriber) = init_pub_sub(device.clone(), rx_events);
 
     // Create a new message hub
-    let message_hub = AstarteMessageHub::new(handler);
+    let message_hub = AstarteMessageHub::new(publisher);
 
-    // Run the protobuf server
-    let addrs = (Ipv6Addr::LOCALHOST, options.grpc_socket_port).into();
-    tonic::transport::Server::builder()
-        .add_service(MessageHubServer::new(message_hub))
-        .serve(addrs)
-        .await?;
+    let mut tasks = JoinSet::new();
+
+    // Event loop for the astarte device sdk
+    tasks.spawn(async move {
+        device
+            .handle_events()
+            .await
+            .wrap_err("Astarte disconnected")
+    });
+
+    // Forward the astarte events to the subscribers
+    tasks.spawn(async move {
+        subscriber
+            .forward_events()
+            .await
+            .wrap_err("subscriber disconnected")
+    });
+
+    // Handles the Message Hub gRPC server
+    tasks.spawn(async move {
+        // Run the proto-buff server
+        let addrs = (Ipv6Addr::LOCALHOST, options.grpc_socket_port).into();
+
+        tonic::transport::Server::builder()
+            .add_service(MessageHubServer::new(message_hub))
+            .serve(addrs)
+            .await
+            .wrap_err("couldn't start the server")
+    });
+
+    while let Some(res) = tasks.join_next().await {
+        // Crash if one of the tasks returned an error
+        res.wrap_err("failed to join task").and_then(identity)?;
+    }
 
     Ok(())
 }

@@ -30,10 +30,10 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
+use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
 
 /// Main struct for the Astarte message hub.
-pub struct AstarteMessageHub<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber> {
+pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber> {
     /// The nodes connected to the message hub.
     nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
     /// The Astarte handler used to communicate with Astarte.
@@ -60,21 +60,12 @@ impl AstarteNode {
 
 impl<T: 'static> AstarteMessageHub<T>
 where
-    T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber,
+    T: Clone + AstartePublisher + AstarteSubscriber,
 {
     /// Instantiate a new Astarte message hub.
     ///
     /// The `astarte_handler` should satisfy the required traits for an Astarte handler.
-    /// See the [AstarteHandler](crate::data::astarte_handler::AstarteHandler) for a ready-to-use Astarte
-    /// handler.
     pub fn new(astarte_handler: T) -> Self {
-        let mut astarte_handler_cpy = astarte_handler.clone();
-        tokio::task::spawn(async move {
-            loop {
-                astarte_handler_cpy.run().await;
-            }
-        });
-
         AstarteMessageHub {
             nodes: Arc::new(RwLock::new(HashMap::new())),
             astarte_handler,
@@ -83,7 +74,7 @@ where
 }
 
 #[tonic::async_trait]
-impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
+impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
     astarte_message_hub_proto::message_hub_server::MessageHub for AstarteMessageHub<T>
 {
     type AttachStream = ReceiverStream<Result<AstarteMessage, Status>>;
@@ -250,7 +241,7 @@ mod test {
     use tonic::{Request, Status};
 
     use crate::astarte_message_hub::AstarteNode;
-    use crate::data::astarte::{AstartePublisher, AstarteRunner, AstarteSubscriber};
+    use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
     use crate::error::AstarteMessageHubError;
 
     use super::AstarteMessageHub;
@@ -260,11 +251,6 @@ mod test {
 
         impl Clone for AstarteHandler {
             fn clone(&self) -> Self;
-        }
-
-        #[async_trait]
-        impl AstarteRunner for AstarteHandler {
-            async fn run(&mut self);
         }
 
         #[async_trait]
