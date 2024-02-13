@@ -48,10 +48,6 @@ pub enum AstarteMessageHubError {
     #[error("{0}")]
     AstarteInvalidData(String),
 
-    /// Missing config options.
-    #[error("missing {0} option")]
-    MissingConfig(&'static str),
-
     /// Wrapper for an io error
     #[error(transparent)]
     IOError(#[from] std::io::Error),
