@@ -39,6 +39,8 @@ use tokio_util::sync::CancellationToken;
 use crate::config::MessageHubOptions;
 use crate::error::ConfigValidationError;
 
+use super::DeviceSdkOptions;
+
 /// HTTP server error
 #[derive(thiserror::Error, Debug, displaydoc::Display)]
 pub enum HttpError {
@@ -206,6 +208,7 @@ async fn set_config(
     State(state): State<ConfigServer>,
     Json(payload): Json<ConfigPayload>,
 ) -> Result<(StatusCode, Json<ConfigResponse>), ErrorResponse> {
+    #[allow(deprecated)]
     let message_hub_options = MessageHubOptions {
         realm: payload.realm,
         device_id: payload.device_id,
@@ -216,6 +219,10 @@ async fn set_config(
         astarte_ignore_ssl: false,
         grpc_socket_port: payload.grpc_socket_port,
         store_directory: MessageHubOptions::default_store_directory(),
+        astarte: DeviceSdkOptions {
+            ignore_ssl: false,
+            ..Default::default()
+        },
     };
 
     message_hub_options.validate()?;

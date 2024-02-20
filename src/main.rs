@@ -30,6 +30,7 @@ use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{AstarteDeviceSdk, EventReceiver};
 use std::net::Ipv6Addr;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use astarte_message_hub::config::MessageHubOptions;
 use astarte_message_hub::{AstarteHandler, AstarteMessageHub};
@@ -107,8 +108,17 @@ async fn initialize_astarte_device_sdk(
         &msg_hub_opts.pairing_url,
     );
 
-    if msg_hub_opts.astarte_ignore_ssl {
+    #[allow(deprecated)]
+    if msg_hub_opts.astarte_ignore_ssl || msg_hub_opts.astarte.ignore_ssl {
         mqtt_config.ignore_ssl_errors();
+    }
+
+    if let Some(timeout) = msg_hub_opts.astarte.timeout_secs {
+        mqtt_config.connection_timeout(Duration::from_secs(timeout));
+    }
+
+    if let Some(keep_alive) = msg_hub_opts.astarte.keep_alive_secs {
+        mqtt_config.keepalive(Duration::from_secs(keep_alive));
     }
 
     let int_dir = msg_hub_opts

@@ -7,22 +7,19 @@
 [package]
 name = "astarte-message-hub"
 version = "0.6.0-dev"
-edition = "2021"
-license = "Apache-2.0"
-repository = "https://github.com/astarte-platform/astarte-message-hub"
-description = "A central service that runs on (Linux) devices for collecting and delivering messages from N apps using 1 MQTT connection to Astarte"
-homepage = "https://astarte.cloud/"
-documentation = "https://docs.rs/astarte-message-hub"
-readme = "README.md"
-keywords = ["sdk", "iot", "astarte"]
 categories = ["network-programming"]
-# The minimum supported Rust version.
-# One of the effects of this flag is to disable lints pertaining to newer features.
-# See: https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field
-rust-version = "1.66.1"
+documentation = "https://docs.rs/astarte-message-hub"
+edition = "2021"
+homepage = "https://astarte.cloud/"
+keywords = ["sdk", "iot", "astarte"]
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/astarte-platform/astarte-message-hub"
+rust-version = "1.72.0"
+description = "A central service that runs on (Linux) devices for collecting and delivering messages from N apps using 1 MQTT connection to Astarte"
 
 [dependencies]
-astarte-device-sdk = { version = "0.7.0", features = ["derive", "message-hub"] }
+astarte-device-sdk = { version = "0.7.1", features = ["derive", "message-hub"] }
 astarte-message-hub-proto = "0.6.1"
 async-trait = "0.1.77"
 axum = "0.7.4"
@@ -40,23 +37,17 @@ stable-eyre = "0.2.2"
 thiserror = "1.0.56"
 tokio = { version = "1.35.1", features = ["rt-multi-thread", "sync", "macros", "signal"] }
 tokio-stream = { version = "0.1.14", features = ["net"] }
-tokio-util ="0.7.10"
+tokio-util = "0.7.10"
 toml = "0.5.9"
 tonic = "0.10.2"
 uuid = "1.7.0"
 zbus = { version = "3.14.1", default-features = false, features = ["tokio"] }
-
-# pinned transitive dependencies
-anstyle = "=1.0.2"
 
 [dev-dependencies]
 mockall = "0.12.1"
 reqwest = { version = "0.11.23", features = ["json"] }
 serial_test = "3.0.0"
 tempfile = "3.8.1"
-
-# pinned transitive dependencies
-predicates = "=3.0.3"
 
 [build-dependencies]
 tonic-build = "0.10.2"
