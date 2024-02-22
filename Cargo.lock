@@ -155,7 +155,6 @@ dependencies = [
  "tokio-util",
  "toml",
  "tonic",
- "tonic-build",
  "uuid",
  "zbus",
 ]
@@ -3634,19 +3633,6 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "tonic-build"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d021fc044c18582b9a2408cd0dd05b1596e3ecdb5c4df822bb0183545683889"
-dependencies = [
- "prettyplease",
- "proc-macro2",
- "prost-build",
- "quote",
- "syn 2.0.49",
 ]
 
 [[package]]

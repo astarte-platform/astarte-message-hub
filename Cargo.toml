@@ -4,50 +4,87 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
-[package]
-name = "astarte-message-hub"
+[workspace]
+members = []
+
+[workspace.package]
 version = "0.6.0-dev"
-categories = ["network-programming"]
-documentation = "https://docs.rs/astarte-message-hub"
 edition = "2021"
 homepage = "https://astarte.cloud/"
-keywords = ["sdk", "iot", "astarte"]
 license = "Apache-2.0"
-readme = "README.md"
 repository = "https://github.com/astarte-platform/astarte-message-hub"
 rust-version = "1.72.0"
+
+[package]
+name = "astarte-message-hub"
+version = { workspace = true }
+categories = ["network-programming"]
+documentation = "https://docs.rs/astarte-message-hub"
+edition = { workspace = true }
+homepage = { workspace = true }
+keywords = ["sdk", "iot", "astarte"]
+license = { workspace = true }
+readme = "README.md"
+repository = { workspace = true }
+rust-version = { workspace = true }
 description = "A central service that runs on (Linux) devices for collecting and delivering messages from N apps using 1 MQTT connection to Astarte"
 
 [dependencies]
-astarte-device-sdk = { version = "0.7.1", features = ["derive", "message-hub"] }
+astarte-device-sdk = { workspace = true, features = ["derive", "message-hub"] }
+astarte-message-hub-proto = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+displaydoc = { workspace = true }
+env_logger = { workspace = true }
+eyre = { workspace = true }
+log = { workspace = true }
+pbjson-types = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+stable-eyre = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "macros", "signal"] }
+tokio-stream = { workspace = true, features = ["net"] }
+tokio-util = { workspace = true }
+toml = { workspace = true }
+tonic = { workspace = true }
+uuid = { workspace = true }
+zbus = { workspace = true, default-features = false, features = ["tokio"] }
+
+[dev-dependencies]
+mockall = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serial_test = { workspace = true }
+tempfile = { workspace = true }
+
+[workspace.dependencies]
+astarte-device-sdk = "0.7.1"
 astarte-message-hub-proto = "0.6.1"
 async-trait = "0.1.77"
 axum = "0.7.4"
 chrono = "0.4.33"
-clap = { version = "3.2.25", features = ["derive"] }
+clap = "3.2.25"
 displaydoc = "0.2.4"
 env_logger = "0.10.2"
 eyre = "0.6.12"
 log = "0.4.20"
+mockall = "0.12.1"
 pbjson-types = "0.6.0"
 prost = "0.12.3"
+reqwest = "0.11.23"
 serde = "1.0.195"
 serde_json = "1.0"
+serial_test = "3.0.0"
 stable-eyre = "0.2.2"
+tempfile = "3.8.1"
 thiserror = "1.0.56"
-tokio = { version = "1.35.1", features = ["rt-multi-thread", "sync", "macros", "signal"] }
-tokio-stream = { version = "0.1.14", features = ["net"] }
+tokio = "1.35.1"
+tokio-stream = "0.1.14"
 tokio-util = "0.7.10"
 toml = "0.5.9"
 tonic = "0.10.2"
 uuid = "1.7.0"
-zbus = { version = "3.14.1", default-features = false, features = ["tokio"] }
-
-[dev-dependencies]
-mockall = "0.12.1"
-reqwest = { version = "0.11.23", features = ["json"] }
-serial_test = "3.0.0"
-tempfile = "3.8.1"
-
-[build-dependencies]
-tonic-build = "0.10.2"
+zbus = { version = "3.14.1", default-features = false }
