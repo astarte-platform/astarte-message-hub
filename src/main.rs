@@ -37,7 +37,7 @@ use astarte_message_hub::{AstarteHandler, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::Parser;
 use eyre::{eyre, WrapErr};
-use log::info;
+use log::{debug, info};
 
 /// A central service that runs on (Linux) devices for collecting and delivering messages from N
 /// apps using 1 MQTT connection to Astarte.
@@ -121,10 +121,13 @@ async fn initialize_astarte_device_sdk(
         mqtt_config.keepalive(Duration::from_secs(keep_alive));
     }
 
-    let int_dir = msg_hub_opts
-        .interfaces_directory
-        .as_ref()
-        .ok_or_else(|| eyre!("missing interface directory option"))?;
+    let mut builder = DeviceBuilder::new();
+
+    if let Some(ref int_dir) = msg_hub_opts.interfaces_directory {
+        debug!("reading interfaces from {}", int_dir.display());
+
+        builder = builder.interface_directory(int_dir)?;
+    }
 
     let store_path = msg_hub_opts
         .store_directory
@@ -135,12 +138,7 @@ async fn initialize_astarte_device_sdk(
     let store = SqliteStore::new(&store_path).await?;
 
     // create a device instance
-    let (device, rx_events) = DeviceBuilder::new()
-        .interface_directory(int_dir)?
-        .store(store)
-        .connect(mqtt_config)
-        .await?
-        .build();
+    let (device, rx_events) = builder.store(store).connect(mqtt_config).await?.build();
 
     Ok((device, rx_events))
 }

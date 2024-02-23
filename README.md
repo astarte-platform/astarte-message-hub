@@ -54,7 +54,6 @@ credentials_secret = "[CREDENTIALS_SECRET]"
 # Path to store persistent data, defaults to "./"
 store_directory = "<STORE_PATH>"
 
-
 [astarte]
 # Ignore SSL errors, defaults to false
 ignore_ssl = false
