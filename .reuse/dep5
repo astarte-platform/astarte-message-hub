@@ -2,7 +2,7 @@ Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: astarte-message-hub
 Source: https://https://github.com/astarte-platform/astarte-message-hub
 
-Files: examples/client/interfaces/*
+Files: examples/client/interfaces/* e2e-test/interfaces/*
 Copyright: SECO Mind Srl
 License: CC0-1.0
 

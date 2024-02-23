@@ -47,3 +47,6 @@ jobs:
     uses: ./.github/workflows/test.yaml
     secrets: inherit
     needs: [reuse, dco]
+  e2e-test:
+    uses: ./.github/workflows/e2e-test.yaml
+    needs: [reuse, dco]
