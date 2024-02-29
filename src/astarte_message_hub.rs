@@ -124,7 +124,7 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
         &self,
         request: Request<astarte_message_hub_proto::Node>,
     ) -> Result<Response<Self::AttachStream>, Status> {
-        info!("Node Attach Request => {:?}", request);
+        info!("Node Attach Request");
         let node = request.into_inner();
 
         let id = Uuid::parse_str(&node.uuid).map_err(|err| {
