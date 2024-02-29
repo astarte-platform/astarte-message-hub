@@ -16,24 +16,28 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{net::Ipv6Addr, path::Path, sync::Arc};
+use std::{env::VarError, net::Ipv6Addr, path::Path, sync::Arc};
 
 use astarte_device_sdk::{
     builder::DeviceBuilder,
     prelude::*,
     store::{memory::MemoryStore, SqliteStore},
-    transport::{grpc::GrpcConfig, mqtt::MqttConfig},
+    transport::{
+        grpc::{Grpc, GrpcConfig},
+        mqtt::MqttConfig,
+    },
+    AstarteDeviceSdk, ClientDisconnect, EventReceiver,
 };
 use astarte_message_hub::{AstarteHandler, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use eyre::OptionExt;
-use futures::future::BoxFuture;
+use futures::{future::BoxFuture, Future};
 use interfaces::INTERFACES;
 use tempfile::tempdir;
-use tokio::sync::Barrier;
+use tokio::{sync::Barrier, task::JoinHandle};
 use tonic::body::BoxBody;
 use tower::{Layer, Service};
-use tracing::level_filters::LevelFilter;
+use tracing::{debug, info, instrument, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use utils::read_env;
 use uuid::{uuid, Uuid};
@@ -44,17 +48,25 @@ pub mod utils;
 const GRPC_PORT: u16 = 50051;
 const UUID: Uuid = uuid!("acc78dae-194c-4942-8f33-9f719629e316");
 
+fn env_filter() -> eyre::Result<EnvFilter> {
+    let filter = std::env::var("RUST_LOG").or_else(|err| match err {
+        VarError::NotPresent => Ok("e2e_test=debug,astarte_message_hub=debug".to_string()),
+        err @ VarError::NotUnicode(_) => Err(err),
+    })?;
+
+    let env_fitler = EnvFilter::try_new(filter)?;
+
+    Ok(env_fitler)
+}
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     stable_eyre::install()?;
 
+    let filter = env_filter()?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
-        .with(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::DEBUG.into())
-                .from_env_lossy(),
-        )
+        .with(filter)
         .try_init()?;
 
     let dir = tempdir()?;
@@ -69,8 +81,11 @@ async fn main() -> eyre::Result<()> {
     // ```
     let barrier = Arc::new(Barrier::new(2));
 
-    init_message_hub(dir.path(), &barrier).await?;
-    init_node().await?;
+    let msghub = init_message_hub(dir.path(), &barrier).await?;
+    let node = init_node(barrier).await?;
+
+    node.close().await?;
+    msghub.close().await?;
 
     Ok(())
 }
@@ -108,11 +123,14 @@ where
         let barrier = Arc::clone(&self.barrier);
 
         Box::pin(async move {
+            debug!("waiting for call");
             // Pre call
             barrier.wait().await;
 
+            debug!("call received");
             let res = inner.call(req).await;
 
+            info!("sending response");
             // Post call
             barrier.wait().await;
 
@@ -142,7 +160,25 @@ impl<S> Layer<S> for BarrierLayer {
     }
 }
 
-async fn init_message_hub(path: &Path, barrier: &Arc<Barrier>) -> eyre::Result<()> {
+struct MsgHub {
+    handle: JoinHandle<Result<(), tonic::transport::Error>>,
+}
+
+impl MsgHub {
+    async fn close(self) -> eyre::Result<()> {
+        self.handle.abort();
+        let join = self.handle.await;
+
+        match join {
+            Ok(res) => res.map_err(Into::into),
+            Err(err) if err.is_cancelled() => Ok(()),
+            Err(err) => Err(err.into()),
+        }
+    }
+}
+
+#[must_use]
+async fn init_message_hub(path: &Path, barrier: &Arc<Barrier>) -> eyre::Result<MsgHub> {
     let realm = read_env("E2E_REALM")?;
     let device_id = read_env("E2E_DEVICE_ID")?;
     let credentials_secret = read_env("E2E_CREDENTIAL_SECRET")?;
@@ -171,7 +207,7 @@ async fn init_message_hub(path: &Path, barrier: &Arc<Barrier>) -> eyre::Result<(
 
     let barrier = Arc::clone(barrier);
 
-    let _server_handle = tokio::spawn(async {
+    let handle = tokio::spawn(async {
         tonic::transport::Server::builder()
             .layer(BarrierLayer::new(barrier))
             .add_service(MessageHubServer::new(message_hub))
@@ -179,23 +215,91 @@ async fn init_message_hub(path: &Path, barrier: &Arc<Barrier>) -> eyre::Result<(
             .await
     });
 
-    Ok(())
+    Ok(MsgHub { handle })
 }
 
-async fn init_node() -> eyre::Result<()> {
+type DeviceSdk = AstarteDeviceSdk<MemoryStore, Grpc>;
+
+struct Node {
+    barrier: Arc<Barrier>,
+    device: DeviceSdk,
+    rx_events: EventReceiver,
+}
+
+impl Node {
+    async fn close(self) -> eyre::Result<()> {
+        self.take_sync(|device| device.disconnect()).await?;
+
+        Ok(())
+    }
+
+    async fn sync<F, T, O>(&mut self, mut f: F) -> eyre::Result<O>
+    where
+        F: FnMut(&mut DeviceSdk) -> T,
+        T: Future<Output = O> + Send + 'static,
+        O: Send + 'static,
+    {
+        let future = (f)(&mut self.device);
+
+        Self::sync_future(&self.barrier, future).await
+    }
+
+    async fn take_sync<F, T, O>(self, mut f: F) -> eyre::Result<O>
+    where
+        F: FnMut(DeviceSdk) -> T,
+        T: Future<Output = O> + Send + 'static,
+        O: Send + 'static,
+    {
+        let future = (f)(self.device);
+
+        Self::sync_future(&self.barrier, future).await
+    }
+
+    async fn sync_future<F>(barrier: &Barrier, f: F) -> eyre::Result<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let handle = tokio::spawn(f);
+
+        trace!("syncronize with the server");
+        barrier.wait().await;
+
+        trace!("Waiting for the response");
+        barrier.wait().await;
+
+        trace!("Response received");
+        let out = handle.await?;
+
+        Ok(out)
+    }
+}
+
+#[instrument(skip_all)]
+#[must_use]
+async fn init_node(barrier: Arc<Barrier>) -> eyre::Result<Node> {
     let grpc = GrpcConfig::new(UUID, format!("http://localhost:{GRPC_PORT}"));
 
-    let mut builder = DeviceBuilder::new();
+    let mut builder = DeviceBuilder::new().store(MemoryStore::new());
 
     for iface in INTERFACES {
         builder = builder.interface(iface)?
     }
 
-    let (_device, _rx_events) = builder
-        .store(MemoryStore::new())
-        .connect(grpc)
-        .await?
-        .build();
+    debug!("Start connect to the server");
+    let handle = tokio::spawn(async move { builder.connect(grpc).await });
 
-    Ok(())
+    barrier.wait().await;
+    debug!("Wait for server response");
+
+    barrier.wait().await;
+    info!("Connected to the message hub");
+
+    let (device, rx_events) = handle.await??.build();
+
+    Ok(Node {
+        device,
+        rx_events,
+        barrier,
+    })
 }
