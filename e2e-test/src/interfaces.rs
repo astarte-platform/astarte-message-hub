@@ -16,12 +16,15 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use astarte_device_sdk::AstarteAggregate;
+use std::collections::HashMap;
+
+use astarte_device_sdk::{types::AstarteType, AstarteAggregate, Error};
+use serde::Deserialize;
 
 use crate::utils::{base64_decode, timestamp_from_rfc3339, Timestamp};
 
 /// List of all the interfaces
-pub const INTERFACES: &[&str] = &[
+pub static INTERFACES: &[&str] = &[
     DEVICE_AGGREGATE,
     DEVICE_DATASTREAM,
     DEVICE_PROPERTY,
@@ -30,30 +33,39 @@ pub const INTERFACES: &[&str] = &[
     SERVER_PROPERTY,
 ];
 
+pub static INTERFACE_NAMES: &[&str] = &[
+    DEVICE_AGGREGATE_NAME,
+    DEVICE_DATASTREAM_NAME,
+    DEVICE_PROPERTY_NAME,
+    SERVER_AGGREGATE_NAME,
+    SERVER_DATASTREAM_NAME,
+    SERVER_PROPERTY_NAME,
+];
+
 pub const DEVICE_AGGREGATE: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.DeviceAggregate.json");
+pub const DEVICE_AGGREGATE_NAME: &str = "org.astarte-platform.rust.e2etest.DeviceAggregate";
 
-#[derive(Debug, Clone, PartialEq, AstarteAggregate)]
-pub struct AggregateData {
-    double_endpoint: f64,
-    integer_endpoint: i32,
-    boolean_endpoint: bool,
-    longinteger_endpoint: i64,
-    string_endpoint: String,
-    binaryblob_endpoint: Vec<u8>,
-    datetime_endpoint: Timestamp,
-    doublearray_endpoint: Vec<f64>,
-    integerarray_endpoint: Vec<i32>,
-    booleanarray_endpoint: Vec<bool>,
-    longintegerarray_endpoint: Vec<i64>,
-    stringarray_endpoint: Vec<String>,
-    binaryblobarray_endpoint: Vec<Vec<u8>>,
-    datetimearray_endpoint: Vec<Timestamp>,
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct DeviceAggregate(pub AggregateData);
+
+impl DeviceAggregate {
+    pub const fn name() -> &'static str {
+        "org.astarte-platform.rust.e2etest.DeviceAggregate"
+    }
+
+    pub const fn interface() -> &'static str {
+        DEVICE_AGGREGATE
+    }
+
+    pub const fn path() -> &'static str {
+        "/sendor_1"
+    }
 }
 
-impl Default for AggregateData {
+impl Default for DeviceAggregate {
     fn default() -> Self {
-        AggregateData {
+        DeviceAggregate(AggregateData {
             double_endpoint: 4.34,
             integer_endpoint: 1,
             boolean_endpoint: true,
@@ -72,21 +84,55 @@ impl Default for AggregateData {
             datetimearray_endpoint: ["2021-10-23T17:46:48.000Z", "2021-11-11T17:46:48.000Z"]
                 .map(|s| timestamp_from_rfc3339(s).unwrap())
                 .to_vec(),
-        }
+        })
+    }
+}
+
+impl AstarteAggregate for DeviceAggregate {
+    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
+        self.0.astarte_aggregate()
     }
 }
 
 pub const DEVICE_DATASTREAM: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.DeviceDatastream.json");
+pub const DEVICE_DATASTREAM_NAME: &str = "org.astarte-platform.rust.e2etest.DeviceDatastream";
 
 pub const DEVICE_PROPERTY: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.DeviceProperty.json");
+pub const DEVICE_PROPERTY_NAME: &str = "org.astarte-platform.rust.e2etest.DeviceProperty";
 
 pub const SERVER_AGGREGATE: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerAggregate.json");
+pub const SERVER_AGGREGATE_NAME: &str = "org.astarte-platform.rust.e2etest.ServerAggregate";
 
 pub const SERVER_DATASTREAM: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerDatastream.json");
+pub const SERVER_DATASTREAM_NAME: &str = "org.astarte-platform.rust.e2etest.ServerDatastream";
 
 pub const SERVER_PROPERTY: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerProperty.json");
+pub const SERVER_PROPERTY_NAME: &str = "org.astarte-platform.rust.e2etest.ServerProperty";
+
+#[derive(Debug, Clone, PartialEq, AstarteAggregate, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AggregateData {
+    double_endpoint: f64,
+    integer_endpoint: i32,
+    boolean_endpoint: bool,
+    #[serde(deserialize_with = "crate::utils::des::deserialize_longinteger")]
+    longinteger_endpoint: i64,
+    string_endpoint: String,
+    #[serde(deserialize_with = "crate::utils::des::deserialize_blob")]
+    binaryblob_endpoint: Vec<u8>,
+    datetime_endpoint: Timestamp,
+    doublearray_endpoint: Vec<f64>,
+    integerarray_endpoint: Vec<i32>,
+    booleanarray_endpoint: Vec<bool>,
+    #[serde(deserialize_with = "crate::utils::des::deserialize_longinteger_vec")]
+    longintegerarray_endpoint: Vec<i64>,
+    stringarray_endpoint: Vec<String>,
+    #[serde(deserialize_with = "crate::utils::des::deserialize_blob_vec")]
+    binaryblobarray_endpoint: Vec<Vec<u8>>,
+    datetimearray_endpoint: Vec<Timestamp>,
+}

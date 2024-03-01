@@ -193,7 +193,8 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
         &self,
         request: Request<AstarteMessage>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
-        info!("Node Send Request => {:?}", request);
+        // TODO: print node id, when it's moved to the metadata
+        info!("Node Send Request");
 
         let astarte_message = request.into_inner();
 
