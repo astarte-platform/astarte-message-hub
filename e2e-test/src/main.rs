@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{env::VarError, net::Ipv6Addr, path::Path, sync::Arc, time::Duration};
+use std::{env::VarError, net::Ipv6Addr, path::Path, time::Duration};
 
 use astarte_device_sdk::{
     builder::DeviceBuilder,
@@ -31,25 +31,19 @@ use astarte_device_sdk::{
 use astarte_message_hub::{AstarteHandler, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use eyre::{ensure, eyre, Context, OptionExt};
-use futures::{future::BoxFuture, Future};
-use interfaces::INTERFACES;
+use interfaces::{ENDPOINTS, INTERFACES};
 use tempfile::tempdir;
-use tokio::{
-    sync::Barrier,
-    task::{AbortHandle, JoinSet},
-    time::timeout,
-};
-use tonic::body::BoxBody;
-use tower::{Layer, Service, ServiceBuilder};
+use tokio::task::{AbortHandle, JoinSet};
+use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, info, instrument, trace};
+use tracing::{debug, info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use utils::read_env;
 use uuid::{uuid, Uuid};
 
 use crate::{
     api::Api,
-    interfaces::{DeviceAggregate, INTERFACE_NAMES},
+    interfaces::{DeviceAggregate, DeviceDatastream, INTERFACE_NAMES},
 };
 
 pub mod api;
@@ -61,9 +55,10 @@ const UUID: Uuid = uuid!("acc78dae-194c-4942-8f33-9f719629e316");
 
 fn env_filter() -> eyre::Result<EnvFilter> {
     let filter = std::env::var("RUST_LOG").or_else(|err| match err {
-        VarError::NotPresent => {
-            Ok("e2e_test=debug,astarte_message_hub=debug,tower_http=debug".to_string())
-        }
+        VarError::NotPresent => Ok(
+            "e2e_test=trace,astarte_message_hub=debug,astarte_device_sdk=debug,tower_http=debug"
+                .to_string(),
+        ),
         err @ VarError::NotUnicode(_) => Err(err),
     })?;
 
@@ -86,12 +81,10 @@ async fn main() -> eyre::Result<()> {
 
     let api = Api::try_from_env()?;
 
-    let barrier = Arc::new(Barrier::new(2));
-
     let mut tasks = JoinSet::new();
 
-    let msghub = init_message_hub(dir.path(), &barrier, &mut tasks).await?;
-    let node = init_node(barrier, &mut tasks).await?;
+    let msghub = init_message_hub(dir.path(), &mut tasks).await?;
+    let node = init_node(&mut tasks).await?;
 
     tasks.spawn(async move { e2e_test(api, msghub, node).await });
 
@@ -129,108 +122,42 @@ async fn e2e_test(api: Api, msghub: MsgHub, node: Node) -> eyre::Result<()> {
         );
     }
 
-    node.sync(|dev| {
-        let dev = dev.clone();
+    debug!("sending DeviceAggregate");
 
-        async move {
-            dev.send_object(
-                DeviceAggregate::name(),
-                DeviceAggregate::path(),
-                DeviceAggregate::default(),
-            )
-            .await
-        }
-    })
-    .await??;
+    node.device
+        .send_object(
+            DeviceAggregate::name(),
+            DeviceAggregate::path(),
+            DeviceAggregate::default(),
+        )
+        .await?;
 
     let data: DeviceAggregate = api
-        .datastream_value(DeviceAggregate::name(), DeviceAggregate::path())
+        .aggregate_value(DeviceAggregate::name(), DeviceAggregate::path())
         .await?
         .pop()
         .ok_or_else(|| eyre!("missing data from publish"))?;
 
     assert_eq!(data, DeviceAggregate::default());
 
+    debug!("sending DeviceDatastream");
+    let mut data = DeviceDatastream::default().astarte_aggregate()?;
+    for &endpoint in ENDPOINTS {
+        let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
+
+        node.device
+            .send(DeviceDatastream::name(), &format!("/{endpoint}"), value)
+            .await?;
+    }
+
+    debug!("checking result");
+    api.check_individual(DeviceDatastream::name(), &data)
+        .await?;
+
     node.close().await?;
     msghub.close();
 
     Ok(())
-}
-
-/// We don't want to clone the barrier
-#[derive(Debug, Clone)]
-struct BarrierService<S> {
-    barrier: Arc<Barrier>,
-    inner: S,
-}
-
-impl<S> Service<hyper::Request<hyper::Body>> for BarrierService<S>
-where
-    S: Service<hyper::Request<hyper::Body>, Response = hyper::Response<BoxBody>>
-        + Clone
-        + Send
-        + 'static,
-    S::Future: Send + 'static,
-    S::Error: Send,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
-        let clone = self.inner.clone();
-        let inner = std::mem::replace(&mut self.inner, clone);
-        let barrier = Arc::clone(&self.barrier);
-
-        Box::pin(async move { service_barrier(barrier, inner, req).await })
-    }
-}
-
-#[instrument(skip_all)]
-async fn service_barrier<S>(
-    barrier: Arc<Barrier>,
-    mut service: S,
-    req: hyper::Request<hyper::Body>,
-) -> Result<S::Response, S::Error>
-where
-    S: Service<hyper::Request<hyper::Body>>,
-{
-    trace!("call received");
-    let res = service.call(req).await;
-
-    trace!("synchronizing with client");
-    barrier.wait().await;
-    trace!("response sent");
-
-    res
-}
-
-#[derive(Debug, Clone)]
-struct BarrierLayer {
-    barrier: Arc<Barrier>,
-}
-
-impl BarrierLayer {
-    fn new(barrier: Arc<Barrier>) -> Self {
-        Self { barrier }
-    }
-}
-
-impl<S> Layer<S> for BarrierLayer {
-    type Service = BarrierService<S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        let barrier = Arc::clone(&self.barrier);
-
-        BarrierService { barrier, inner }
-    }
 }
 
 struct MsgHub {
@@ -246,7 +173,6 @@ impl MsgHub {
 #[must_use]
 async fn init_message_hub(
     path: &Path,
-    barrier: &Arc<Barrier>,
     tasks: &mut JoinSet<eyre::Result<()>>,
 ) -> eyre::Result<MsgHub> {
     let realm = read_env("E2E_REALM")?;
@@ -275,13 +201,10 @@ async fn init_message_hub(
 
     let message_hub = AstarteMessageHub::new(handler);
 
-    let barrier = Arc::clone(barrier);
-
     let handle = tasks.spawn(async {
         let layer = ServiceBuilder::new()
             .timeout(Duration::from_secs(10))
-            .layer(TraceLayer::new_for_grpc())
-            .layer(BarrierLayer::new(barrier));
+            .layer(TraceLayer::new_for_grpc());
 
         tonic::transport::Server::builder()
             .trace_fn(|_| tracing::debug_span!("message_hub"))
@@ -299,7 +222,6 @@ type DeviceSdk = AstarteDeviceSdk<MemoryStore, Grpc>;
 
 #[derive(Debug)]
 struct Node {
-    barrier: Arc<Barrier>,
     handle: AbortHandle,
     device: DeviceSdk,
     _rx_events: EventReceiver,
@@ -311,36 +233,11 @@ impl Node {
 
         Ok(())
     }
-
-    #[instrument(skip_all)]
-    async fn sync<F, T, O>(&self, mut f: F) -> eyre::Result<O>
-    where
-        F: FnMut(&DeviceSdk) -> T,
-        T: Future<Output = O> + Send + 'static,
-        O: Send + 'static,
-    {
-        let future = (f)(&self.device);
-
-        let handle = tokio::spawn(future);
-
-        trace!("Waiting for the response");
-        timeout(Duration::from_secs(5), self.barrier.wait())
-            .await
-            .wrap_err("timeout expired")?;
-        trace!("Response received");
-
-        let out = handle.await?;
-
-        Ok(out)
-    }
 }
 
 #[instrument(skip_all)]
 #[must_use]
-async fn init_node(
-    barrier: Arc<Barrier>,
-    tasks: &mut JoinSet<eyre::Result<()>>,
-) -> eyre::Result<Node> {
+async fn init_node(tasks: &mut JoinSet<eyre::Result<()>>) -> eyre::Result<Node> {
     let grpc = GrpcConfig::new(UUID, format!("http://localhost:{GRPC_PORT}"));
 
     let mut builder = DeviceBuilder::new().store(MemoryStore::new());
@@ -351,9 +248,6 @@ async fn init_node(
 
     debug!("Start connecting to the msghub");
     let handle = tokio::spawn(async move { builder.connect(grpc).await });
-
-    debug!("Wait for server response");
-    barrier.wait().await;
     info!("Connected to the message hub");
 
     let (device, rx_events) = handle.await??.build();
@@ -364,7 +258,6 @@ async fn init_node(
     Ok(Node {
         device,
         _rx_events: rx_events,
-        barrier,
         handle,
     })
 }

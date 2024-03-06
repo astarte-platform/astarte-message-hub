@@ -16,15 +16,17 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, str::FromStr};
 
+use astarte_device_sdk::types::AstarteType;
 use chrono::{DateTime, Utc};
-use eyre::eyre;
+use eyre::{ensure, eyre};
 use reqwest::Url;
 use serde::{de::DeserializeOwned, Deserialize};
+use serde_json::Value;
 use tracing::instrument;
 
-use crate::utils::read_env;
+use crate::utils::{base64_decode, read_env, Timestamp};
 
 #[derive(Clone)]
 pub struct Api {
@@ -53,6 +55,11 @@ impl Debug for Api {
             .field(&"url", &self.url)
             .finish_non_exhaustive()
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IndividualResp {
+    value: Value,
 }
 
 impl Api {
@@ -93,7 +100,7 @@ impl Api {
         Ok(payload.data)
     }
 
-    pub async fn datastream_value<T>(&self, interface: &str, path: &str) -> eyre::Result<Vec<T>>
+    pub async fn aggregate_value<T>(&self, interface: &str, path: &str) -> eyre::Result<Vec<T>>
     where
         T: DeserializeOwned,
     {
@@ -113,5 +120,108 @@ impl Api {
             .remove(path.trim_matches('/'))
             .map(|v| v.into_iter().map(|v| v.value).collect())
             .ok_or_else(|| eyre!("missing {path} in response"))
+    }
+
+    pub async fn check_individual(
+        &self,
+        interface: &str,
+        expected: &HashMap<String, AstarteType>,
+    ) -> eyre::Result<()> {
+        let url = format!("{}/interfaces/{interface}", self.url);
+
+        let res = reqwest::Client::new()
+            .get(url)
+            .bearer_auth(&self.token)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let payload: ApiResp<HashMap<String, IndividualResp>> = res.json().await?;
+
+        for (k, exp) in expected {
+            let v = &payload
+                .data
+                .get(k)
+                .ok_or_else(|| eyre!("missing endpoint {k}"))?
+                .value;
+
+            let check = match exp {
+                AstarteType::Double(exp) => v.as_f64().is_some_and(|v| v == *exp),
+                AstarteType::Integer(exp) => v.as_i64().is_some_and(|v| v == i64::from(*exp)),
+                AstarteType::Boolean(exp) => v.as_bool().is_some_and(|v| v == *exp),
+                AstarteType::LongInteger(exp) => v.as_str().is_some_and(|v| v == exp.to_string()),
+                AstarteType::String(exp) => v.as_str().is_some_and(|v| v == exp),
+                AstarteType::BinaryBlob(exp) => {
+                    if let Some(s) = v.as_str() {
+                        let blob = base64_decode(s)?;
+
+                        blob == *exp
+                    } else {
+                        false
+                    }
+                }
+                AstarteType::DateTime(exp) => {
+                    if let Some(s) = v.as_str() {
+                        let date_time = Timestamp::from_str(s)?;
+
+                        date_time == *exp
+                    } else {
+                        false
+                    }
+                }
+                AstarteType::DoubleArray(exp) => {
+                    let arr: Vec<f64> = serde_json::from_value(v.clone())?;
+
+                    arr == *exp
+                }
+                AstarteType::IntegerArray(exp) => {
+                    let arr: Vec<i32> = serde_json::from_value(v.clone())?;
+
+                    arr == *exp
+                }
+                AstarteType::BooleanArray(exp) => {
+                    let arr: Vec<bool> = serde_json::from_value(v.clone())?;
+
+                    arr == *exp
+                }
+                AstarteType::LongIntegerArray(exp) => {
+                    let arr: Vec<String> = serde_json::from_value(v.clone())?;
+                    let arr = arr
+                        .into_iter()
+                        .map(|v| v.parse())
+                        .collect::<Result<Vec<i64>, _>>()?;
+
+                    arr == *exp
+                }
+                AstarteType::StringArray(exp) => {
+                    let arr: Vec<String> = serde_json::from_value(v.clone())?;
+
+                    arr == *exp
+                }
+                AstarteType::BinaryBlobArray(exp) => {
+                    let arr: Vec<String> = serde_json::from_value(v.clone())?;
+                    let arr = arr
+                        .into_iter()
+                        .map(|v| base64_decode(v))
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    arr == *exp
+                }
+                AstarteType::DateTimeArray(exp) => {
+                    let arr: Vec<String> = serde_json::from_value(v.clone())?;
+                    let arr = arr
+                        .into_iter()
+                        .map(|v| Timestamp::from_str(&v))
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    arr == *exp
+                }
+                AstarteType::Unset => v.is_null(),
+            };
+
+            ensure!(check, "expected for key {k} that {exp:?} was equal to {v}");
+        }
+
+        Ok(())
     }
 }
