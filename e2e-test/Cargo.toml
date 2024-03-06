@@ -32,6 +32,7 @@ astarte-message-hub = { path = ".." }
 astarte-message-hub-proto = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
+color-eyre = "0.6.2"
 eyre = { workspace = true }
 futures = { workspace = true }
 hyper = { workspace = true }

@@ -43,7 +43,7 @@ use uuid::{uuid, Uuid};
 
 use crate::{
     api::Api,
-    interfaces::{DeviceAggregate, DeviceDatastream, INTERFACE_NAMES},
+    interfaces::{DeviceAggregate, DeviceDatastream, DeviceProperty, INTERFACE_NAMES},
 };
 
 pub mod api;
@@ -69,7 +69,8 @@ fn env_filter() -> eyre::Result<EnvFilter> {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    stable_eyre::install()?;
+    // stable_eyre::install()?;
+    color_eyre::install()?;
 
     let filter = env_filter()?;
     tracing_subscriber::registry()
@@ -153,6 +154,19 @@ async fn e2e_test(api: Api, msghub: MsgHub, node: Node) -> eyre::Result<()> {
     debug!("checking result");
     api.check_individual(DeviceDatastream::name(), &data)
         .await?;
+
+    debug!("sending DeviceProperty");
+    let mut data = DeviceProperty::default().astarte_aggregate()?;
+    for &endpoint in ENDPOINTS {
+        let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
+
+        node.device
+            .send(DeviceProperty::name(), &format!("/{endpoint}"), value)
+            .await?;
+    }
+
+    debug!("checking result");
+    api.check_individual(DeviceProperty::name(), &data).await?;
 
     node.close().await?;
     msghub.close();

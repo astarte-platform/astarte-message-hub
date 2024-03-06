@@ -130,11 +130,11 @@ pub struct DeviceProperty(pub Data);
 
 impl DeviceProperty {
     pub const fn name() -> &'static str {
-        DEVICE_PROPERTY
+        DEVICE_PROPERTY_NAME
     }
 
     pub const fn interface() -> &'static str {
-        DEVICE_PROPERTY_NAME
+        DEVICE_PROPERTY
     }
 }
 
