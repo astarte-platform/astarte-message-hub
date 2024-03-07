@@ -62,7 +62,6 @@ fn env_filter() -> eyre::Result<EnvFilter> {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    // stable_eyre::install()?;
     color_eyre::install()?;
 
     let filter = env_filter()?;
