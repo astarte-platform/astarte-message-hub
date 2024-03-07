@@ -52,7 +52,7 @@ struct WithTimestamp<T> {
 impl Debug for Api {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Api")
-            .field(&"url", &self.url)
+            .field("url", &self.url)
             .finish_non_exhaustive()
     }
 }
@@ -202,7 +202,7 @@ impl Api {
                     let arr: Vec<String> = serde_json::from_value(v.clone())?;
                     let arr = arr
                         .into_iter()
-                        .map(|v| base64_decode(v))
+                        .map(base64_decode)
                         .collect::<Result<Vec<_>, _>>()?;
 
                     arr == *exp

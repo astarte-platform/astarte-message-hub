@@ -94,3 +94,7 @@ tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 uuid = "1.7.0"
 zbus = { version = "3.14.1", default-features = false }
+
+[patch.crates-io]
+# Temporary till fix is unstreamed
+displaydoc = { git = "https://github.com/joshuachp/displaydoc" }

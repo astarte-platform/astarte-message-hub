@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 
 use astarte_device_sdk::{types::AstarteType, AstarteAggregate, Error};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::utils::{base64_decode, timestamp_from_rfc3339, Timestamp};
 
@@ -63,7 +63,7 @@ pub const DEVICE_AGGREGATE: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.DeviceAggregate.json");
 pub const DEVICE_AGGREGATE_NAME: &str = "org.astarte-platform.rust.e2etest.DeviceAggregate";
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct DeviceAggregate(pub Data);
 
 impl DeviceAggregate {
@@ -80,12 +80,6 @@ impl DeviceAggregate {
     }
 }
 
-impl Default for DeviceAggregate {
-    fn default() -> Self {
-        DeviceAggregate(Data::default())
-    }
-}
-
 impl AstarteAggregate for DeviceAggregate {
     fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
         self.0.astarte_aggregate()
@@ -96,7 +90,7 @@ pub const DEVICE_DATASTREAM: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.DeviceDatastream.json");
 pub const DEVICE_DATASTREAM_NAME: &str = "org.astarte-platform.rust.e2etest.DeviceDatastream";
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct DeviceDatastream(pub Data);
 
 impl DeviceDatastream {
@@ -106,12 +100,6 @@ impl DeviceDatastream {
 
     pub const fn interface() -> &'static str {
         DEVICE_DATASTREAM
-    }
-}
-
-impl Default for DeviceDatastream {
-    fn default() -> Self {
-        DeviceDatastream(Data::default())
     }
 }
 
@@ -125,7 +113,7 @@ pub const DEVICE_PROPERTY: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.DeviceProperty.json");
 pub const DEVICE_PROPERTY_NAME: &str = "org.astarte-platform.rust.e2etest.DeviceProperty";
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct DeviceProperty(pub Data);
 
 impl DeviceProperty {
@@ -135,12 +123,6 @@ impl DeviceProperty {
 
     pub const fn interface() -> &'static str {
         DEVICE_PROPERTY
-    }
-}
-
-impl Default for DeviceProperty {
-    fn default() -> Self {
-        DeviceProperty(Data::default())
     }
 }
 
@@ -154,6 +136,25 @@ pub const SERVER_AGGREGATE: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerAggregate.json");
 pub const SERVER_AGGREGATE_NAME: &str = "org.astarte-platform.rust.e2etest.ServerAggregate";
 
+#[derive(Debug, Default, Deserialize)]
+pub struct ServerAggregate(pub Data);
+
+impl ServerAggregate {
+    pub const fn name() -> &'static str {
+        SERVER_AGGREGATE_NAME
+    }
+
+    pub const fn interface() -> &'static str {
+        SERVER_AGGREGATE
+    }
+}
+
+impl AstarteAggregate for ServerAggregate {
+    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
+        self.0.astarte_aggregate()
+    }
+}
+
 pub const SERVER_DATASTREAM: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerDatastream.json");
 pub const SERVER_DATASTREAM_NAME: &str = "org.astarte-platform.rust.e2etest.ServerDatastream";
@@ -162,25 +163,25 @@ pub const SERVER_PROPERTY: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerProperty.json");
 pub const SERVER_PROPERTY_NAME: &str = "org.astarte-platform.rust.e2etest.ServerProperty";
 
-#[derive(Debug, Clone, PartialEq, AstarteAggregate, Deserialize)]
+#[derive(Debug, Clone, PartialEq, AstarteAggregate, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Data {
     double_endpoint: f64,
     integer_endpoint: i32,
     boolean_endpoint: bool,
-    #[serde(deserialize_with = "crate::utils::des::deserialize_longinteger")]
+    #[serde(with = "crate::utils::long_integer")]
     longinteger_endpoint: i64,
     string_endpoint: String,
-    #[serde(deserialize_with = "crate::utils::des::deserialize_blob")]
+    #[serde(with = "crate::utils::blob")]
     binaryblob_endpoint: Vec<u8>,
     datetime_endpoint: Timestamp,
     doublearray_endpoint: Vec<f64>,
     integerarray_endpoint: Vec<i32>,
     booleanarray_endpoint: Vec<bool>,
-    #[serde(deserialize_with = "crate::utils::des::deserialize_longinteger_vec")]
+    #[serde(with = "crate::utils::long_integer_array")]
     longintegerarray_endpoint: Vec<i64>,
     stringarray_endpoint: Vec<String>,
-    #[serde(deserialize_with = "crate::utils::des::deserialize_blob_vec")]
+    #[serde(with = "crate::utils::blob_array")]
     binaryblobarray_endpoint: Vec<Vec<u8>>,
     datetimearray_endpoint: Vec<Timestamp>,
 }

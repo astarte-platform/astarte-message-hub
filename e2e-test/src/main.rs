@@ -16,42 +16,31 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{env::VarError, net::Ipv6Addr, path::Path, time::Duration};
+use std::env::VarError;
 
-use astarte_device_sdk::{
-    builder::DeviceBuilder,
-    prelude::*,
-    store::{memory::MemoryStore, SqliteStore},
-    transport::{
-        grpc::{Grpc, GrpcConfig},
-        mqtt::MqttConfig,
-    },
-    AstarteDeviceSdk, EventReceiver,
-};
-use astarte_message_hub::{AstarteHandler, AstarteMessageHub};
-use astarte_message_hub_proto::message_hub_server::MessageHubServer;
+use astarte_device_sdk::prelude::*;
 use eyre::{ensure, eyre, Context, OptionExt};
-use interfaces::{ENDPOINTS, INTERFACES};
 use tempfile::tempdir;
-use tokio::task::{AbortHandle, JoinSet};
-use tower::ServiceBuilder;
-use tower_http::trace::TraceLayer;
-use tracing::{debug, info, instrument};
+use tokio::task::JoinSet;
+use tracing::{debug, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use utils::read_env;
 use uuid::{uuid, Uuid};
 
 use crate::{
     api::Api,
-    interfaces::{DeviceAggregate, DeviceDatastream, DeviceProperty, INTERFACE_NAMES},
+    device_sdk::{init_node, Node},
+    interfaces::{DeviceAggregate, DeviceDatastream, DeviceProperty, ENDPOINTS, INTERFACE_NAMES},
+    message_hub::{init_message_hub, MsgHub},
 };
 
 pub mod api;
+pub mod device_sdk;
 pub mod interfaces;
+pub mod message_hub;
 pub mod utils;
 
-const GRPC_PORT: u16 = 50051;
-const UUID: Uuid = uuid!("acc78dae-194c-4942-8f33-9f719629e316");
+pub const GRPC_PORT: u16 = 50051;
+pub const UUID: Uuid = uuid!("acc78dae-194c-4942-8f33-9f719629e316");
 
 fn env_filter() -> eyre::Result<EnvFilter> {
     let filter = std::env::var("RUST_LOG").or_else(|err| match err {
@@ -108,6 +97,7 @@ async fn main() -> eyre::Result<()> {
 async fn e2e_test(api: Api, msghub: MsgHub, node: Node) -> eyre::Result<()> {
     let count = 0;
 
+    // Check that the attach worked by checking the message hub interfaces
     loop {
         let mut interfaces = api.interfaces().await?;
         interfaces.sort_unstable();
@@ -123,8 +113,19 @@ async fn e2e_test(api: Api, msghub: MsgHub, node: Node) -> eyre::Result<()> {
         );
     }
 
-    debug!("sending DeviceAggregate");
+    // Send the device data
+    send_device_data(&node, &api).await?;
 
+    // Disconnect the message hub and cleanup
+    node.close().await?;
+    msghub.close();
+
+    Ok(())
+}
+
+#[instrument(skip_all)]
+async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
+    debug!("sending DeviceAggregate");
     node.device
         .send_object(
             DeviceAggregate::name(),
@@ -168,110 +169,5 @@ async fn e2e_test(api: Api, msghub: MsgHub, node: Node) -> eyre::Result<()> {
     debug!("checking result");
     api.check_individual(DeviceProperty::name(), &data).await?;
 
-    node.close().await?;
-    msghub.close();
-
     Ok(())
-}
-
-struct MsgHub {
-    handle: AbortHandle,
-}
-
-impl MsgHub {
-    fn close(self) {
-        self.handle.abort();
-    }
-}
-
-#[must_use]
-async fn init_message_hub(
-    path: &Path,
-    tasks: &mut JoinSet<eyre::Result<()>>,
-) -> eyre::Result<MsgHub> {
-    let realm = read_env("E2E_REALM")?;
-    let device_id = read_env("E2E_DEVICE_ID")?;
-    let credentials_secret = read_env("E2E_CREDENTIAL_SECRET")?;
-    let pairing_url = read_env("E2E_PAIRING_URL")?;
-
-    let mut mqtt_config = MqttConfig::new(realm, device_id, credentials_secret, pairing_url);
-
-    if read_env("E2E_IGNORE_SSL").is_ok() {
-        mqtt_config.ignore_ssl_errors();
-    }
-
-    let path = path.to_str().ok_or_eyre("invalid_path")?;
-
-    let uri = format!("sqlite://{path}/store.db");
-    let store = SqliteStore::new(&uri).await?;
-
-    let (device, rx_events) = DeviceBuilder::new()
-        .store(store)
-        .connect(mqtt_config)
-        .await?
-        .build();
-
-    let handler = AstarteHandler::new(device, rx_events);
-
-    let message_hub = AstarteMessageHub::new(handler);
-
-    let handle = tasks.spawn(async {
-        let layer = ServiceBuilder::new()
-            .timeout(Duration::from_secs(10))
-            .layer(TraceLayer::new_for_grpc());
-
-        tonic::transport::Server::builder()
-            .trace_fn(|_| tracing::debug_span!("message_hub"))
-            .layer(layer)
-            .add_service(MessageHubServer::new(message_hub))
-            .serve((Ipv6Addr::LOCALHOST, GRPC_PORT).into())
-            .await
-            .map_err(Into::into)
-    });
-
-    Ok(MsgHub { handle })
-}
-
-type DeviceSdk = AstarteDeviceSdk<MemoryStore, Grpc>;
-
-#[derive(Debug)]
-struct Node {
-    handle: AbortHandle,
-    device: DeviceSdk,
-    _rx_events: EventReceiver,
-}
-
-impl Node {
-    async fn close(self) -> eyre::Result<()> {
-        self.handle.abort();
-
-        Ok(())
-    }
-}
-
-#[instrument(skip_all)]
-#[must_use]
-async fn init_node(tasks: &mut JoinSet<eyre::Result<()>>) -> eyre::Result<Node> {
-    let grpc = GrpcConfig::new(UUID, format!("http://localhost:{GRPC_PORT}"));
-
-    let mut builder = DeviceBuilder::new().store(MemoryStore::new());
-
-    for iface in INTERFACES {
-        builder = builder.interface(iface)?
-    }
-
-    debug!("Start connecting to the msghub");
-    let handle = tokio::spawn(async move { builder.connect(grpc).await });
-    info!("Connected to the message hub");
-
-    let (device, rx_events) = handle.await??.build();
-
-    let mut device_cl = device.clone();
-    let handle = tasks.spawn(async move { device_cl.handle_events().await.map_err(Into::into) });
-
-    Ok(Node {
-        device,
-        _rx_events: rx_events,
-        handle,
-    })
 }

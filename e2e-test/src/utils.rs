@@ -23,7 +23,8 @@ use chrono::{DateTime, Utc};
 use eyre::Context;
 use serde::{
     de::{self, Visitor},
-    Deserializer,
+    ser::SerializeSeq,
+    Deserializer, Serializer,
 };
 
 pub type Timestamp = DateTime<Utc>;
@@ -35,6 +36,13 @@ where
     BASE64_STANDARD.decode(input)
 }
 
+pub fn base64_encode<T>(input: T) -> String
+where
+    T: AsRef<[u8]>,
+{
+    BASE64_STANDARD.encode(input)
+}
+
 pub fn timestamp_from_rfc3339(input: &str) -> chrono::ParseResult<Timestamp> {
     DateTime::parse_from_rfc3339(input).map(|d| d.to_utc())
 }
@@ -43,8 +51,22 @@ pub fn read_env(name: &str) -> eyre::Result<String> {
     env::var(name).wrap_err_with(|| format!("couldn't read environment variable {name}"))
 }
 
-pub mod des {
+pub mod blob {
     use super::*;
+
+    pub fn serialize<S>(value: &[u8], ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ser.serialize_str(&base64_encode(value))
+    }
+
+    pub fn deserialize<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        de.deserialize_str(BlobVisitor)
+    }
 
     struct BlobVisitor;
 
@@ -62,6 +84,30 @@ pub mod des {
             base64_decode(v).map_err(de::Error::custom)
         }
     }
+}
+
+pub mod blob_array {
+    use super::*;
+
+    pub fn serialize<S>(value: &[Vec<u8>], ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = ser.serialize_seq(Some(value.len()))?;
+
+        for v in value {
+            seq.serialize_element(&base64_encode(v))?;
+        }
+
+        seq.end()
+    }
+
+    pub fn deserialize<'de, D>(de: D) -> Result<Vec<Vec<u8>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        de.deserialize_seq(VecBlobVisitor)
+    }
 
     struct VecBlobVisitor;
 
@@ -76,10 +122,7 @@ pub mod des {
         where
             A: de::SeqAccess<'de>,
         {
-            let mut items = seq
-                .size_hint()
-                .map(|size| Vec::with_capacity(size))
-                .unwrap_or_default();
+            let mut items = seq.size_hint().map(Vec::with_capacity).unwrap_or_default();
 
             while let Some(v) = seq.next_element::<&str>()? {
                 let value = base64_decode(v).map_err(de::Error::custom)?;
@@ -90,19 +133,23 @@ pub mod des {
             Ok(items)
         }
     }
+}
 
-    pub fn deserialize_blob<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
+pub mod long_integer {
+    use super::*;
+
+    pub fn serialize<S>(value: &i64, ser: S) -> Result<S::Ok, S::Error>
     where
-        D: Deserializer<'de>,
+        S: Serializer,
     {
-        de.deserialize_str(BlobVisitor)
+        ser.serialize_str(&value.to_string())
     }
 
-    pub fn deserialize_blob_vec<'de, D>(de: D) -> Result<Vec<Vec<u8>>, D::Error>
+    pub fn deserialize<'de, D>(de: D) -> Result<i64, D::Error>
     where
         D: Deserializer<'de>,
     {
-        de.deserialize_seq(VecBlobVisitor)
+        de.deserialize_str(LongintegerVisitor)
     }
 
     struct LongintegerVisitor;
@@ -121,6 +168,30 @@ pub mod des {
             v.parse().map_err(de::Error::custom)
         }
     }
+}
+
+pub mod long_integer_array {
+    use super::*;
+
+    pub fn serialize<S>(value: &[i64], ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = ser.serialize_seq(Some(value.len()))?;
+
+        for v in value {
+            seq.serialize_element(&v.to_string())?;
+        }
+
+        seq.end()
+    }
+
+    pub fn deserialize<'de, D>(de: D) -> Result<Vec<i64>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        de.deserialize_seq(VecLongintegerVisitor)
+    }
 
     struct VecLongintegerVisitor;
 
@@ -135,10 +206,7 @@ pub mod des {
         where
             A: de::SeqAccess<'de>,
         {
-            let mut items = seq
-                .size_hint()
-                .map(|size| Vec::with_capacity(size))
-                .unwrap_or_default();
+            let mut items = seq.size_hint().map(Vec::with_capacity).unwrap_or_default();
 
             while let Some(v) = seq.next_element::<&str>()? {
                 let value = v.parse().map_err(de::Error::custom)?;
@@ -148,19 +216,5 @@ pub mod des {
 
             Ok(items)
         }
-    }
-
-    pub fn deserialize_longinteger<'de, D>(de: D) -> Result<i64, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        de.deserialize_str(LongintegerVisitor)
-    }
-
-    pub fn deserialize_longinteger_vec<'de, D>(de: D) -> Result<Vec<i64>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        de.deserialize_seq(VecLongintegerVisitor)
     }
 }
