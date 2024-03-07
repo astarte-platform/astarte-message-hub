@@ -16,14 +16,20 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use std::time::Duration;
+
 use astarte_device_sdk::{
     builder::DeviceBuilder,
     prelude::*,
     store::memory::MemoryStore,
     transport::grpc::{Grpc, GrpcConfig},
-    AstarteDeviceSdk, EventReceiver,
+    AstarteDeviceDataEvent, AstarteDeviceSdk, EventReceiver,
 };
-use tokio::task::{AbortHandle, JoinSet};
+use eyre::{Context, OptionExt};
+use tokio::{
+    task::{AbortHandle, JoinSet},
+    time::timeout,
+};
 use tracing::{debug, info, instrument};
 
 use crate::{interfaces::INTERFACES, GRPC_PORT, UUID};
@@ -34,10 +40,19 @@ pub type DeviceSdk = AstarteDeviceSdk<MemoryStore, Grpc>;
 pub struct Node {
     handle: AbortHandle,
     pub device: DeviceSdk,
-    pub _rx_events: EventReceiver,
+    pub rx_events: EventReceiver,
 }
 
 impl Node {
+    pub async fn recv(&mut self) -> eyre::Result<AstarteDeviceDataEvent> {
+        let event = timeout(Duration::from_secs(5), self.rx_events.recv())
+            .await?
+            .ok_or_eyre("channel closed")?
+            .wrap_err("error from the sdk")?;
+
+        Ok(event)
+    }
+
     pub async fn close(self) -> eyre::Result<()> {
         self.handle.abort();
 
@@ -66,7 +81,7 @@ pub async fn init_node(tasks: &mut JoinSet<eyre::Result<()>>) -> eyre::Result<No
 
     Ok(Node {
         device,
-        _rx_events: rx_events,
+        rx_events,
         handle,
     })
 }

@@ -20,6 +20,7 @@ use std::env::VarError;
 
 use astarte_device_sdk::prelude::*;
 use eyre::{ensure, eyre, Context, OptionExt};
+use interfaces::ServerAggregate;
 use tempfile::tempdir;
 use tokio::task::JoinSet;
 use tracing::{debug, instrument};
@@ -29,7 +30,10 @@ use uuid::{uuid, Uuid};
 use crate::{
     api::Api,
     device_sdk::{init_node, Node},
-    interfaces::{DeviceAggregate, DeviceDatastream, DeviceProperty, ENDPOINTS, INTERFACE_NAMES},
+    interfaces::{
+        DeviceAggregate, DeviceDatastream, DeviceProperty, ServerDatastream, ServerProperty,
+        ENDPOINTS, INTERFACE_NAMES,
+    },
     message_hub::{init_message_hub, MsgHub},
 };
 
@@ -94,7 +98,7 @@ async fn main() -> eyre::Result<()> {
 }
 
 #[instrument(skip_all)]
-async fn e2e_test(api: Api, msghub: MsgHub, node: Node) -> eyre::Result<()> {
+async fn e2e_test(api: Api, msghub: MsgHub, mut node: Node) -> eyre::Result<()> {
     let count = 0;
 
     // Check that the attach worked by checking the message hub interfaces
@@ -115,6 +119,9 @@ async fn e2e_test(api: Api, msghub: MsgHub, node: Node) -> eyre::Result<()> {
 
     // Send the device data
     send_device_data(&node, &api).await?;
+
+    // Receive the server data
+    receive_server_data(&mut node, &api).await?;
 
     // Disconnect the message hub and cleanup
     node.close().await?;
@@ -168,6 +175,56 @@ async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
 
     debug!("checking result");
     api.check_individual(DeviceProperty::name(), &data).await?;
+
+    Ok(())
+}
+
+#[instrument(skip_all)]
+async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
+    debug!("checking ServerAggregate");
+    api.send_interface(
+        ServerAggregate::name(),
+        ServerAggregate::path(),
+        ServerAggregate::default(),
+    )
+    .await?;
+
+    let event = node.recv().await?;
+
+    assert_eq!(event.interface, ServerAggregate::name());
+    assert_eq!(event.path, ServerAggregate::path());
+
+    let data = event.data.as_object().ok_or_eyre("not an object")?;
+    assert_eq!(*data, ServerAggregate::default().astarte_aggregate()?);
+
+    debug!("checking ServerDatastream");
+    let data = ServerDatastream::default().astarte_aggregate()?;
+    for (k, v) in data {
+        api.send_individual(ServerDatastream::name(), &k, &v)
+            .await?;
+
+        let event = node.recv().await?;
+
+        assert_eq!(event.interface, ServerDatastream::name());
+        assert_eq!(event.path, format!("/{k}"));
+
+        let data = event.data.as_individual().ok_or_eyre("not an object")?;
+        assert_eq!(*data, v);
+    }
+
+    debug!("checking ServerProperty");
+    let data = ServerProperty::default().astarte_aggregate()?;
+    for (k, v) in data {
+        api.send_individual(ServerProperty::name(), &k, &v).await?;
+
+        let event = node.recv().await?;
+
+        assert_eq!(event.interface, ServerProperty::name());
+        assert_eq!(event.path, format!("/{k}"));
+
+        let data = event.data.as_individual().ok_or_eyre("not an object")?;
+        assert_eq!(*data, v);
+    }
 
     Ok(())
 }

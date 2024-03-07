@@ -20,13 +20,14 @@ use std::{collections::HashMap, fmt::Debug, str::FromStr};
 
 use astarte_device_sdk::types::AstarteType;
 use chrono::{DateTime, Utc};
+use color_eyre::{owo_colors::OwoColorize, Section, SectionExt};
 use eyre::{ensure, eyre};
-use reqwest::Url;
-use serde::{de::DeserializeOwned, Deserialize};
+use reqwest::{Response, Url};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
-use tracing::instrument;
+use tracing::{debug, instrument, trace};
 
-use crate::utils::{base64_decode, read_env, Timestamp};
+use crate::utils::{base64_decode, base64_encode, read_env, Timestamp};
 
 #[derive(Clone)]
 pub struct Api {
@@ -35,10 +36,19 @@ pub struct Api {
     token: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ApiResp<T> {
+pub struct ApiData<T> {
     pub data: T,
+}
+
+impl<T> ApiData<T> {
+    fn new(data: T) -> Self
+    where
+        T: Serialize,
+    {
+        Self { data }
+    }
 }
 
 #[derive(Deserialize)]
@@ -57,9 +67,16 @@ impl Debug for Api {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct IndividualResp {
-    value: Value,
+async fn check_response(url: &str, res: Response) -> eyre::Result<Response> {
+    let status = res.status();
+    if status.is_client_error() || status.is_server_error() {
+        let body: Value = res.json().await?;
+
+        Err(eyre!("HTTP status error ({status}) for url {url}")
+            .section(format!("The response body is:\n{body:#}").header("Response:".cyan())))
+    } else {
+        Ok(res)
+    }
 }
 
 impl Api {
@@ -95,7 +112,7 @@ impl Api {
             .await?
             .error_for_status()?;
 
-        let payload: ApiResp<Vec<String>> = res.json().await?;
+        let payload: ApiData<Vec<String>> = res.json().await?;
 
         Ok(payload.data)
     }
@@ -107,13 +124,14 @@ impl Api {
         let url = format!("{}/interfaces/{interface}", self.url);
 
         let res = reqwest::Client::new()
-            .get(url)
+            .get(&url)
             .bearer_auth(&self.token)
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
 
-        let mut payload: ApiResp<HashMap<String, Vec<WithTimestamp<T>>>> = res.json().await?;
+        let res = check_response(&url, res).await?;
+
+        let mut payload: ApiData<HashMap<String, Vec<WithTimestamp<T>>>> = res.json().await?;
 
         payload
             .data
@@ -130,20 +148,22 @@ impl Api {
         let url = format!("{}/interfaces/{interface}", self.url);
 
         let res = reqwest::Client::new()
-            .get(url)
+            .get(&url)
             .bearer_auth(&self.token)
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
 
-        let payload: ApiResp<HashMap<String, IndividualResp>> = res.json().await?;
+        let res = check_response(&url, res).await?;
+
+        let payload: ApiData<HashMap<String, Value>> = res.json().await?;
 
         for (k, exp) in expected {
-            let v = &payload
+            trace!("checking {k}");
+
+            let v = payload
                 .data
                 .get(k)
-                .ok_or_else(|| eyre!("missing endpoint {k}"))?
-                .value;
+                .ok_or_else(|| eyre!("missing endpoint {k}"))?;
 
             let check = match exp {
                 AstarteType::Double(exp) => v.as_f64().is_some_and(|v| v == *exp),
@@ -221,6 +241,69 @@ impl Api {
 
             ensure!(check, "expected for key {k} that {exp:?} was equal to {v}");
         }
+
+        Ok(())
+    }
+
+    pub async fn send_interface<T>(&self, interface: &str, path: &str, data: T) -> eyre::Result<()>
+    where
+        T: Serialize,
+    {
+        let url = format!("{}/interfaces/{interface}/{path}", self.url);
+
+        let res = reqwest::Client::new()
+            .post(&url)
+            .bearer_auth(&self.token)
+            .json(&ApiData::new(data))
+            .send()
+            .await?;
+
+        check_response(&url, res).await?;
+
+        Ok(())
+    }
+
+    #[instrument]
+    pub async fn send_individual(
+        &self,
+        interface: &str,
+        path: &str,
+        data: &AstarteType,
+    ) -> eyre::Result<()> {
+        let url = format!("{}/interfaces/{interface}/{path}", self.url);
+
+        let value = match data {
+            AstarteType::Double(v) => Value::from(*v),
+            AstarteType::Integer(v) => Value::from(*v),
+            AstarteType::Boolean(v) => Value::from(*v),
+            AstarteType::LongInteger(v) => Value::from(*v),
+            AstarteType::String(v) => Value::from(v.as_str()),
+            AstarteType::BinaryBlob(v) => Value::from(base64_encode(v)),
+            AstarteType::DateTime(v) => Value::from(v.to_rfc3339()),
+            AstarteType::DoubleArray(v) => Value::from(v.as_slice()),
+            AstarteType::IntegerArray(v) => Value::from(v.as_slice()),
+            AstarteType::BooleanArray(v) => Value::from(v.as_slice()),
+            AstarteType::LongIntegerArray(v) => Value::from(v.as_slice()),
+            AstarteType::StringArray(v) => Value::from(v.as_slice()),
+            AstarteType::BinaryBlobArray(v) => {
+                Value::from(v.iter().map(base64_encode).collect::<Vec<_>>())
+            }
+            AstarteType::DateTimeArray(v) => {
+                Value::from(v.iter().map(|d| d.to_rfc3339()).collect::<Vec<_>>())
+            }
+            AstarteType::Unset => Value::Null,
+        };
+
+        debug!("value {value}");
+
+        let res = reqwest::Client::new()
+            .post(&url)
+            .bearer_auth(&self.token)
+            .json(&ApiData::new(value))
+            .send()
+            .await?;
+
+        check_response(&url, res).await?;
 
         Ok(())
     }

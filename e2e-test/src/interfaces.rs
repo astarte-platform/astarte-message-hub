@@ -136,7 +136,7 @@ pub const SERVER_AGGREGATE: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerAggregate.json");
 pub const SERVER_AGGREGATE_NAME: &str = "org.astarte-platform.rust.e2etest.ServerAggregate";
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct ServerAggregate(pub Data);
 
 impl ServerAggregate {
@@ -146,6 +146,10 @@ impl ServerAggregate {
 
     pub const fn interface() -> &'static str {
         SERVER_AGGREGATE
+    }
+
+    pub const fn path() -> &'static str {
+        "/sendor_1"
     }
 }
 
@@ -159,9 +163,47 @@ pub const SERVER_DATASTREAM: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerDatastream.json");
 pub const SERVER_DATASTREAM_NAME: &str = "org.astarte-platform.rust.e2etest.ServerDatastream";
 
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct ServerDatastream(pub Data);
+
+impl ServerDatastream {
+    pub const fn name() -> &'static str {
+        SERVER_DATASTREAM_NAME
+    }
+
+    pub const fn interface() -> &'static str {
+        SERVER_DATASTREAM
+    }
+}
+
+impl AstarteAggregate for ServerDatastream {
+    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
+        self.0.astarte_aggregate()
+    }
+}
+
 pub const SERVER_PROPERTY: &str =
     include_str!("../interfaces/org.astarte-platform.rust.e2etest.ServerProperty.json");
 pub const SERVER_PROPERTY_NAME: &str = "org.astarte-platform.rust.e2etest.ServerProperty";
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct ServerProperty(pub Data);
+
+impl ServerProperty {
+    pub const fn name() -> &'static str {
+        SERVER_PROPERTY_NAME
+    }
+
+    pub const fn interface() -> &'static str {
+        SERVER_PROPERTY
+    }
+}
+
+impl AstarteAggregate for ServerProperty {
+    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
+        self.0.astarte_aggregate()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, AstarteAggregate, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
