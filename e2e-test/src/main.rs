@@ -16,14 +16,14 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::env::VarError;
+use std::{env::VarError, future::Future};
 
 use astarte_device_sdk::prelude::*;
-use eyre::{ensure, eyre, Context, OptionExt};
+use eyre::{bail, ensure, eyre, Context, OptionExt};
 use interfaces::ServerAggregate;
 use tempfile::tempdir;
 use tokio::task::JoinSet;
-use tracing::{debug, instrument};
+use tracing::{debug, error, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use uuid::{uuid, Uuid};
 
@@ -96,25 +96,43 @@ async fn main() -> eyre::Result<()> {
     Ok(())
 }
 
+/// Retry the future multiple times
+async fn retry<F, T, U>(times: usize, mut f: F) -> eyre::Result<U>
+where
+    F: FnMut() -> T,
+    T: Future<Output = eyre::Result<U>>,
+{
+    for i in 1..=times {
+        match (f)().await {
+            Ok(o) => return Ok(o),
+            Err(err) => {
+                error!("failed retry {i} for: {err}");
+
+                tokio::task::yield_now().await
+            }
+        }
+    }
+
+    bail!("to many attempts")
+}
+
 #[instrument(skip_all)]
 async fn e2e_test(api: Api, msghub: MsgHub, mut node: Node) -> eyre::Result<()> {
-    let count = 0;
-
     // Check that the attach worked by checking the message hub interfaces
-    loop {
+    retry(20, || async {
         let mut interfaces = api.interfaces().await?;
         interfaces.sort_unstable();
 
-        if interfaces == INTERFACE_NAMES {
-            break;
-        }
+        debug!(?interfaces);
 
-        // Re-try three times
         ensure!(
-            interfaces == INTERFACE_NAMES || count < 3,
-            "to many attempts"
+            interfaces == INTERFACE_NAMES,
+            "different number of interfaces"
         );
-    }
+
+        Ok(())
+    })
+    .await?;
 
     // Send the device data
     send_device_data(&node, &api).await?;
