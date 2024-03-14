@@ -143,7 +143,6 @@ pub mod long_integer {
         S: Serializer,
     {
         ser.serialize_i64(*value)
-        //ser.serialize_str(&value.to_string())
     }
 
     pub fn deserialize<'de, D>(de: D) -> Result<i64, D::Error>
@@ -182,7 +181,6 @@ pub mod long_integer_array {
 
         for v in value {
             seq.serialize_element(v)?;
-            // seq.serialize_element(&v.to_string())?;
         }
 
         seq.end()
