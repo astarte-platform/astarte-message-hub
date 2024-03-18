@@ -31,7 +31,7 @@ use mockall::{automock, mock};
 #[automock]
 #[async_trait]
 pub trait Client {
-    async fn send_object_with_timestamp<D: 'static>(
+    async fn send_object_with_timestamp<D>(
         &self,
         interface_name: &str,
         interface_path: &str,
@@ -39,27 +39,27 @@ pub trait Client {
         timestamp: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), Error>
     where
-        D: AstarteAggregate + Send;
+        D: AstarteAggregate + Send + 'static;
 
-    async fn send_object<D: 'static>(
+    async fn send_object<D>(
         &self,
         interface_name: &str,
         interface_path: &str,
         data: D,
     ) -> Result<(), Error>
     where
-        D: AstarteAggregate + Send;
+        D: AstarteAggregate + Send + 'static;
 
-    async fn send<D: 'static>(
+    async fn send<D>(
         &self,
         interface_name: &str,
         interface_path: &str,
         data: D,
     ) -> Result<(), Error>
     where
-        D: TryInto<AstarteType> + Send;
+        D: TryInto<AstarteType> + Send + 'static;
 
-    async fn send_with_timestamp<D: 'static>(
+    async fn send_with_timestamp<D>(
         &self,
         interface_name: &str,
         interface_path: &str,
@@ -67,7 +67,7 @@ pub trait Client {
         timestamp: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), Error>
     where
-        D: TryInto<AstarteType> + Send;
+        D: TryInto<AstarteType> + Send + 'static;
 
     async fn unset(&self, interface_name: &str, interface_path: &str) -> Result<(), Error>;
 
@@ -92,25 +92,25 @@ mock! {
         where
             D: AstarteAggregate + Send + 'static;
 
-        async fn send_object<D: 'static>(
+        async fn send_object<D>(
             &self,
             interface_name: &str,
             interface_path: &str,
             data: D,
         ) -> Result<(), Error>
         where
-            D: AstarteAggregate + Send;
+            D: AstarteAggregate + Send + 'static;
 
-        async fn send<D: 'static>(
+        async fn send<D>(
             &self,
             interface_name: &str,
             interface_path: &str,
             data: D,
         ) -> Result<(), Error>
         where
-            D: TryInto<AstarteType> + Send;
+            D: TryInto<AstarteType> + Send + 'static;
 
-        async fn send_with_timestamp<D: 'static>(
+        async fn send_with_timestamp<D>(
             &self,
             interface_name: &str,
             interface_path: &str,
@@ -118,7 +118,7 @@ mock! {
             timestamp: chrono::DateTime<chrono::Utc>,
         ) -> Result<(), Error>
         where
-            D: TryInto<AstarteType> + Send;
+            D: TryInto<AstarteType> + Send + 'static;
 
         async fn unset(&self, interface_name: &str, interface_path: &str) -> Result<(), Error>;
 

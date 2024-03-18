@@ -1,0 +1,81 @@
+{
+    "interface_name": "org.astarte-platform.rust.e2etest.ServerProperty",
+    "version_major": 0,
+    "version_minor": 1,
+    "type": "properties",
+    "ownership": "server",
+    "description": "Test properties interface.",
+    "doc": "Test interface used to test properties.",
+    "mappings": [
+        {
+            "endpoint": "/double_endpoint",
+            "type": "double",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/integer_endpoint",
+            "type": "integer",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/boolean_endpoint",
+            "type": "boolean",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/longinteger_endpoint",
+            "type": "longinteger",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/string_endpoint",
+            "type": "string",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/binaryblob_endpoint",
+            "type": "binaryblob",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/datetime_endpoint",
+            "type": "datetime",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/doublearray_endpoint",
+            "type": "doublearray",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/integerarray_endpoint",
+            "type": "integerarray",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/booleanarray_endpoint",
+            "type": "booleanarray",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/longintegerarray_endpoint",
+            "type": "longintegerarray",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/stringarray_endpoint",
+            "type": "stringarray",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/binaryblobarray_endpoint",
+            "type": "binaryblobarray",
+            "allow_unset": true
+        },
+        {
+            "endpoint": "/datetimearray_endpoint",
+            "type": "datetimearray",
+            "allow_unset": true
+        }
+    ]
+}

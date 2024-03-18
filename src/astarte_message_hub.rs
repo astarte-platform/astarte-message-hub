@@ -124,7 +124,7 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
         &self,
         request: Request<astarte_message_hub_proto::Node>,
     ) -> Result<Response<Self::AttachStream>, Status> {
-        info!("Node Attach Request => {:?}", request);
+        info!("Node Attach Request");
         let node = request.into_inner();
 
         let id = Uuid::parse_str(&node.uuid).map_err(|err| {
@@ -193,7 +193,8 @@ impl<T: Clone + AstarteRunner + AstartePublisher + AstarteSubscriber + 'static>
         &self,
         request: Request<AstarteMessage>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
-        info!("Node Send Request => {:?}", request);
+        // TODO: print node id, when it's moved to the metadata
+        info!("Node Send Request");
 
         let astarte_message = request.into_inner();
 

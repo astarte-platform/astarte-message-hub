@@ -1,6 +1,6 @@
 # This file is part of Astarte.
 #
-# Copyright 2022 SECO Mind Srl
+# Copyright 2022-2024 SECO Mind Srl
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,123 +17,84 @@
 # SPDX-License-Identifier: Apache-2.0
 
 name: check
+on:
+  workflow_call:
+  workflow_dispatch:
 permissions:
   contents: read
-on:
-  push:
-    branches:
-      - main
-      - release-*
-  pull_request:
-# Spend CI time only on latest ref: https://github.com/jonhoo/rust-ci-conf/pull/5
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
-
 env:
-  PB_REL: https://github.com/protocolbuffers/protobuf/releases
   CARGO_TERM_COLOR: always
-
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
 jobs:
   fmt:
     runs-on: ubuntu-latest
     name: stable / fmt
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: cargo fmt --check
-        run: cargo fmt --check
+      - name: Check formatting
+        run: cargo fmt --check --all
   clippy:
     runs-on: ubuntu-latest
     name: ${{ matrix.toolchain }} / clippy
-    permissions:
-      contents: read
-      checks: write
     strategy:
       fail-fast: false
       matrix:
         toolchain: [stable, beta]
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - name: Install Protoc
-        run: |
-          curl -LO "$PB_REL/download/v22.2/protoc-22.2-linux-x86_64.zip"
-          unzip protoc-22.2-linux-x86_64.zip -d "$HOME/.local"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install ${{ matrix.toolchain }}
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
           components: clippy
+      - name: Install sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
       - name: cargo clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
   doc:
     runs-on: ubuntu-latest
     name: nightly / doc
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
-      # Install the protoc from apt since docs.rs uses this environment to build the documentation
-      # https://github.com/rust-lang/crates-build-env/tree/master
-      - name: Install Protoc
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: sudo apt-get install -y libprotobuf-dev libprotobuf-lite23 libprotobuf23 libprotoc23 protobuf-compiler
       - name: Install nightly
         uses: dtolnay/rust-toolchain@nightly
+      - name: Install sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
       - name: cargo doc
-        run: cargo doc --no-deps --all-features
+        run: cargo doc --no-deps --all-features --workspace
         env:
-          RUSTDOCFLAGS: --cfg docsrs  -D warnings
-          DOCS_RS: 1
+          RUSTDOCFLAGS: --cfg docsrs -D warnings
   hack:
     runs-on: ubuntu-latest
     name: ubuntu / stable / features
     steps:
       - uses: actions/checkout@v4
-      - name: Install Protoc
-        run: |
-          curl -LO "$PB_REL/download/v22.2/protoc-22.2-linux-x86_64.zip"
-          unzip protoc-22.2-linux-x86_64.zip -d "$HOME/.local"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
+      - name: Install sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
       - name: cargo install cargo-hack
         uses: taiki-e/install-action@cargo-hack
-      # intentionally no target specifier; see https://github.com/jonhoo/rust-ci-conf/pull/4
       - name: cargo hack
-        run: cargo hack --feature-powerset check
+        run: cargo hack --workspace --feature-powerset check
   msrv:
     runs-on: ubuntu-latest
-    # we use a matrix here just because env can't be used in job names
-    # https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability
     strategy:
       matrix:
         msrv: [1.72.0]
     name: ubuntu / ${{ matrix.msrv }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - name: Install Protoc
-        run: |
-          curl -LO "$PB_REL/download/v22.2/protoc-22.2-linux-x86_64.zip"
-          unzip protoc-22.2-linux-x86_64.zip -d "$HOME/.local"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install ${{ matrix.msrv }}
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.msrv }}
+      - name: Install sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
       - name: cargo +${{ matrix.msrv }} check
-        run: cargo check
+        run: cargo check --all-features --workspace

@@ -1,0 +1,61 @@
+# This file is part of Astarte.
+#
+# Copyright 2022 SECO Mind Srl
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: e2e-test
+on:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+jobs:
+  e2e-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Astarte Cluster
+        id: astarte
+        uses: astarte-platform/astarte-cluster-action@v1
+        with:
+          astarte_version: "1.1.1"
+      - uses: actions/checkout@v4
+      - name: Install interface
+        run: |
+          astartectl realm-management interfaces sync $GITHUB_WORKSPACE/e2e-test/interfaces/*.json --non-interactive
+          astartectl realm-management interfaces ls
+      - name: Register device
+        run: |
+          echo "E2E_REALM=test" >> $GITHUB_ENV
+          DEVICE_ID=$(astartectl utils device-id generate-random)
+          echo "E2E_DEVICE_ID=$DEVICE_ID" >> $GITHUB_ENV
+          CREDENTIAL_SECRET=$(astartectl pairing agent register --compact-output -- "$DEVICE_ID")
+          echo "E2E_CREDENTIAL_SECRET=$CREDENTIAL_SECRET" >> $GITHUB_ENV
+          echo "RUST_LOG=debug" >> $GITHUB_ENV
+          TOKEN=$(astartectl utils gen-jwt appengine)
+          echo "E2E_TOKEN=$TOKEN" >> $GITHUB_ENV
+          echo "E2E_API_URL=https://api.autotest.astarte-platform.org/appengine" >> $GITHUB_ENV
+          echo "E2E_PAIRING_URL=https://api.autotest.astarte-platform.org/pairing" >> $GITHUB_ENV
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+      - name: Run test
+        run: |
+          cargo e2e-test
