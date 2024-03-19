@@ -18,7 +18,7 @@
 
 use std::{env::VarError, future::Future};
 
-use astarte_device_sdk::prelude::*;
+use astarte_device_sdk::{prelude::*, types::AstarteType};
 use eyre::{bail, ensure, eyre, Context, OptionExt};
 use interfaces::ServerAggregate;
 use tempfile::tempdir;
@@ -241,6 +241,20 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
 
         let data = event.data.as_individual().ok_or_eyre("not an object")?;
         assert_eq!(*data, v);
+    }
+
+    debug!("checking unset for ServerProperty");
+    let data = ServerProperty::default().astarte_aggregate()?;
+    for k in data.keys() {
+        api.unset(ServerProperty::name(), k).await?;
+
+        let event = node.recv().await?;
+
+        assert_eq!(event.interface, ServerProperty::name());
+        assert_eq!(event.path, format!("/{k}"));
+
+        let data = event.data.as_individual().ok_or_eyre("not an object")?;
+        assert_eq!(*data, AstarteType::Unset);
     }
 
     Ok(())

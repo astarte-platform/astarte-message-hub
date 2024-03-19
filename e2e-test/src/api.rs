@@ -304,4 +304,19 @@ impl Api {
 
         Ok(())
     }
+
+    #[instrument]
+    pub async fn unset(&self, interface: &str, path: &str) -> eyre::Result<()> {
+        let url = format!("{}/interfaces/{interface}/{path}", self.url);
+
+        let res = reqwest::Client::new()
+            .delete(&url)
+            .bearer_auth(&self.token)
+            .send()
+            .await?;
+
+        check_response(&url, res).await?;
+
+        Ok(())
+    }
 }
