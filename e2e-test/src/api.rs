@@ -214,23 +214,12 @@ impl Api {
         interface: &str,
         expected: &HashMap<String, AstarteType>,
     ) -> eyre::Result<()> {
-        let url = format!("{}/interfaces/{interface}", self.url);
-
-        let res = reqwest::Client::new()
-            .get(&url)
-            .bearer_auth(&self.token)
-            .send()
-            .await?;
-
-        let res = check_response(&url, res).await?;
-
-        let payload: ApiData<HashMap<String, Value>> = res.json().await?;
+        let payload = self.property(interface).await?;
 
         for (k, exp) in expected {
             trace!("checking {k}");
 
             let v = payload
-                .data
                 .get(k)
                 .ok_or_else(|| eyre!("missing endpoint {k}"))?;
 
@@ -240,6 +229,19 @@ impl Api {
         }
 
         Ok(())
+    }
+
+    pub async fn property(&self, interface: &str) -> Result<HashMap<String, Value>, eyre::Error> {
+        let url = format!("{}/interfaces/{interface}", self.url);
+        let res = reqwest::Client::new()
+            .get(&url)
+            .bearer_auth(&self.token)
+            .send()
+            .await?;
+        let res = check_response(&url, res).await?;
+        let payload: ApiData<HashMap<String, Value>> = res.json().await?;
+
+        Ok(payload.data)
     }
 
     pub async fn send_interface<T>(&self, interface: &str, path: &str, data: T) -> eyre::Result<()>

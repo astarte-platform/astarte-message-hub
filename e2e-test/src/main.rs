@@ -193,6 +193,19 @@ async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
     debug!("checking result");
     api.check_individual(DeviceProperty::name(), &data).await?;
 
+    debug!("unsetting DeviceProperty");
+    let data = DeviceProperty::default().astarte_aggregate()?;
+    for &endpoint in ENDPOINTS {
+        ensure!(data.contains_key(endpoint), "endpoint not found");
+
+        node.device
+            .unset(DeviceProperty::name(), &format!("/{endpoint}"))
+            .await?;
+    }
+
+    let data = api.property(DeviceProperty::name()).await?;
+    ensure!(data.is_empty(), "property not unsetted {data:?}");
+
     Ok(())
 }
 
