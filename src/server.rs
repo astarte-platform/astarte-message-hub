@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
@@ -219,9 +220,9 @@ fn node_id_from_bin(metadata: &MetadataMap) -> Result<Option<Uuid>, InterceptorE
         return Ok(None);
     };
 
-    let bytes = node_id.to_bytes()?;
+    let uuid_bytes = node_id.to_bytes()?;
 
-    Uuid::from_slice(&bytes)
+    Uuid::from_slice(&uuid_bytes)
         .map(Some)
         .map_err(InterceptorError::Uuid)
 }
@@ -231,7 +232,9 @@ fn node_id_from_ascii(metadata: &MetadataMap) -> Result<Option<Uuid>, Intercepto
         return Ok(None);
     };
 
-    Uuid::from_slice(node_id.as_bytes())
+    let uuid_str = node_id.to_str()?;
+
+    Uuid::from_str(uuid_str)
         .map(Some)
         .map_err(InterceptorError::Uuid)
 }
@@ -371,8 +374,9 @@ impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
         &self,
         request: Request<AstarteMessage>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
-        // TODO: print node id, when it's moved to the metadata
-        info!("Node Send Request");
+        if let Some(node_id) = request.extensions().get::<NodeId>() {
+            debug!("Node {node_id} Send Request");
+        }
 
         let astarte_message = request.into_inner();
 
@@ -414,24 +418,37 @@ impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
     use std::io::Error;
     use std::io::ErrorKind;
+    use std::ops::Deref;
+    use std::sync::Arc;
 
     use astarte_message_hub_proto::astarte_message::Payload;
     use astarte_message_hub_proto::message_hub_server::MessageHub;
     use astarte_message_hub_proto::AstarteMessage;
     use astarte_message_hub_proto::Node;
     use async_trait::async_trait;
+    use hyper::{Body, Response, StatusCode};
     use mockall::mock;
-    use tokio::sync::mpsc;
     use tokio::sync::mpsc::Receiver;
+    use tokio::sync::{mpsc, RwLock};
+    use tonic::body::BoxBody;
+    use tonic::metadata::{MetadataMap, MetadataValue};
     use tonic::{Request, Status};
+    use tower::{Service, ServiceBuilder};
+    use uuid::Uuid;
 
     use crate::astarte::{AstartePublisher, AstarteSubscriber};
     use crate::error::AstarteMessageHubError;
-    use crate::server::AstarteNode;
+    use crate::server::{
+        node_id_from_ascii, node_id_from_bin, AstarteNode, InterceptorError, NodeId,
+        NodeIdInterceptorLayer,
+    };
 
     use super::AstarteMessageHub;
+
+    const TEST_UUID: uuid::Uuid = uuid::uuid!("d1e7a6e9-cf99-4694-8fb6-997934be079c");
 
     mock! {
         AstarteHandler { }
@@ -775,5 +792,139 @@ mod test {
             "Unable to unsubscribe, err: AstarteInvalidData(\"invalid node\")",
             err.message()
         )
+    }
+
+    #[test]
+    fn test_node_id() {
+        let node_id = NodeId(TEST_UUID);
+
+        // test Deref
+        assert_eq!(node_id.deref(), &TEST_UUID);
+
+        // test Display
+        let display = format!("{node_id}");
+        assert_eq!(display, TEST_UUID.to_string());
+    }
+
+    #[test]
+    fn test_node_id_from_bin() {
+        let mut metadata_map = MetadataMap::new();
+
+        // empty node-id-bin field
+        let res = node_id_from_bin(&metadata_map).unwrap();
+        assert!(res.is_none());
+
+        // insert a wrong uuid
+        let metadata_val = MetadataValue::from_bytes(b"wrong-uuid");
+        metadata_map.insert_bin("node-id-bin", metadata_val);
+
+        let res = node_id_from_bin(&metadata_map);
+        assert!(res.is_err());
+
+        // correct
+        let metadata_val = MetadataValue::from_bytes(TEST_UUID.as_bytes());
+        metadata_map.insert_bin("node-id-bin", metadata_val);
+        let res = node_id_from_bin(&metadata_map).unwrap();
+        assert!(res.is_some());
+    }
+
+    #[test]
+    fn test_node_id_from_ascii() {
+        let mut metadata_map = MetadataMap::new();
+
+        // empty node-id field
+        let res = node_id_from_ascii(&metadata_map).unwrap();
+        assert!(res.is_none());
+
+        // insert a wrong uuid
+        let metadata_val = MetadataValue::from_static("wrong-uuid");
+        metadata_map.insert("node-id", metadata_val);
+        let res = node_id_from_ascii(&metadata_map);
+        assert!(res.is_err());
+
+        // correct
+        let metadata_val = MetadataValue::from_static("d1e7a6e9-cf99-4694-8fb6-997934be079c");
+        metadata_map.insert("node-id", metadata_val);
+        let res = node_id_from_ascii(&metadata_map).unwrap();
+        assert!(res.is_some());
+    }
+
+    fn create_http_req(uri: &str) -> hyper::Request<Body> {
+        hyper::Request::builder()
+            .uri(uri)
+            .body(Body::default())
+            .expect("failed to create http req")
+    }
+
+    fn create_http_req_with_metadata_node_id(uri: &str) -> hyper::Request<Body> {
+        let req = hyper::Request::builder()
+            .uri(uri)
+            .body(Body::default())
+            .expect("failed to create http req");
+
+        let (mut parts, body) = req.into_parts();
+        let mut metadata = MetadataMap::from_headers(parts.headers);
+        let metadata_val = MetadataValue::from_bytes(TEST_UUID.as_bytes());
+        metadata.insert_bin("node-id-bin", metadata_val);
+        parts.headers = metadata.into_headers();
+
+        hyper::Request::from_parts(parts, body)
+    }
+
+    fn create_node_interceptor_service(
+        hm: HashMap<Uuid, AstarteNode>,
+    ) -> impl Service<hyper::Request<Body>, Error = InterceptorError> {
+        let msg_hub_nodes = Arc::new(RwLock::new(hm));
+
+        ServiceBuilder::new()
+            .layer(NodeIdInterceptorLayer::new(msg_hub_nodes))
+            .service_fn(|_req: hyper::Request<Body>| {
+                futures::future::ready(
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .body(BoxBody::default())
+                        .map_err(|err| InterceptorError::Inner(Box::from(err))),
+                )
+            })
+    }
+
+    #[tokio::test]
+    async fn test_node_id_interceptor() {
+        env_logger::init();
+        // don't check node id if the request is an Attach
+        let req =
+            create_http_req("http://localhost:50051/astarteplatform.msghub.MessageHub/Attach");
+
+        let mut service = create_node_interceptor_service(HashMap::default());
+
+        let res = service.call(req).await;
+
+        assert!(res.is_ok());
+
+        // check node id for non-attach requests
+        // CASE: node id metadata not present
+        let req = create_http_req("http://localhost:50051/");
+
+        let res = service.call(req).await;
+
+        assert!(matches!(res.err().unwrap(), InterceptorError::AbsentId));
+
+        // CASE: node-id-bin present but not inserted in the Message Hub Node lists
+        let req = create_http_req_with_metadata_node_id("http://localhost:50051/");
+
+        let res = service.call(req).await;
+
+        assert!(matches!(res.err().unwrap(), InterceptorError::IdNotFound));
+
+        // CASE: node-id-bin present but not inserted in the Message Hub Node lists
+        let req = create_http_req_with_metadata_node_id("http://localhost:50051/");
+
+        let msg_hub_nodes = HashMap::from([(TEST_UUID, AstarteNode::new(TEST_UUID, vec![]))]);
+
+        let mut service = create_node_interceptor_service(msg_hub_nodes);
+
+        let res = service.call(req).await;
+
+        assert!(res.is_ok());
     }
 }

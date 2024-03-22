@@ -37,6 +37,7 @@ axum = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 displaydoc = { workspace = true }
+futures = { workspace = true }
 env_logger = { workspace = true }
 eyre = { workspace = true }
 hyper = { workspace = true }
