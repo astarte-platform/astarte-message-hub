@@ -21,7 +21,7 @@
 #![warn(missing_docs)]
 
 pub use crate::astarte_message_hub::AstarteMessageHub;
-pub use crate::data::astarte_handler::AstarteHandler;
+pub use crate::data::astarte_handler::{init_pub_sub, DevicePublisher, DeviceSubscriber};
 
 mod astarte_message_hub;
 pub mod config;

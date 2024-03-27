@@ -33,11 +33,6 @@ use tonic::Status;
 use crate::astarte_message_hub::AstarteNode;
 use crate::error::AstarteMessageHubError;
 
-#[async_trait]
-pub trait AstarteRunner {
-    async fn run(&mut self);
-}
-
 /// A **trait** required for all Astarte handlers that want to publish data on Astarte.
 #[async_trait]
 pub trait AstartePublisher: Send + Sync {

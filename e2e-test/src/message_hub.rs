@@ -21,9 +21,9 @@ use std::{net::Ipv6Addr, path::Path, time::Duration};
 use astarte_device_sdk::{
     builder::DeviceBuilder, prelude::*, store::SqliteStore, transport::mqtt::MqttConfig,
 };
-use astarte_message_hub::{AstarteHandler, AstarteMessageHub};
+use astarte_message_hub::{init_pub_sub, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
-use eyre::OptionExt;
+use eyre::{Context, OptionExt};
 use tokio::task::{AbortHandle, JoinSet};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
@@ -32,12 +32,16 @@ use tracing::instrument;
 use crate::{utils::read_env, GRPC_PORT};
 
 pub struct MsgHub {
-    handle: AbortHandle,
+    server: AbortHandle,
+    event_loop: AbortHandle,
+    forwarder: AbortHandle,
 }
 
 impl MsgHub {
     pub fn close(self) {
-        self.handle.abort();
+        self.forwarder.abort();
+        self.event_loop.abort();
+        self.server.abort();
     }
 }
 
@@ -62,17 +66,17 @@ pub async fn init_message_hub(
     let uri = format!("sqlite://{path}/store.db");
     let store = SqliteStore::new(&uri).await?;
 
-    let (device, rx_events) = DeviceBuilder::new()
+    let (mut device, rx_events) = DeviceBuilder::new()
         .store(store)
         .connect(mqtt_config)
         .await?
         .build();
 
-    let handler = AstarteHandler::new(device, rx_events);
+    let (publisher, mut subscriber) = init_pub_sub(device.clone(), rx_events);
 
-    let message_hub = AstarteMessageHub::new(handler);
+    let message_hub = AstarteMessageHub::new(publisher);
 
-    let handle = tasks.spawn(async {
+    let server = tasks.spawn(async {
         let layer = ServiceBuilder::new()
             .timeout(Duration::from_secs(10))
             .layer(TraceLayer::new_for_grpc());
@@ -86,5 +90,25 @@ pub async fn init_message_hub(
             .map_err(Into::into)
     });
 
-    Ok(MsgHub { handle })
+    // Event loop for the astarte device sdk
+    let event_loop = tasks.spawn(async move {
+        device
+            .handle_events()
+            .await
+            .wrap_err("disconnected from astarte")
+    });
+
+    // Forward the astarte events to the subscribers
+    let forwarder = tasks.spawn(async move {
+        subscriber
+            .forward_events()
+            .await
+            .wrap_err("subscriber disconnected")
+    });
+
+    Ok(MsgHub {
+        server,
+        event_loop,
+        forwarder,
+    })
 }
