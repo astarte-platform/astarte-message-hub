@@ -61,7 +61,7 @@ serial_test = { workspace = true }
 tempfile = { workspace = true }
 
 [workspace.dependencies]
-astarte-device-sdk = "0.7.1"
+astarte-device-sdk = "0.7.2"
 astarte-message-hub-proto = "0.6.1"
 async-trait = "0.1.77"
 axum = "0.7.4"
