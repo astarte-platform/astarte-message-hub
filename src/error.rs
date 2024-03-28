@@ -28,6 +28,7 @@ use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
 use thiserror::Error;
 
 use crate::config::http::HttpError;
+use crate::config::protobuf::ProtobufServerError;
 
 /// A list specifying general categories of Astarte Message Hub error.
 #[derive(Error, Debug)]
@@ -71,6 +72,10 @@ pub enum AstarteMessageHubError {
     /// Http server error
     #[error("HTTP server error, {0}")]
     HttpServer(#[from] HttpError),
+
+    /// Protobuf server error
+    #[error("Protobuf server error, {0}")]
+    ProtobufServer(#[from] ProtobufServerError),
 
     /// Wrapper for integer conversion errors
     #[error("couldn't convert timestamp, {0}")]
