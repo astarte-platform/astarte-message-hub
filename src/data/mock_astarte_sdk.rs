@@ -20,7 +20,7 @@
 
 //! Mocking of the Astarte Device Sdk.
 
-use astarte_device_sdk::{types::AstarteType, AstarteAggregate, Error, Interface};
+use astarte_device_sdk::{error::Error, types::AstarteType, AstarteAggregate, Interface};
 use async_trait::async_trait;
 use mockall::{automock, mock};
 

@@ -24,11 +24,11 @@ use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
 use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::transport::grpc::GrpcConfig;
 use astarte_device_sdk::types::AstarteType;
-use astarte_device_sdk::Client;
+use astarte_device_sdk::{Client, ClientDisconnect};
 use std::time;
 
 use clap::Parser;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use tokio::select;
 use tokio::signal::ctrl_c;
 use tokio::task::JoinHandle;
@@ -39,6 +39,7 @@ use uuid::Uuid;
 #[clap(version, about)]
 struct Cli {
     /// UUID to be used when registering the client as an Astarte message hub node.
+    #[clap(default_value = "d1e7a6e9-cf99-4694-8fb6-997934be079c")]
     uuid: String,
 
     /// Endpoint of the Astarte Message Hub server instance
@@ -66,11 +67,9 @@ async fn main() -> Result<(), DynError> {
 
     let (mut node, mut rx_events) = DeviceBuilder::new()
         .store(MemoryStore::new())
-        .interface_directory("examples/client/interfaces")
-        .expect("failed to use interface directory")
+        .interface_directory("examples/client/interfaces")?
         .connect(grpc_cfg)
-        .await
-        .expect("failed to connect")
+        .await?
         .build();
 
     let receive_handle = tokio::spawn(async move {
@@ -127,6 +126,7 @@ async fn main() -> Result<(), DynError> {
     // wait for CTRL C to terminate the node execution
     select! {
         _ = ctrl_c() => {
+            debug!("CTRL C received, stop sending/receiving data from Astarte");
             send_handle.abort();
             receive_handle.abort();
         }
@@ -138,6 +138,8 @@ async fn main() -> Result<(), DynError> {
 
     handle_task(receive_handle).await;
     handle_task(send_handle).await;
+
+    node.disconnect().await;
 
     Ok(())
 }
