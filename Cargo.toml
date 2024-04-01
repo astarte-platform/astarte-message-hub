@@ -64,7 +64,7 @@ tempfile = { workspace = true }
 astarte-device-sdk = "0.7.2"
 astarte-message-hub-proto = "0.6.1"
 async-trait = "0.1.77"
-axum = "0.7.4"
+axum = "0.7.5"
 base64 = "0.21.7"
 chrono = "0.4.33"
 clap = "3.2.25"
