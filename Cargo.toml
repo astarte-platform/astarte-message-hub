@@ -95,7 +95,7 @@ tower-http = "0.4.4"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 uuid = "1.7.0"
-zbus = { version = "3.14.1", default-features = false }
+zbus = { version = "3.15.2", default-features = false }
 
 [patch.crates-io]
 # Temporary till fix is unstreamed
