@@ -71,7 +71,7 @@ pub async fn init_node(
     barrier.wait().await;
     info!("Connected to the message hub");
 
-    let (client, mut connection) = handle.await??.build();
+    let (client, connection) = handle.await??.build();
 
     let handle = tasks.spawn(async move { connection.handle_events().await.map_err(Into::into) });
 

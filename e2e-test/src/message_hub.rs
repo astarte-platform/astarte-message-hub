@@ -74,7 +74,7 @@ pub async fn init_message_hub(
     let uri = format!("sqlite://{path}/store.db");
     let store = SqliteStore::from_uri(&uri).await?;
 
-    let (client, mut connection) = DeviceBuilder::new()
+    let (client, connection) = DeviceBuilder::new()
         .store(store)
         .connect(mqtt_config)
         .await?

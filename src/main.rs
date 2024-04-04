@@ -49,7 +49,7 @@ use log::{debug, info};
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     /// Path to a valid .toml file containing the message hub configuration.
-    #[clap(short, long, conflicts_with = "store-directory")]
+    #[clap(short, long, conflicts_with = "store_directory")]
     toml: Option<String>,
     /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
     #[clap(short, long, conflicts_with = "toml")]
@@ -71,8 +71,7 @@ async fn main() -> eyre::Result<()> {
     let interfaces_dir = options.store_directory.join("interfaces");
 
     // Initialize an Astarte device
-    let (client, mut connection) =
-        initialize_astarte_device_sdk(&mut options, &interfaces_dir).await?;
+    let (client, connection) = initialize_astarte_device_sdk(&mut options, &interfaces_dir).await?;
     info!("Connection to Astarte established.");
 
     let (publisher, mut subscriber) = init_pub_sub(client);
