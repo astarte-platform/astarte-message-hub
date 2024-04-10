@@ -31,7 +31,7 @@ use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
 use eyre::Context;
 use std::convert::identity;
 use std::net::Ipv6Addr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::task::JoinSet;
 
@@ -67,14 +67,18 @@ async fn main() -> eyre::Result<()> {
 
     let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
 
+    // Directory to store the Nodes introspection
+    let interfaces_dir = options.store_directory.join("interfaces");
+
     // Initialize an Astarte device
-    let (client, mut connection) = initialize_astarte_device_sdk(&mut options).await?;
+    let (client, mut connection) =
+        initialize_astarte_device_sdk(&mut options, &interfaces_dir).await?;
     info!("Connection to Astarte established.");
 
     let (publisher, mut subscriber) = init_pub_sub(client);
 
     // Create a new message hub
-    let message_hub = AstarteMessageHub::new(publisher);
+    let message_hub = AstarteMessageHub::new(publisher, interfaces_dir);
 
     let mut tasks = JoinSet::new();
 
@@ -117,6 +121,7 @@ async fn main() -> eyre::Result<()> {
 
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
+    interfaces_dir: &Path,
 ) -> eyre::Result<(
     DeviceClient<SqliteStore>,
     DeviceConnection<SqliteStore, Mqtt>,
@@ -164,6 +169,8 @@ async fn initialize_astarte_device_sdk(
 
         builder = builder.interface_directory(int_dir)?;
     }
+
+    builder = builder.interface_directory(interfaces_dir)?;
 
     let store_path = msg_hub_opts
         .store_directory

@@ -67,6 +67,8 @@ pub async fn init_message_hub(
         mqtt_config.ignore_ssl_errors();
     }
 
+    let interfaces = path.join("interfaces");
+
     let path = path.to_str().ok_or_eyre("invalid_path")?;
 
     let uri = format!("sqlite://{path}/store.db");
@@ -80,7 +82,7 @@ pub async fn init_message_hub(
 
     let (publisher, mut subscriber) = init_pub_sub(client);
 
-    let message_hub = AstarteMessageHub::new(publisher);
+    let message_hub = AstarteMessageHub::new(publisher, interfaces);
 
     let server = tasks.spawn(async move {
         let layer = ServiceBuilder::new()
