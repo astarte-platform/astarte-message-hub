@@ -19,13 +19,14 @@
  */
 //! Helper module to retrieve the configuration of the Astarte message hub.
 
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fs, io};
 
+use astarte_device_sdk::transport::mqtt::Credential;
 use log::debug;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Notify;
+use tokio::{fs, sync::Notify};
 
 use crate::config::http::HttpConfigProvider;
 use crate::config::protobuf::ProtobufConfigProvider;
@@ -185,95 +186,41 @@ impl MessageHubOptions {
     }
 
     /// Obtains the credential secret from the stored path or by registering the device.
-    pub async fn obtain_credential_secret<'a: 'b, 'b>(
-        &'a mut self,
-    ) -> Result<&'b str, AstarteMessageHubError> {
+    pub async fn obtain_credential(&self) -> Result<Credential, AstarteMessageHubError> {
         if let Some(ref cred_sec) = self.credentials_secret {
-            return Ok(cred_sec);
+            return Ok(Credential::secret(cred_sec));
         }
 
+        // Load the credential fiele for backwards compatibility
         let path = self.store_directory.join(CREDENTIAL_FILE);
 
-        let credential = match fs::read_to_string(&path) {
+        match fs::read_to_string(&path).await {
             Ok(cred) => {
                 debug!("using stored credentials from {:?}", path);
 
-                Ok(cred)
+                return Ok(Credential::secret(cred));
             }
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                debug!("credentials not found, registering device");
-
-                let cred = self.register_device(&path).await?;
-
-                Ok(cred)
+                debug!("credentials not found");
             }
-            Err(err) => Err(AstarteMessageHubError::FatalError(format!(
-                "failed to read {}: {}",
-                path.to_string_lossy(),
-                err
-            ))),
-        }?;
+            Err(err) => {
+                return Err(AstarteMessageHubError::FatalError(format!(
+                    "failed to read {}: {}",
+                    path.to_string_lossy(),
+                    err
+                )))
+            }
+        };
 
-        self.credentials_secret = Some(credential);
-
-        Ok(self.credentials_secret.as_ref().unwrap())
-    }
-
-    /// Registers the device to the Astarte instance.
-    async fn register_device(&self, cred_file: &Path) -> Result<String, AstarteMessageHubError> {
-        let pairing_token = self.pairing_token.as_ref().ok_or_else(|| {
+        let token = self.pairing_token.as_ref().ok_or_else(|| {
             AstarteMessageHubError::FatalError("missing pairing token".to_string())
         })?;
 
-        let credentials = self.register_with_astarte(pairing_token).await?;
-
-        debug!("device registered, storing credentials to {:?}", cred_file);
-
-        fs::write(cred_file, &credentials).map_err(|err| {
-            AstarteMessageHubError::FatalError(format!(
-                "failed to write credentials to {}: {}",
-                cred_file.to_string_lossy(),
-                err
-            ))
-        })?;
-
-        Ok(credentials)
-    }
-
-    #[cfg(not(test))]
-    async fn register_with_astarte(
-        &self,
-        pairing_token: &str,
-    ) -> Result<String, AstarteMessageHubError> {
-        // Call extracted to allow mocking in tests
-        astarte_device_sdk::transport::mqtt::registration::register_device(
-            pairing_token,
-            &self.pairing_url,
-            &self.realm,
-            self.device_id.as_ref().ok_or_else(|| {
-                AstarteMessageHubError::FatalError("No device id provided".to_string())
-            })?,
-        )
-        .await
-        .map_err(|err| AstarteMessageHubError::FatalError(err.to_string()))
-    }
-
-    #[cfg(test)]
-    async fn register_with_astarte(
-        &self,
-        pairing_token: &str,
-    ) -> Result<String, AstarteMessageHubError> {
-        use log::info;
-
-        info!("registering device with pairing token {}", pairing_token);
-
-        Ok(String::default())
+        Ok(Credential::paring_token(token))
     }
 
     /// Obtains the device id from option or by zbus service.
-    pub async fn obtain_device_id<'a: 'b, 'b>(
-        &'a mut self,
-    ) -> Result<&'b str, AstarteMessageHubError> {
+    pub async fn obtain_device_id(&mut self) -> Result<&str, AstarteMessageHubError> {
         if self
             .device_id
             .as_ref()
@@ -509,10 +456,12 @@ mod test {
         let expected = "32".to_string();
 
         let dir = tempfile::TempDir::new().unwrap();
-        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+        fs::write(dir.path().join(CREDENTIAL_FILE), &expected)
+            .await
+            .unwrap();
 
         #[allow(deprecated)]
-        let mut opt = MessageHubOptions {
+        let opt = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
@@ -525,22 +474,20 @@ mod test {
             astarte: DeviceSdkOptions::default(),
         };
 
-        let secret = opt.obtain_credential_secret().await;
+        let Credential::Secret { credentials_secret } = opt.obtain_credential().await.unwrap()
+        else {
+            panic!("not a credential secret");
+        };
 
-        assert!(
-            secret.is_ok(),
-            "error obtaining stored credential {:?}",
-            secret
-        );
-        assert_eq!(secret.unwrap(), expected);
+        assert_eq!(credentials_secret, expected);
     }
 
     #[tokio::test]
-    async fn obtain_credential_secret_register_device() {
+    async fn obtain_credential_paring_token() {
         let dir = tempfile::TempDir::new().unwrap();
 
         #[allow(deprecated)]
-        let mut opt = MessageHubOptions {
+        let opt = MessageHubOptions {
             realm: "1".to_string(),
             device_id: Some("2".to_string()),
             pairing_url: "3".to_string(),
@@ -553,7 +500,7 @@ mod test {
             astarte: DeviceSdkOptions::default(),
         };
 
-        let secret = opt.obtain_credential_secret().await;
+        let secret = opt.obtain_credential().await;
 
         assert!(
             secret.is_ok(),
@@ -561,11 +508,11 @@ mod test {
             secret
         );
 
-        let secret = secret.unwrap();
+        let Credential::ParingToken { pairing_token } = secret.unwrap() else {
+            panic!("expected a pairing token");
+        };
 
-        let res = fs::read_to_string(dir.path().join(CREDENTIAL_FILE)).unwrap();
-
-        assert_eq!(secret, res);
+        assert_eq!(pairing_token, "42");
     }
 
     #[tokio::test]
@@ -588,7 +535,9 @@ mod test {
 
         let path = dir.path().join(CONFIG_FILE_NAMES[0]);
 
-        fs::write(&path, toml::to_string(&expected).unwrap()).unwrap();
+        fs::write(&path, toml::to_string(&expected).unwrap())
+            .await
+            .unwrap();
 
         let path = Some(path.to_string_lossy().to_string());
 
@@ -618,7 +567,9 @@ mod test {
 
         let path = dir.path().join(CONFIG_FILE_NAMES[0]);
 
-        fs::write(&path, toml::to_string(&expected).unwrap()).unwrap();
+        fs::write(&path, toml::to_string(&expected).unwrap())
+            .await
+            .unwrap();
 
         let options = MessageHubOptions::get(None, Some(dir.path())).await;
 
@@ -661,7 +612,9 @@ mod test {
         let expected = "2".to_string();
 
         let dir = tempfile::TempDir::new().unwrap();
-        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+        fs::write(dir.path().join(CREDENTIAL_FILE), &expected)
+            .await
+            .unwrap();
 
         #[allow(deprecated)]
         let mut opt = MessageHubOptions {
@@ -692,7 +645,9 @@ mod test {
         let expected = "mock-id".to_string();
 
         let dir = tempfile::TempDir::new().unwrap();
-        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+        fs::write(dir.path().join(CREDENTIAL_FILE), &expected)
+            .await
+            .unwrap();
 
         #[allow(deprecated)]
         let mut opt = MessageHubOptions {
@@ -723,7 +678,9 @@ mod test {
         let expected = "mock-id".to_string();
 
         let dir = tempfile::TempDir::new().unwrap();
-        fs::write(dir.path().join(CREDENTIAL_FILE), &expected).unwrap();
+        fs::write(dir.path().join(CREDENTIAL_FILE), &expected)
+            .await
+            .unwrap();
 
         #[allow(deprecated)]
         let mut opt = MessageHubOptions {

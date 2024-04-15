@@ -21,7 +21,7 @@ use std::{net::Ipv6Addr, path::Path, time::Duration};
 use astarte_device_sdk::{
     builder::DeviceBuilder, prelude::*, store::SqliteStore, transport::mqtt::MqttConfig,
 };
-use astarte_message_hub::{init_pub_sub, AstarteMessageHub};
+use astarte_message_hub::{astarte::handler::init_pub_sub, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use eyre::{Context, OptionExt};
 use tokio::task::{AbortHandle, JoinSet};
@@ -55,7 +55,8 @@ pub async fn init_message_hub(
     let credentials_secret = read_env("E2E_CREDENTIAL_SECRET")?;
     let pairing_url = read_env("E2E_PAIRING_URL")?;
 
-    let mut mqtt_config = MqttConfig::new(realm, device_id, credentials_secret, pairing_url);
+    let mut mqtt_config =
+        MqttConfig::with_credential_secret(realm, device_id, credentials_secret, pairing_url);
 
     if read_env("E2E_IGNORE_SSL").is_ok() {
         mqtt_config.ignore_ssl_errors();
@@ -64,26 +65,27 @@ pub async fn init_message_hub(
     let path = path.to_str().ok_or_eyre("invalid_path")?;
 
     let uri = format!("sqlite://{path}/store.db");
-    let store = SqliteStore::new(&uri).await?;
+    let store = SqliteStore::from_uri(&uri).await?;
 
-    let (mut device, rx_events) = DeviceBuilder::new()
+    let (client, mut connection) = DeviceBuilder::new()
         .store(store)
         .connect(mqtt_config)
         .await?
         .build();
 
-    let (publisher, mut subscriber) = init_pub_sub(device.clone(), rx_events);
+    let (publisher, mut subscriber) = init_pub_sub(client);
 
     let message_hub = AstarteMessageHub::new(publisher);
 
     let server = tasks.spawn(async {
         let layer = ServiceBuilder::new()
-            .timeout(Duration::from_secs(10))
-            .layer(TraceLayer::new_for_grpc());
+            .layer(TraceLayer::new_for_grpc())
+            .into_inner();
 
         tonic::transport::Server::builder()
-            .trace_fn(|_| tracing::debug_span!("message_hub"))
             .layer(layer)
+            .trace_fn(|_| tracing::debug_span!("message_hub"))
+            .timeout(Duration::from_secs(10))
             .add_service(MessageHubServer::new(message_hub))
             .serve((Ipv6Addr::LOCALHOST, GRPC_PORT).into())
             .await
@@ -92,7 +94,7 @@ pub async fn init_message_hub(
 
     // Event loop for the astarte device sdk
     let event_loop = tasks.spawn(async move {
-        device
+        connection
             .handle_events()
             .await
             .wrap_err("disconnected from astarte")

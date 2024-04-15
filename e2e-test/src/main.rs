@@ -18,7 +18,7 @@
 
 use std::{env::VarError, future::Future};
 
-use astarte_device_sdk::{prelude::*, types::AstarteType};
+use astarte_device_sdk::{prelude::*, Value};
 use eyre::{bail, ensure, eyre, Context, OptionExt};
 use interfaces::ServerAggregate;
 use tempfile::tempdir;
@@ -150,7 +150,7 @@ async fn e2e_test(api: Api, msghub: MsgHub, mut node: Node) -> eyre::Result<()> 
 #[instrument(skip_all)]
 async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
     debug!("sending DeviceAggregate");
-    node.device
+    node.client
         .send_object(
             DeviceAggregate::name(),
             DeviceAggregate::path(),
@@ -171,7 +171,7 @@ async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
 
-        node.device
+        node.client
             .send(DeviceDatastream::name(), &format!("/{endpoint}"), value)
             .await?;
     }
@@ -185,7 +185,7 @@ async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
 
-        node.device
+        node.client
             .send(DeviceProperty::name(), &format!("/{endpoint}"), value)
             .await?;
     }
@@ -198,7 +198,7 @@ async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
     for &endpoint in ENDPOINTS {
         ensure!(data.contains_key(endpoint), "endpoint not found");
 
-        node.device
+        node.client
             .unset(DeviceProperty::name(), &format!("/{endpoint}"))
             .await?;
     }
@@ -266,8 +266,7 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
         assert_eq!(event.interface, ServerProperty::name());
         assert_eq!(event.path, format!("/{k}"));
 
-        let data = event.data.as_individual().ok_or_eyre("not an object")?;
-        assert_eq!(*data, AstarteType::Unset);
+        assert_eq!(event.data, Value::Unset);
     }
 
     Ok(())

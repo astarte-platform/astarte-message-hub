@@ -23,8 +23,7 @@
 use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
 use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::transport::grpc::GrpcConfig;
-use astarte_device_sdk::types::AstarteType;
-use astarte_device_sdk::Client;
+use astarte_device_sdk::{Client, EventLoop};
 use std::time;
 
 use clap::Parser;
@@ -62,9 +61,9 @@ async fn main() -> Result<(), DynError> {
     let args = Cli::parse();
     let node_id = Uuid::parse_str(&args.uuid).expect("Node id not specified");
 
-    let grpc_cfg = GrpcConfig::new(node_id, args.endpoint);
+    let grpc_cfg = GrpcConfig::from_url(node_id, args.endpoint)?;
 
-    let (mut node, mut rx_events) = DeviceBuilder::new()
+    let (client, mut connection) = DeviceBuilder::new()
         .store(MemoryStore::new())
         .interface_directory("examples/client/interfaces")
         .expect("failed to use interface directory")
@@ -73,25 +72,21 @@ async fn main() -> Result<(), DynError> {
         .expect("failed to connect")
         .build();
 
+    let client_cl = client.clone();
     let receive_handle = tokio::spawn(async move {
         info!("start receiving messages from the Astarte Message Hub Server");
-        while let Some(res) = rx_events.recv().await {
-            match res {
-                Ok(data) => {
-                    if let astarte_device_sdk::Aggregation::Individual(AstarteType::Boolean(val)) =
-                        data.data
-                    {
-                        info!("received {val}");
-                    }
+        loop {
+            match client_cl.recv().await {
+                Ok(event) => {
+                    info!("received {event:?}");
                 }
+                Err(astarte_device_sdk::Error::Disconnected) => break,
                 Err(err) => {
                     error!("error while receiving data from Astarte Message Hub Server: {err:?}")
                 }
             }
         }
     });
-
-    let node_cpy = node.clone();
 
     // Create a task to transmit
     let send_handle = tokio::spawn(async move {
@@ -109,7 +104,7 @@ async fn main() -> Result<(), DynError> {
 
             let elapsed_str = format!("Uptime for node {}: {}", args.uuid, elapsed);
 
-            node_cpy
+            client
                 .send(
                     "org.astarte-platform.rust.examples.datastream.DeviceDatastream",
                     "/uptime",
@@ -130,7 +125,7 @@ async fn main() -> Result<(), DynError> {
             send_handle.abort();
             receive_handle.abort();
         }
-        res = node.handle_events() => {
+        res = connection.handle_events() => {
             warn!("disconnected from Astarte");
             return res.map_err(Into::into);
         }

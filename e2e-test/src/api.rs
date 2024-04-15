@@ -142,7 +142,6 @@ fn check_astarte_value(data: &AstarteType, value: &Value) -> eyre::Result<bool> 
 
             arr == *exp
         }
-        AstarteType::Unset => value.is_null(),
     };
 
     Ok(check)
@@ -290,7 +289,6 @@ impl Api {
             AstarteType::DateTimeArray(v) => {
                 Value::from(v.iter().map(|d| d.to_rfc3339()).collect::<Vec<_>>())
             }
-            AstarteType::Unset => Value::Null,
         };
 
         debug!("value {value}");

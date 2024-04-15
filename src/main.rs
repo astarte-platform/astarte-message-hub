@@ -27,7 +27,7 @@
 use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
-use astarte_device_sdk::{AstarteDeviceSdk, Client, EventReceiver};
+use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
 use eyre::Context;
 use std::convert::identity;
 use std::net::Ipv6Addr;
@@ -35,8 +35,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::task::JoinSet;
 
-use astarte_message_hub::config::MessageHubOptions;
-use astarte_message_hub::{init_pub_sub, AstarteMessageHub};
+use astarte_message_hub::{
+    astarte::handler::init_pub_sub, config::MessageHubOptions, AstarteMessageHub,
+};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::Parser;
 use eyre::eyre;
@@ -67,10 +68,10 @@ async fn main() -> eyre::Result<()> {
     let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
 
     // Initialize an Astarte device
-    let (mut device, rx_events) = initialize_astarte_device_sdk(&mut options).await?;
+    let (client, mut connection) = initialize_astarte_device_sdk(&mut options).await?;
     info!("Connection to Astarte established.");
 
-    let (publisher, mut subscriber) = init_pub_sub(device.clone(), rx_events);
+    let (publisher, mut subscriber) = init_pub_sub(client);
 
     // Create a new message hub
     let message_hub = AstarteMessageHub::new(publisher);
@@ -79,7 +80,7 @@ async fn main() -> eyre::Result<()> {
 
     // Event loop for the astarte device sdk
     tasks.spawn(async move {
-        device
+        connection
             .handle_events()
             .await
             .wrap_err("Astarte disconnected")
@@ -115,7 +116,10 @@ async fn main() -> eyre::Result<()> {
 
 async fn initialize_astarte_device_sdk(
     msg_hub_opts: &mut MessageHubOptions,
-) -> eyre::Result<(AstarteDeviceSdk<SqliteStore, Mqtt>, EventReceiver)> {
+) -> eyre::Result<(
+    DeviceClient<SqliteStore>,
+    DeviceConnection<SqliteStore, Mqtt>,
+)> {
     tokio::fs::create_dir_all(&msg_hub_opts.store_directory)
         .await
         .wrap_err_with(|| {
@@ -127,14 +131,15 @@ async fn initialize_astarte_device_sdk(
 
     // retrieve the device id
     msg_hub_opts.obtain_device_id().await?;
+
     // Obtain the credentials secret, the store defaults to the current directory
-    msg_hub_opts.obtain_credential_secret().await?;
+    let cred = msg_hub_opts.obtain_credential().await?;
 
     // initialize the device options and mqtt config
     let mut mqtt_config = MqttConfig::new(
         &msg_hub_opts.realm,
         msg_hub_opts.device_id.as_ref().unwrap(),
-        msg_hub_opts.credentials_secret.as_ref().unwrap(),
+        cred,
         &msg_hub_opts.pairing_url,
     );
 
@@ -151,7 +156,7 @@ async fn initialize_astarte_device_sdk(
         mqtt_config.keepalive(Duration::from_secs(keep_alive));
     }
 
-    let mut builder = DeviceBuilder::new();
+    let mut builder = DeviceBuilder::new().writable_dir(&msg_hub_opts.store_directory)?;
 
     if let Some(ref int_dir) = msg_hub_opts.interfaces_directory {
         debug!("reading interfaces from {}", int_dir.display());
@@ -165,10 +170,10 @@ async fn initialize_astarte_device_sdk(
         .map(|d| format!("sqlite://{d}/database.db"))
         .ok_or_else(|| eyre!("non UTF-8 store directory option"))?;
 
-    let store = SqliteStore::new(&store_path).await?;
+    let store = SqliteStore::from_uri(&store_path).await?;
 
     // create a device instance
-    let (device, rx_events) = builder.store(store).connect(mqtt_config).await?.build();
+    let (client, connection) = builder.store(store).connect(mqtt_config).await?.build();
 
-    Ok((device, rx_events))
+    Ok((client, connection))
 }

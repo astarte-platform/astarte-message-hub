@@ -30,7 +30,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
+use crate::astarte::{AstartePublisher, AstarteSubscriber};
 
 /// Main struct for the Astarte message hub.
 pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber> {
@@ -240,9 +240,9 @@ mod test {
     use tokio::sync::mpsc::Receiver;
     use tonic::{Request, Status};
 
-    use crate::astarte_message_hub::AstarteNode;
-    use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
+    use crate::astarte::{AstartePublisher, AstarteSubscriber};
     use crate::error::AstarteMessageHubError;
+    use crate::server::AstarteNode;
 
     use super::AstarteMessageHub;
 
@@ -568,8 +568,7 @@ mod test {
             ))
         });
 
-        let astarte_message: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte);
+        let astarte_message = AstarteMessageHub::new(mock_astarte);
 
         let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
 

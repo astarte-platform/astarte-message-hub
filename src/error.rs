@@ -23,7 +23,6 @@
 
 use std::path::PathBuf;
 
-use astarte_device_sdk::builder::BuilderError;
 use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
 use thiserror::Error;
 
@@ -79,10 +78,6 @@ pub enum AstarteMessageHubError {
     /// Astarte Message Hub proto error
     #[error("Astarte Message Hub proto error, {0}")]
     Proto(#[from] MessageHubProtoError),
-
-    /// Failed to build an Astarte device
-    #[error("failed to build an astarte device, {0}")]
-    BuildDevice(#[from] BuilderError),
 }
 
 /// Reason why a configuration is invalid.

@@ -17,12 +17,12 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-//! Contains functionality related to the Astarte handlers:
-//! - the required traits to implement an Astarte handler
-//! - a ready-to-use implementation of an Astarte handler
 
-pub(crate) mod astarte;
-pub mod astarte_handler;
+//! Wrapper on the traits and structs for the device sdk.
 
+#[cfg(not(test))]
+pub(crate) use astarte_device_sdk::{introspection::DynamicIntrospection, Client, DeviceClient};
 #[cfg(test)]
-mod mock_astarte_sdk;
+pub(crate) use astarte_device_sdk_mock::{
+    Client, DynamicIntrospection, MockDeviceClient as DeviceClient,
+};

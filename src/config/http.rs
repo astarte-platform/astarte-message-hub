@@ -351,7 +351,7 @@ mod test {
             .to_string_lossy()
             .to_string();
 
-        let server = HttpConfigProvider::serve("127.0.0.1:8080", Arc::clone(&notify), &toml_file)
+        let server = HttpConfigProvider::serve("127.0.0.1:8087", Arc::clone(&notify), &toml_file)
             .await
             .expect("failed to create server");
 
@@ -376,7 +376,7 @@ mod test {
 
         let client = reqwest::Client::new();
         let resp = client
-            .post("http://localhost:8080/config")
+            .post("http://localhost:8087/config")
             .json(&body)
             .send()
             .await
