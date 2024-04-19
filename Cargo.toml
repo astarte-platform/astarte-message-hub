@@ -37,10 +37,11 @@ axum = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 displaydoc = { workspace = true }
-futures = { workspace = true }
 env_logger = { workspace = true }
 eyre = { workspace = true }
+futures = { workspace = true }
 hyper = { workspace = true }
+itertools = { workspace = true }
 log = { workspace = true }
 pbjson-types = { workspace = true }
 prost = { workspace = true }
@@ -79,6 +80,7 @@ env_logger = "0.11.3"
 eyre = "0.6.12"
 futures = "0.3.30"
 hyper = "0.14.28"
+itertools = "0.12.1"
 log = "0.4.21"
 mockall = "0.12.1"
 pbjson-types = "0.6.0"

@@ -38,17 +38,17 @@ pub async fn get_options_from_base_toml() -> Result<MessageHubOptions, AstarteMe
         get_options_from_toml(&toml_str)
     } else {
         let err_msg = "No configuration file found in the base locations.";
-        Err(AstarteMessageHubError::FatalError(err_msg.to_string()))
+        Err(AstarteMessageHubError::Fatal(err_msg.to_string()))
     }
 }
 
 /// Get the message hub options from the toml file passed as input.
 pub fn get_options_from_toml(toml_str: &str) -> Result<MessageHubOptions, AstarteMessageHubError> {
     toml::from_str::<MessageHubOptions>(toml_str)
-        .map_err(AstarteMessageHubError::ConfigFileError)
+        .map_err(AstarteMessageHubError::ConfigFile)
         .and_then(|opt| {
             opt.validate().map_err(|err| {
-                AstarteMessageHubError::FatalError(format!("Invalid configuration file: {}", err))
+                AstarteMessageHubError::Fatal(format!("Invalid configuration file: {}", err))
             })?;
 
             Ok(opt)
