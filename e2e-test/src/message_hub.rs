@@ -181,7 +181,7 @@ where
         async move {
             let res = service.inner.call(req).await;
 
-            trace!("inner call resolved");
+            trace!("server inner call resolved");
 
             service.barrier.wait().await;
 

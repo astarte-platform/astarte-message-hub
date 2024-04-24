@@ -16,11 +16,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use std::str::FromStr;
 use std::{env::VarError, future::Future, sync::Arc};
 
 use astarte_device_sdk::{prelude::*, Value};
 use eyre::{bail, ensure, eyre, Context, OptionExt};
 use interfaces::ServerAggregate;
+use itertools::Itertools;
 use tempfile::tempdir;
 use tokio::{sync::Barrier, task::JoinSet};
 use tracing::{debug, error, instrument};
@@ -31,8 +33,9 @@ use crate::{
     api::Api,
     device_sdk::{init_node, Node},
     interfaces::{
-        DeviceAggregate, DeviceDatastream, DeviceProperty, ServerDatastream, ServerProperty,
-        ENDPOINTS, INTERFACE_NAMES,
+        AdditionalDeviceDatastream, AdditionalServerDatastream, DeviceAggregate, DeviceDatastream,
+        DeviceProperty, ServerDatastream, ServerProperty, ENDPOINTS, INTERFACE_NAMES,
+        INTERFACE_NAMES_WITH_ADDED,
     },
     message_hub::{init_message_hub, MsgHub},
 };
@@ -147,6 +150,17 @@ async fn e2e_test(
 
     // Receive the server data
     receive_server_data(&mut node, &api).await?;
+
+    // Extend the node interfaces
+    let additional_interfaces = additional_interfaces()?;
+    extend_node_interfaces(&mut node, &api, &barrier, additional_interfaces.clone()).await?;
+
+    // Remove some node interfaces
+    let to_remove = additional_interfaces
+        .into_iter()
+        .map(|i| i.interface_name().to_string())
+        .collect();
+    remove_node_interfaces(&mut node, &api, &barrier, to_remove).await?;
 
     // Disconnect the message hub and cleanup
     node.close().await?;
@@ -313,6 +327,100 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
 
         assert_eq!(event.data, Value::Unset);
     }
+
+    Ok(())
+}
+
+#[instrument(skip_all)]
+fn additional_interfaces() -> eyre::Result<Vec<astarte_device_sdk::interface::Interface>> {
+    let to_add = [
+        AdditionalDeviceDatastream::interface(),
+        AdditionalServerDatastream::interface(),
+    ]
+    .map(astarte_device_sdk::interface::Interface::from_str)
+    .into_iter()
+    .try_collect()?;
+
+    Ok(to_add)
+}
+
+#[instrument(skip_all)]
+async fn extend_node_interfaces(
+    node: &mut Node,
+    api: &Api,
+    barrier: &Barrier,
+    to_add: Vec<astarte_device_sdk::interface::Interface>,
+) -> eyre::Result<()> {
+    debug!("extending interfaces with AdditionalDeviceDatastream");
+    let client = node.client.clone();
+    let handle = tokio::spawn(async move { client.extend_interfaces_vec(to_add).await });
+
+    barrier.wait().await;
+
+    let mut added = handle.await??;
+    added.sort();
+
+    let expected = vec![
+        "org.astarte-platform.rust.e2etest.AdditionalDeviceDatastream".to_string(),
+        "org.astarte-platform.rust.e2etest.AdditionalServerDatastream".to_string(),
+    ];
+
+    assert_eq!(added, expected);
+
+    // Check that adding the interfaces worked by checking the message hub interfaces
+    retry(20, || async {
+        let mut interfaces = api.interfaces().await?;
+        interfaces.sort_unstable();
+
+        debug!(?interfaces);
+
+        ensure!(
+            interfaces == INTERFACE_NAMES_WITH_ADDED,
+            "different number of interfaces"
+        );
+
+        Ok(())
+    })
+    .await?;
+
+    Ok(())
+}
+
+#[instrument(skip_all)]
+async fn remove_node_interfaces(
+    node: &mut Node,
+    api: &Api,
+    barrier: &Barrier,
+    mut to_remove: Vec<String>,
+) -> eyre::Result<()> {
+    debug!("removing interfaces {to_remove:?}");
+    let client = node.client.clone();
+    let to_remove_cl = to_remove.clone();
+    let handle = tokio::spawn(async move { client.remove_interfaces_vec(to_remove_cl).await });
+
+    barrier.wait().await;
+
+    let mut removed = handle.await??;
+    removed.sort();
+    to_remove.sort();
+
+    assert_eq!(removed, to_remove);
+
+    // Check that removing the interfaces worked by checking the message hub interfaces
+    retry(20, || async {
+        let mut interfaces = api.interfaces().await?;
+        interfaces.sort_unstable();
+
+        debug!(?interfaces);
+
+        ensure!(
+            interfaces == INTERFACE_NAMES,
+            "different number of interfaces"
+        );
+
+        Ok(())
+    })
+    .await?;
 
     Ok(())
 }

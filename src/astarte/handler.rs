@@ -59,6 +59,7 @@ pub enum DeviceError {
     Convert(#[from] MessageHubProtoError),
     /// subscriber already disconnected
     Disconnected,
+    // TODO: check if still necessary
     /// interface json is not UTF-8
     InterfaceNotUtf8(#[from] Utf8Error),
     /// invalid interface json in node introspection
@@ -365,7 +366,7 @@ impl AstarteSubscriber for DevicePublisher {
             .client
             .remove_interfaces_vec(to_remove_from_intr)
             .await?;
-        info!("interfaces removed");
+        debug!("interfaces removed");
 
         let sub = rw_subscribers
             .get_mut(node_id)

@@ -36,6 +36,7 @@ color-eyre = { workspace = true }
 eyre = { workspace = true }
 futures = { workspace = true }
 hyper = { workspace = true }
+itertools = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

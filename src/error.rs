@@ -21,9 +21,9 @@
 
 //! Errors for the message hub.
 
-use astarte_device_sdk::interface::error::InterfaceError;
 use std::path::PathBuf;
 
+use astarte_device_sdk::interface::error::InterfaceError;
 use astarte_device_sdk::introspection::AddInterfaceError;
 use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
 use log::{debug, error};

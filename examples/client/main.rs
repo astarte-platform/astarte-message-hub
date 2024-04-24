@@ -24,6 +24,7 @@ use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
 use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::transport::grpc::GrpcConfig;
 use astarte_device_sdk::{Client, EventLoop};
+
 use std::time;
 
 use clap::Parser;
