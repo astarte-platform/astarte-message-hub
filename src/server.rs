@@ -32,7 +32,7 @@ use std::task::{Context, Poll};
 use astarte_message_hub_proto::types::InterfaceJson;
 use astarte_message_hub_proto::AstarteMessage;
 use clap::__macro_refs::once_cell::sync::Lazy;
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::body::BoxBody;
@@ -263,6 +263,24 @@ where
     }
 }
 
+impl<T> AstarteMessageHub<T>
+where
+    T: Clone + AstartePublisher + AstarteSubscriber,
+{
+    fn retrieve_node_id<'a: 'b, 'b, R>(
+        &'a self,
+        request: &'a Request<R>,
+    ) -> Result<&'b NodeId, Status> {
+        if let Some(node_id) = request.extensions().get::<NodeId>() {
+            trace!("node id {node_id} checked");
+            return Ok(node_id);
+        }
+
+        error!("missing node id");
+        Err(Status::internal("missing node id"))
+    }
+}
+
 #[tonic::async_trait]
 impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
     astarte_message_hub_proto::message_hub_server::MessageHub for AstarteMessageHub<T>
@@ -314,6 +332,8 @@ impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
                 err.to_string()
             ))
         })?;
+
+        debug!("Attaching node {id}");
 
         let astarte_node = AstarteNode::new(id, node.interface_jsons);
 
@@ -374,9 +394,9 @@ impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
         &self,
         request: Request<AstarteMessage>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
-        if let Some(node_id) = request.extensions().get::<NodeId>() {
-            debug!("Node {node_id} Send Request");
-        }
+        // verify that the request contains a Node Id in the metadata
+        let node_id = self.retrieve_node_id(&request)?;
+        debug!("Node {node_id} Send Request");
 
         let astarte_message = request.into_inner();
 
@@ -393,7 +413,9 @@ impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
         &self,
         request: Request<astarte_message_hub_proto::Node>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
-        info!("Node Detach Request => {:?}", request);
+        let node_id = self.retrieve_node_id(&request)?;
+        info!("Node {node_id} Detach Request => {:?}", request);
+
         let node = request.into_inner();
 
         let id = Uuid::parse_str(&node.uuid).map_err(|err| {
@@ -627,7 +649,12 @@ mod test {
             timestamp: None,
         };
 
-        let req_astarte_message = Request::new(astarte_message);
+        let mut req_astarte_message = Request::new(astarte_message);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
         let send_result = astarte_message_hub.send(req_astarte_message).await;
 
         assert!(send_result.is_ok())
@@ -660,7 +687,10 @@ mod test {
             timestamp: None,
         };
 
-        let req_astarte_message = Request::new(astarte_message);
+        let mut req_astarte_message = Request::new(astarte_message);
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
         let send_result = astarte_message_hub.send(req_astarte_message).await;
 
         assert!(send_result.is_err());
@@ -690,9 +720,12 @@ mod test {
             interface_jsons: interfaces,
         };
 
-        let req_node_attach = Request::new(node.clone());
+        let mut req_node_attach = Request::new(node.clone());
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
         assert!(astarte_message.attach(req_node_attach).await.is_ok());
-        let req_node_detach = Request::new(node);
+        let mut req_node_detach = Request::new(node);
+        req_node_detach.extensions_mut().insert(NodeId(TEST_UUID));
         let detach_result = astarte_message.detach(req_node_detach).await;
 
         assert!(detach_result.is_ok())
@@ -713,7 +746,10 @@ mod test {
             interface_jsons: vec![],
         };
 
-        let req_node = Request::new(node_introspection);
+        let mut req_node = Request::new(node_introspection);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_node.extensions_mut().insert(NodeId(TEST_UUID));
+
         let detach_result = astarte_message.detach(req_node).await;
 
         assert!(detach_result.is_err());
@@ -746,7 +782,10 @@ mod test {
             interface_jsons: interfaces,
         };
 
-        let req_node = Request::new(node);
+        let mut req_node = Request::new(node);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_node.extensions_mut().insert(NodeId(TEST_UUID));
+
         let detach_result = astarte_message.detach(req_node).await;
 
         assert!(detach_result.is_err());
@@ -781,9 +820,12 @@ mod test {
             interface_jsons: interfaces,
         };
 
-        let req_node_attach = Request::new(node.clone());
+        let mut req_node_attach = Request::new(node.clone());
+        req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
         assert!(astarte_message.attach(req_node_attach).await.is_ok());
-        let req_node_detach = Request::new(node);
+
+        let mut req_node_detach = Request::new(node);
+        req_node_detach.extensions_mut().insert(NodeId(TEST_UUID));
         let detach_result = astarte_message.detach(req_node_detach).await;
 
         assert!(detach_result.is_err());
