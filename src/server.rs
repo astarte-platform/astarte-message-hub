@@ -31,7 +31,6 @@ use std::task::{Context, Poll};
 
 use astarte_message_hub_proto::types::InterfaceJson;
 use astarte_message_hub_proto::AstarteMessage;
-use clap::__macro_refs::once_cell::sync::Lazy;
 use log::{debug, error, info, trace};
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
@@ -105,9 +104,15 @@ pub enum InterceptorError {
     IdNotFound,
     /// Couldn't decode metadata binary value
     MetadataBytes(#[from] InvalidMetadataValueBytes),
+    /// Invalid URI
+    InvalidUri(#[from] http::uri::InvalidUri),
     /// Error returned by the inner service
     #[error(transparent)]
     Inner(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+pub(crate) fn is_attach(uri: &http::uri::Uri) -> bool {
+    matches!(uri.path(), "/astarteplatform.msghub.MessageHub/Attach")
 }
 
 #[derive(Clone, Default)]
@@ -151,13 +156,9 @@ impl<S> NodeIdInterceptor<S> {
         S::Future: Send + 'static,
         S::Error: Into<InterceptorError>,
     {
-        static ATTACH_PATH: Lazy<http::uri::PathAndQuery> = Lazy::new(|| {
-            http::uri::PathAndQuery::from_static("/astarteplatform.msghub.MessageHub/Attach")
-        });
-
         // check that the Node ID is present inside the metadata on all gRPC requests apart from the
         // attach ones
-        if req.uri().path_and_query() == Some(&ATTACH_PATH) {
+        if is_attach(req.uri()) {
             return self.inner.call(req).await.map_err(Into::into);
         }
 
