@@ -111,6 +111,17 @@ pub enum InterceptorError {
     Inner(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
+impl From<InterceptorError> for Status {
+    fn from(value: InterceptorError) -> Self {
+        match value {
+            InterceptorError::AbsentId | InterceptorError::IdNotFound => {
+                Status::unauthenticated("node not authenticated")
+            }
+            err => Status::invalid_argument(format!("invalid argument: {err}")),
+        }
+    }
+}
+
 pub(crate) fn is_attach(uri: &http::uri::Uri) -> bool {
     matches!(uri.path(), "/astarteplatform.msghub.MessageHub/Attach")
 }
@@ -162,6 +173,15 @@ impl<S> NodeIdInterceptor<S> {
             return self.inner.call(req).await.map_err(Into::into);
         }
 
+        let checked_req = Self::check_node_id(req, self.msg_hub_nodes).await?;
+
+        self.inner.call(checked_req).await.map_err(Into::into)
+    }
+
+    async fn check_node_id(
+        req: hyper::Request<Body>,
+        nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
+    ) -> Result<hyper::Request<Body>, InterceptorError> {
         debug!("checking the NodeId in the request metadata");
         // use tonic::Metadata to access the metadata and avoid to manually perform a base64
         // conversion of the uuid.
@@ -169,14 +189,15 @@ impl<S> NodeIdInterceptor<S> {
         let metadata = MetadataMap::from_headers(parts.headers);
 
         // retrieve the node id from the metadata
-        let node_uuid = match node_id_from_bin(&metadata)? {
+        let opt = node_id_from_bin(&metadata)?;
+        let node_uuid = match opt {
             Some(node_uuid) => node_uuid,
             None => node_id_from_ascii(&metadata)?.ok_or(InterceptorError::AbsentId)?,
         };
 
         trace!("NodeId: {node_uuid}");
 
-        if !self.msg_hub_nodes.read().await.contains_key(&node_uuid) {
+        if !nodes.read().await.contains_key(&node_uuid) {
             debug!("NodeId not found");
             return Err(InterceptorError::IdNotFound);
         }
@@ -188,7 +209,7 @@ impl<S> NodeIdInterceptor<S> {
         parts.extensions.insert(NodeId(node_uuid));
         let req = http::Request::from_parts(parts, body);
 
-        self.inner.call(req).await.map_err(Into::into)
+        Ok(req)
     }
 }
 
