@@ -204,6 +204,8 @@ sequenceDiagram
     Node1->>AstarteMessageHub: send(message)
     alt check Node UUID metadata
         AstarteMessageHub ->> Astarte: sendData()
+    else Node UUID check failed
+        AstarteMessageHub ->> Node1: Unauthorized
     end
     alt when the send process fails
          AstarteMessageHub->>Node1: Unable to send message
@@ -230,6 +232,8 @@ sequenceDiagram
     Node1->>AstarteMessageHub: detach(node)
     alt check Node UUID metadata
         AstarteMessageHub ->> Astarte: sendIntrospection()
+    else Node UUID check failed
+        AstarteMessageHub ->> Node1: Unauthorized
     end
 
     alt when the introspection process fails
