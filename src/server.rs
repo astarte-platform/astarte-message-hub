@@ -24,7 +24,6 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -40,7 +39,6 @@ use tonic::metadata::MetadataMap;
 use tonic::{Request, Response, Status};
 use tower::{Layer, Service};
 use uuid::Uuid;
-use zbus::export::futures_util::FutureExt;
 
 use crate::astarte::{AstartePublisher, AstarteSubscriber};
 
@@ -106,9 +104,8 @@ pub enum InterceptorError {
     MetadataBytes(#[from] InvalidMetadataValueBytes),
     /// Invalid URI
     InvalidUri(#[from] http::uri::InvalidUri),
-    /// Error returned by the inner service
-    #[error(transparent)]
-    Inner(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+    /// Http error
+    Http(#[from] http::Error),
 }
 
 impl From<InterceptorError> for Status {
@@ -155,32 +152,15 @@ pub struct NodeIdInterceptor<S> {
 }
 
 impl<S> NodeIdInterceptor<S> {
-    pub async fn handle_req(
-        mut self,
-        req: hyper::Request<Body>,
-    ) -> Result<S::Response, InterceptorError>
-    where
-        S: Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>>
-            + Clone
-            + Send
-            + 'static,
-        S::Future: Send + 'static,
-        S::Error: Into<InterceptorError>,
-    {
-        // check that the Node ID is present inside the metadata on all gRPC requests apart from the
-        // attach ones
-        if is_attach(req.uri()) {
-            return self.inner.call(req).await.map_err(Into::into);
-        }
-
-        let checked_req = Self::check_node_id(req, self.msg_hub_nodes).await?;
-
-        self.inner.call(checked_req).await.map_err(Into::into)
-    }
-
+    /// Check if the node ID is present in the request and if a node actually exists with that ID.
+    ///
+    /// This associated function does not contain a reference to `Self` since `NodeIdInterceptor`
+    /// cannot implement the `Sync` trait (as services in tonic cannot be Sync). To circumvent this
+    /// problem, we pass a reference to the message hub nodes in the input to perform the necessary
+    /// checks.
     async fn check_node_id(
+        nodes: &Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
         req: hyper::Request<Body>,
-        nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
     ) -> Result<hyper::Request<Body>, InterceptorError> {
         debug!("checking the NodeId in the request metadata");
         // use tonic::Metadata to access the metadata and avoid to manually perform a base64
@@ -261,17 +241,14 @@ fn node_id_from_ascii(metadata: &MetadataMap) -> Result<Option<Uuid>, Intercepto
         .map_err(InterceptorError::Uuid)
 }
 
-type BoxFuture<'a, T> = Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
-
 impl<S> Service<hyper::Request<Body>> for NodeIdInterceptor<S>
 where
     S: Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>> + Clone + Send + 'static,
     S::Future: Send + 'static,
-    S::Error: Into<InterceptorError>,
 {
     type Response = S::Response;
-    type Error = InterceptorError;
-    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Error = S::Error;
+    type Future = futures::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx).map_err(S::Error::into)
@@ -279,9 +256,25 @@ where
 
     fn call(&mut self, req: hyper::Request<Body>) -> Self::Future {
         let clone = self.clone();
-        let service = std::mem::replace(self, clone);
+        let mut service = std::mem::replace(self, clone);
 
-        service.handle_req(req).boxed()
+        Box::pin(async move {
+            // check that the Node ID is present inside the metadata on all gRPC requests apart from the
+            // attach ones
+            if is_attach(req.uri()) {
+                return service.inner.call(req).await;
+            }
+
+            let checked_req = match Self::check_node_id(&service.msg_hub_nodes, req).await {
+                Ok(req) => req,
+                // return a response with the status code related to the given error
+                Err(err) => {
+                    return Ok(Status::from(err).to_http());
+                }
+            };
+
+            service.inner.call(checked_req).await
+        })
     }
 }
 
@@ -479,7 +472,7 @@ mod test {
     use tokio::sync::{mpsc, RwLock};
     use tonic::body::BoxBody;
     use tonic::metadata::{MetadataMap, MetadataValue};
-    use tonic::{Request, Status};
+    use tonic::{Code, Request, Status};
     use tower::{Service, ServiceBuilder};
     use uuid::Uuid;
 
@@ -937,7 +930,8 @@ mod test {
 
     fn create_node_interceptor_service(
         hm: HashMap<Uuid, AstarteNode>,
-    ) -> impl Service<hyper::Request<Body>, Error = InterceptorError> {
+    ) -> impl Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>, Error = InterceptorError>
+    {
         let msg_hub_nodes = Arc::new(RwLock::new(hm));
 
         ServiceBuilder::new()
@@ -947,14 +941,13 @@ mod test {
                     Response::builder()
                         .status(StatusCode::OK)
                         .body(BoxBody::default())
-                        .map_err(|err| InterceptorError::Inner(Box::from(err))),
+                        .map_err(InterceptorError::Http),
                 )
             })
     }
 
     #[tokio::test]
     async fn test_node_id_interceptor() {
-        env_logger::init();
         // don't check node id if the request is an Attach
         let req =
             create_http_req("http://localhost:50051/astarteplatform.msghub.MessageHub/Attach");
@@ -970,15 +963,29 @@ mod test {
         let req = create_http_req("http://localhost:50051/");
 
         let res = service.call(req).await;
+        let status = res
+            .ok()
+            .unwrap()
+            .headers_mut()
+            .remove("grpc-status")
+            .unwrap();
+        let status = Code::from_bytes(status.as_bytes());
 
-        assert!(matches!(res.err().unwrap(), InterceptorError::AbsentId));
+        assert_eq!(status, Code::Unauthenticated);
 
         // CASE: node-id-bin present but not inserted in the Message Hub Node lists
         let req = create_http_req_with_metadata_node_id("http://localhost:50051/");
 
         let res = service.call(req).await;
+        let status = res
+            .ok()
+            .unwrap()
+            .headers_mut()
+            .remove("grpc-status")
+            .unwrap();
+        let status = Code::from_bytes(status.as_bytes());
 
-        assert!(matches!(res.err().unwrap(), InterceptorError::IdNotFound));
+        assert_eq!(status, Code::Unauthenticated);
 
         // CASE: node-id-bin present but not inserted in the Message Hub Node lists
         let req = create_http_req_with_metadata_node_id("http://localhost:50051/");
