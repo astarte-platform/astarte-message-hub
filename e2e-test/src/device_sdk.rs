@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use astarte_device_sdk::{
     builder::DeviceBuilder, prelude::*, store::memory::MemoryStore, transport::grpc::GrpcConfig,
@@ -24,6 +24,7 @@ use astarte_device_sdk::{
 };
 use eyre::Context;
 use tokio::{
+    sync::Barrier,
     task::{AbortHandle, JoinSet},
     time::timeout,
 };
@@ -53,7 +54,10 @@ impl Node {
 }
 
 #[instrument(skip_all)]
-pub async fn init_node(tasks: &mut JoinSet<eyre::Result<()>>) -> eyre::Result<Node> {
+pub async fn init_node(
+    barrier: &Arc<Barrier>,
+    tasks: &mut JoinSet<eyre::Result<()>>,
+) -> eyre::Result<Node> {
     let grpc = GrpcConfig::from_url(UUID, format!("http://localhost:{GRPC_PORT}"))?;
 
     let mut builder = DeviceBuilder::new().store(MemoryStore::new());
@@ -64,6 +68,7 @@ pub async fn init_node(tasks: &mut JoinSet<eyre::Result<()>>) -> eyre::Result<No
 
     debug!("Start connecting to the msghub");
     let handle = tokio::spawn(async move { builder.connect(grpc).await });
+    barrier.wait().await;
     info!("Connected to the message hub");
 
     let (client, mut connection) = handle.await??.build();

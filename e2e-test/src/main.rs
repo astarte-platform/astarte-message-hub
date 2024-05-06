@@ -16,13 +16,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{env::VarError, future::Future};
+use std::{env::VarError, future::Future, sync::Arc};
 
 use astarte_device_sdk::{prelude::*, Value};
 use eyre::{bail, ensure, eyre, Context, OptionExt};
 use interfaces::ServerAggregate;
 use tempfile::tempdir;
-use tokio::task::JoinSet;
+use tokio::{sync::Barrier, task::JoinSet};
 use tracing::{debug, error, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use uuid::{uuid, Uuid};
@@ -76,10 +76,13 @@ async fn main() -> eyre::Result<()> {
 
     let mut tasks = JoinSet::new();
 
-    let msghub = init_message_hub(dir.path(), &mut tasks).await?;
-    let node = init_node(&mut tasks).await?;
+    // Barrier to sync client and server
+    let barrier = Arc::new(Barrier::new(2));
 
-    tasks.spawn(async move { e2e_test(api, msghub, node).await });
+    let msghub = init_message_hub(dir.path(), barrier.clone(), &mut tasks).await?;
+    let node = init_node(&barrier, &mut tasks).await?;
+
+    tasks.spawn(async move { e2e_test(api, msghub, node, barrier).await });
 
     while let Some(res) = tasks.join_next().await {
         match res {
@@ -117,7 +120,12 @@ where
 }
 
 #[instrument(skip_all)]
-async fn e2e_test(api: Api, msghub: MsgHub, mut node: Node) -> eyre::Result<()> {
+async fn e2e_test(
+    api: Api,
+    msghub: MsgHub,
+    mut node: Node,
+    barrier: Arc<Barrier>,
+) -> eyre::Result<()> {
     // Check that the attach worked by checking the message hub interfaces
     retry(20, || async {
         let mut interfaces = api.interfaces().await?;
@@ -135,7 +143,7 @@ async fn e2e_test(api: Api, msghub: MsgHub, mut node: Node) -> eyre::Result<()> 
     .await?;
 
     // Send the device data
-    send_device_data(&node, &api).await?;
+    send_device_data(&node, &api, &barrier).await?;
 
     // Receive the server data
     receive_server_data(&mut node, &api).await?;
@@ -148,7 +156,7 @@ async fn e2e_test(api: Api, msghub: MsgHub, mut node: Node) -> eyre::Result<()> 
 }
 
 #[instrument(skip_all)]
-async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
+async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Result<()> {
     debug!("sending DeviceAggregate");
     node.client
         .send_object(
@@ -157,6 +165,8 @@ async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
             DeviceAggregate::default(),
         )
         .await?;
+
+    barrier.wait().await;
 
     let data: DeviceAggregate = api
         .aggregate_value(DeviceAggregate::name(), DeviceAggregate::path())
@@ -174,6 +184,8 @@ async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
         node.client
             .send(DeviceDatastream::name(), &format!("/{endpoint}"), value)
             .await?;
+
+        barrier.wait().await;
     }
 
     debug!("checking result");
@@ -188,6 +200,8 @@ async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
         node.client
             .send(DeviceProperty::name(), &format!("/{endpoint}"), value)
             .await?;
+
+        barrier.wait().await;
     }
 
     debug!("checking result");
@@ -201,6 +215,8 @@ async fn send_device_data(node: &Node, api: &Api) -> eyre::Result<()> {
         node.client
             .unset(DeviceProperty::name(), &format!("/{endpoint}"))
             .await?;
+
+        barrier.wait().await;
     }
 
     let data = api.property(DeviceProperty::name()).await?;

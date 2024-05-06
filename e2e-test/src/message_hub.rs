@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{net::Ipv6Addr, path::Path, time::Duration};
+use std::{net::Ipv6Addr, path::Path, sync::Arc, time::Duration};
 
 use astarte_device_sdk::{
     builder::DeviceBuilder, prelude::*, store::SqliteStore, transport::mqtt::MqttConfig,
@@ -24,8 +24,12 @@ use astarte_device_sdk::{
 use astarte_message_hub::{astarte::handler::init_pub_sub, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use eyre::{Context, OptionExt};
-use tokio::task::{AbortHandle, JoinSet};
-use tower::ServiceBuilder;
+use futures::{future::BoxFuture, FutureExt};
+use tokio::{
+    sync::Barrier,
+    task::{AbortHandle, JoinSet},
+};
+use tower::{Layer, Service, ServiceBuilder};
 use tower_http::trace::TraceLayer;
 use tracing::instrument;
 
@@ -48,6 +52,7 @@ impl MsgHub {
 #[instrument(skip_all)]
 pub async fn init_message_hub(
     path: &Path,
+    barrier: Arc<Barrier>,
     tasks: &mut JoinSet<eyre::Result<()>>,
 ) -> eyre::Result<MsgHub> {
     let realm = read_env("E2E_REALM")?;
@@ -77,8 +82,9 @@ pub async fn init_message_hub(
 
     let message_hub = AstarteMessageHub::new(publisher);
 
-    let server = tasks.spawn(async {
+    let server = tasks.spawn(async move {
         let layer = ServiceBuilder::new()
+            .layer(BarrierLayer::new(barrier))
             .layer(TraceLayer::new_for_grpc())
             .into_inner();
 
@@ -113,4 +119,69 @@ pub async fn init_message_hub(
         event_loop,
         forwarder,
     })
+}
+
+#[derive(Debug, Clone)]
+struct BarrierLayer {
+    barrier: Arc<Barrier>,
+}
+
+impl BarrierLayer {
+    fn new(barrier: Arc<Barrier>) -> Self {
+        Self { barrier }
+    }
+}
+
+impl<S> Layer<S> for BarrierLayer {
+    type Service = BarrierService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        BarrierService {
+            inner,
+            barrier: self.barrier.clone(),
+        }
+    }
+}
+
+/// Wait for the client to send a message and sync after the response is completed.
+#[derive(Debug, Clone)]
+struct BarrierService<S> {
+    barrier: Arc<Barrier>,
+    inner: S,
+}
+
+impl<S, R> Service<R> for BarrierService<S>
+where
+    S: Service<R> + Clone + Send + 'static,
+    S::Future: Send,
+    S::Response: Send,
+    S::Error: Send,
+    R: Send + 'static,
+{
+    type Response = S::Response;
+
+    type Error = S::Error;
+
+    type Future = BoxFuture<'static, Result<S::Response, S::Error>>;
+
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: R) -> Self::Future {
+        let service = self.clone();
+        let mut service = std::mem::replace(self, service);
+
+        async move {
+            let res = service.inner.call(req).await;
+
+            service.barrier.wait().await;
+
+            res
+        }
+        .boxed()
+    }
 }

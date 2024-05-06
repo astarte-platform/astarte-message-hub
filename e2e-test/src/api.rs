@@ -50,7 +50,7 @@ impl<T> ApiData<T> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct WithTimestamp<T> {
     #[serde(flatten)]
     value: T,
@@ -187,7 +187,7 @@ impl Api {
 
     pub async fn aggregate_value<T>(&self, interface: &str, path: &str) -> eyre::Result<Vec<T>>
     where
-        T: DeserializeOwned,
+        T: DeserializeOwned + Debug,
     {
         let url = format!("{}/interfaces/{interface}", self.url);
 
@@ -205,7 +205,9 @@ impl Api {
             .data
             .remove(path.trim_matches('/'))
             .map(|v| v.into_iter().map(|v| v.value).collect())
-            .ok_or_else(|| eyre!("missing {path} in response"))
+            .ok_or_else(|| {
+                eyre!("missing {path} in response").note(format!("Full response {payload:#?}"))
+            })
     }
 
     pub async fn check_individual(
