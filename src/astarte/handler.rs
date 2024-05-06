@@ -25,7 +25,9 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use astarte_device_sdk::interface::error::InterfaceError;
+use astarte_device_sdk::Value;
 use astarte_device_sdk::{
+    properties::PropAccess,
     store::SqliteStore,
     transport::grpc::convert::{map_values_to_astarte_type, MessageHubProtoError},
     types::AstarteType,
@@ -35,6 +37,7 @@ use astarte_message_hub_proto::{
     astarte_data_type::Data, astarte_message::Payload, AstarteDataTypeIndividual, AstarteMessage,
 };
 use async_trait::async_trait;
+use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use log::{debug, error, info, trace};
 use tokio::sync::mpsc::{channel, Sender};
@@ -216,6 +219,41 @@ impl DevicePublisher {
         }
         .map_err(AstarteMessageHubError::Astarte)
     }
+
+    /// Send all the properties in the attached node introspection.
+    async fn send_server_props(
+        &self,
+        node: &AstarteNode,
+        sender: &Sender<Result<AstarteMessage, Status>>,
+    ) -> Result<(), AstarteMessageHubError> {
+        debug!("sending properties");
+
+        let iter = self
+            .client
+            .server_props()
+            .await?
+            .into_iter()
+            .filter_map(|prop| {
+                node.introspection.contains_key(&prop.interface).then(|| {
+                    let event = DeviceEvent {
+                        interface: prop.interface,
+                        path: prop.path,
+                        data: Value::Individual(prop.value),
+                    };
+
+                    AstarteMessage::from(event)
+                })
+            });
+
+        futures::stream::iter(iter)
+            .then(|msg| async { sender.send(Ok(msg)).await })
+            .inspect_err(|_| error!("failed to send prop, device disconnected"))
+            .try_collect()
+            .await
+            .map_err(|_| DeviceError::Disconnected)?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -238,6 +276,8 @@ impl AstarteSubscriber for DevicePublisher {
             .collect();
 
         let (sender, receiver) = channel(32);
+
+        self.send_server_props(node, &sender).await?;
 
         self.subscribers.write().await.insert(
             node.id,
@@ -498,16 +538,22 @@ mod test {
         let interface = Interface::from_str(SERV_PROPS_IFACE).unwrap();
         let interfaces = vec![interface.clone()];
 
-        let mut device_sdk = DeviceClient::<SqliteStore>::default();
+        let mut client = DeviceClient::<SqliteStore>::default();
 
         let mut seq = mockall::Sequence::new();
 
-        device_sdk
+        client
             .expect_extend_interfaces_vec()
             .once()
             .in_sequence(&mut seq)
             .withf(move |i| *i == interfaces)
             .returning(move |_| Ok(vec![interface.interface_name().to_string()]));
+
+        client
+            .expect_server_props()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|| Ok(Vec::new()));
 
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
@@ -517,7 +563,7 @@ mod test {
         )
         .unwrap();
 
-        let astarte_handler = DevicePublisher::new(device_sdk, SubscribersMap::default());
+        let astarte_handler = DevicePublisher::new(client, SubscribersMap::default());
 
         let result = astarte_handler.subscribe(&astarte_node).await;
         assert!(
@@ -566,6 +612,12 @@ mod test {
                     .in_sequence(&mut seq)
                     .with(mockall::predicate::eq(v.clone()))
                     .returning(move |_| Ok(vec![name.clone()]));
+
+                client
+                    .expect_server_props()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|| Ok(Vec::new()));
 
                 client
             });
@@ -1250,6 +1302,13 @@ mod test {
                             "com.test.object".to_string(),
                         ])
                     });
+
+                client
+                    .expect_server_props()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|| Ok(Vec::new()));
+
                 client
                     .expect_remove_interfaces()
                     .once()
