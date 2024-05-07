@@ -168,13 +168,18 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
 
     barrier.wait().await;
 
-    let data: DeviceAggregate = api
-        .aggregate_value(DeviceAggregate::name(), DeviceAggregate::path())
-        .await?
-        .pop()
-        .ok_or_else(|| eyre!("missing data from publish"))?;
+    retry(10, || async move {
+        let data: DeviceAggregate = api
+            .aggregate_value(DeviceAggregate::name(), DeviceAggregate::path())
+            .await?
+            .pop()
+            .ok_or_else(|| eyre!("missing data from publish"))?;
 
-    assert_eq!(data, DeviceAggregate::default());
+        assert_eq!(data, DeviceAggregate::default());
+
+        Ok(())
+    })
+    .await?;
 
     debug!("sending DeviceDatastream");
     let mut data = DeviceDatastream::default().astarte_aggregate()?;
@@ -188,9 +193,19 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
         barrier.wait().await;
     }
 
-    debug!("checking result");
-    api.check_individual(DeviceDatastream::name(), &data)
-        .await?;
+    retry(10, || {
+        let value = data.clone();
+
+        async move {
+            debug!("checking result");
+
+            api.check_individual(DeviceDatastream::name(), &value)
+                .await?;
+
+            Ok(())
+        }
+    })
+    .await?;
 
     debug!("sending DeviceProperty");
     let mut data = DeviceProperty::default().astarte_aggregate()?;
@@ -204,8 +219,17 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
         barrier.wait().await;
     }
 
-    debug!("checking result");
-    api.check_individual(DeviceProperty::name(), &data).await?;
+    retry(10, || {
+        let value = data.clone();
+
+        async move {
+            debug!("checking result");
+            api.check_individual(DeviceProperty::name(), &value).await?;
+
+            Ok(())
+        }
+    })
+    .await?;
 
     debug!("unsetting DeviceProperty");
     let data = DeviceProperty::default().astarte_aggregate()?;
@@ -219,8 +243,13 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
         barrier.wait().await;
     }
 
-    let data = api.property(DeviceProperty::name()).await?;
-    ensure!(data.is_empty(), "property not unsetted {data:?}");
+    retry(10, || async move {
+        let data = api.property(DeviceProperty::name()).await?;
+        ensure!(data.is_empty(), "property not unsetted {data:?}");
+
+        Ok(())
+    })
+    .await?;
 
     Ok(())
 }
