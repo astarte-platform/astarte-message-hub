@@ -50,7 +50,7 @@ impl<T> ApiData<T> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct WithTimestamp<T> {
     #[serde(flatten)]
     value: T,
@@ -142,7 +142,6 @@ fn check_astarte_value(data: &AstarteType, value: &Value) -> eyre::Result<bool> 
 
             arr == *exp
         }
-        AstarteType::Unset => value.is_null(),
     };
 
     Ok(check)
@@ -188,7 +187,7 @@ impl Api {
 
     pub async fn aggregate_value<T>(&self, interface: &str, path: &str) -> eyre::Result<Vec<T>>
     where
-        T: DeserializeOwned,
+        T: DeserializeOwned + Debug,
     {
         let url = format!("{}/interfaces/{interface}", self.url);
 
@@ -206,7 +205,9 @@ impl Api {
             .data
             .remove(path.trim_matches('/'))
             .map(|v| v.into_iter().map(|v| v.value).collect())
-            .ok_or_else(|| eyre!("missing {path} in response"))
+            .ok_or_else(|| {
+                eyre!("missing {path} in response").note(format!("Full response {payload:#?}"))
+            })
     }
 
     pub async fn check_individual(
@@ -290,7 +291,6 @@ impl Api {
             AstarteType::DateTimeArray(v) => {
                 Value::from(v.iter().map(|d| d.to_rfc3339()).collect::<Vec<_>>())
             }
-            AstarteType::Unset => Value::Null,
         };
 
         debug!("value {value}");

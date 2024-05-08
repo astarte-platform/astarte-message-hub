@@ -20,18 +20,17 @@
 //! The Astarte message hub uses an independent handler to communicate with Astarte.
 //!
 //! This module contains all the required traits for such an handler.
-//! An implementation of an handler is included in this crate
-//! [AstarteHandler][crate::data::astarte_handler::AstarteHandler].
-//! However, nothing stops third parties from developing their own handler by implementing
-//! the traits in this file.
 
 use astarte_message_hub_proto::AstarteMessage;
 use async_trait::async_trait;
 use tokio::sync::mpsc::Receiver;
 use tonic::Status;
 
-use crate::astarte_message_hub::AstarteNode;
 use crate::error::AstarteMessageHubError;
+use crate::server::AstarteNode;
+
+pub mod handler;
+pub(crate) mod sdk;
 
 /// A **trait** required for all Astarte handlers that want to publish data on Astarte.
 #[async_trait]

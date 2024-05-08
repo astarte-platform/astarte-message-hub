@@ -20,11 +20,10 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
-pub use crate::astarte_message_hub::AstarteMessageHub;
-pub use crate::data::astarte_handler::{init_pub_sub, DevicePublisher, DeviceSubscriber};
+pub use crate::server::AstarteMessageHub;
 
-mod astarte_message_hub;
+pub mod astarte;
 pub mod config;
-mod data;
 mod device;
 pub mod error;
+mod server;

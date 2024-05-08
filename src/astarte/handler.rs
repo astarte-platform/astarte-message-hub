@@ -20,44 +20,33 @@
 
 //! Contains an implementation of an Astarte handler.
 
-use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
-use astarte_device_sdk::types::AstarteType;
-#[cfg(not(test))]
-use astarte_device_sdk::Client;
-use astarte_device_sdk::{AstarteDeviceDataEvent, Error as AstarteError, EventReceiver};
-use astarte_message_hub_proto::astarte_data_type::Data;
-use astarte_message_hub_proto::astarte_message::Payload;
-use astarte_message_hub_proto::{AstarteDataTypeIndividual, AstarteMessage};
-use async_trait::async_trait;
-use log::error;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+use astarte_device_sdk::{
+    store::SqliteStore,
+    transport::grpc::convert::{map_values_to_astarte_type, MessageHubProtoError},
+    types::AstarteType,
+    DeviceEvent, Error as AstarteError,
+};
+use astarte_message_hub_proto::{
+    astarte_data_type::Data, astarte_message::Payload, AstarteDataTypeIndividual, AstarteMessage,
+};
+use async_trait::async_trait;
+use log::error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tonic::Status;
 use uuid::Uuid;
 
-use crate::astarte_message_hub::AstarteNode;
-use crate::data::astarte::{AstartePublisher, AstarteSubscriber};
-#[cfg(test)]
-use crate::data::mock_astarte_sdk::Client;
+use super::sdk::{Client, DeviceClient, DynamicIntrospection};
+use super::{AstartePublisher, AstarteSubscriber};
 use crate::error::AstarteMessageHubError;
+use crate::server::AstarteNode;
 
 type SubscribersMap = Arc<RwLock<HashMap<Uuid, Subscriber>>>;
 
-/// Initialize the [`DevicePublisher`] and [`DeviceSubscriber`]
-pub fn init_pub_sub<T>(device: T, rx: EventReceiver) -> (DevicePublisher<T>, DeviceSubscriber)
-where
-    T: Client + Send + Sync,
-{
-    let subscribers: SubscribersMap = Arc::new(Default::default());
-
-    (
-        DevicePublisher::new(device, subscribers.clone()),
-        DeviceSubscriber::new(rx, subscribers),
-    )
-}
-
+/// Error while sending or receiving data from Astarte.
 #[derive(Debug, thiserror::Error, displaydoc::Display)]
 pub enum DeviceError {
     /// received error from Astarte
@@ -65,43 +54,59 @@ pub enum DeviceError {
     /// couldn't convert the astarte event into a proto message
     Convert(#[from] MessageHubProtoError),
     /// subscriber already disconnected
-    Subscriber,
+    Disconnected,
 }
 
-/// Receiver for the [`AstarteDeviceDataEvent`].
+/// Initialize the [`DevicePublisher`] and [`DeviceSubscriber`]
+pub fn init_pub_sub(client: DeviceClient<SqliteStore>) -> (DevicePublisher, DeviceSubscriber) {
+    let subscribers = SubscribersMap::default();
+
+    (
+        DevicePublisher::new(client.clone(), subscribers.clone()),
+        DeviceSubscriber::new(client, subscribers),
+    )
+}
+
+/// Receiver for the [`DeviceEvent`].
 ///
 /// It will forward the events to the registered subscriber.
 pub struct DeviceSubscriber {
-    rx: EventReceiver,
+    client: DeviceClient<SqliteStore>,
     subscribers: SubscribersMap,
 }
 
 impl DeviceSubscriber {
-    /// Create a new subscriber.
-    fn new(rx: EventReceiver, subscribers: SubscribersMap) -> Self {
-        Self { rx, subscribers }
+    /// Create a new client.
+    pub fn new(client: DeviceClient<SqliteStore>, subscribers: SubscribersMap) -> Self {
+        Self {
+            client,
+            subscribers,
+        }
     }
 
-    /// Handler responsible for receiving and managing [AstarteDeviceDataEvent](astarte_device_sdk::AstarteDeviceDataEvent)s
+    /// Handler responsible for receiving and managing [`DeviceEvent`].
     pub async fn forward_events(&mut self) -> Result<(), DeviceError> {
-        while let Some(event) = self.rx.recv().await {
-            if let Err(err) = self.on_event(event).await {
-                error!("error on event receive: {err}");
+        loop {
+            match self.client.recv().await {
+                Err(AstarteError::Disconnected) => return Err(DeviceError::Disconnected),
+                event => {
+                    if let Err(err) = self.on_event(event).await {
+                        error!("error on event receive: {err}");
+                    }
+                }
             }
         }
-
-        Err(DeviceError::Subscriber)
     }
 
     async fn on_event(
         &mut self,
-        event: Result<AstarteDeviceDataEvent, AstarteError>,
+        event: Result<DeviceEvent, AstarteError>,
     ) -> Result<(), DeviceError> {
         let event = event.map_err(DeviceError::Astarte)?;
 
         let itf_name = event.interface.clone();
 
-        let msg = AstarteMessage::try_from(event)?;
+        let msg = AstarteMessage::from(event);
 
         let sub = self.subscribers.read().await;
         let subscribers = sub.iter().filter_map(|(_, subscriber)| {
@@ -118,7 +123,7 @@ impl DeviceSubscriber {
                 // This is needed to satisfy the tonic trait
                 .send(Ok(msg.clone()))
                 .await
-                .map_err(|_| DeviceError::Subscriber)?;
+                .map_err(|_| DeviceError::Disconnected)?;
         }
 
         Ok(())
@@ -133,22 +138,19 @@ pub struct Subscriber {
 }
 
 /// An Astarte Device SDK based implementation of an Astarte handler.
-/// Uses the [`Astarte Device SDK`](astarte_device_sdk::AstarteDeviceSdk) to provide subscribe and publish functionality.
+///
+/// Uses the [`DeviceClient`] to provide subscribe and publish functionality.
 #[derive(Clone)]
-pub struct DevicePublisher<T> {
-    device_sdk: T,
+pub struct DevicePublisher {
+    client: DeviceClient<SqliteStore>,
     subscribers: SubscribersMap,
 }
 
-impl<T> DevicePublisher<T>
-where
-    T: Client + Send + Sync,
-{
+impl DevicePublisher {
     /// Constructs a new handler from the [AstarteDeviceSdk](astarte_device_sdk::AstarteDeviceSdk)
-    #[allow(dead_code)]
-    fn new(device_sdk: T, subscribers: SubscribersMap) -> Self {
+    fn new(client: DeviceClient<SqliteStore>, subscribers: SubscribersMap) -> Self {
         DevicePublisher {
-            device_sdk,
+            client,
             subscribers,
         }
     }
@@ -172,13 +174,11 @@ where
             let timestamp = timestamp
                 .try_into()
                 .map_err(AstarteMessageHubError::Timestamp)?;
-            self.device_sdk
+            self.client
                 .send_with_timestamp(interface_name, path, astarte_type, timestamp)
                 .await
         } else {
-            self.device_sdk
-                .send(interface_name, path, astarte_type)
-                .await
+            self.client.send(interface_name, path, astarte_type).await
         }
         .map_err(AstarteMessageHubError::AstarteError)
     }
@@ -191,35 +191,24 @@ where
         path: &str,
         timestamp: Option<pbjson_types::Timestamp>,
     ) -> Result<(), AstarteMessageHubError> {
-        let astarte_data_individual_map: HashMap<String, AstarteDataTypeIndividual> =
-            object_data.object_data;
-
-        // TODO: move `map_values_to_astarte_type` from grpc::convert to mod.rs
-        let aggr = astarte_device_sdk::transport::grpc::convert::map_values_to_astarte_type(
-            astarte_data_individual_map,
-        )?;
+        let aggr = map_values_to_astarte_type(object_data)?;
 
         if let Some(timestamp) = timestamp {
             let timestamp = timestamp
                 .try_into()
                 .map_err(AstarteMessageHubError::Timestamp)?;
-            self.device_sdk
+            self.client
                 .send_object_with_timestamp(interface_name, path, aggr, timestamp)
                 .await
         } else {
-            self.device_sdk
-                .send_object(interface_name, path, aggr)
-                .await
+            self.client.send_object(interface_name, path, aggr).await
         }
         .map_err(AstarteMessageHubError::AstarteError)
     }
 }
 
 #[async_trait]
-impl<T> AstarteSubscriber for DevicePublisher<T>
-where
-    T: Client + Sync + Send,
-{
+impl AstarteSubscriber for DevicePublisher {
     async fn subscribe(
         &self,
         astarte_node: &AstarteNode,
@@ -232,9 +221,7 @@ where
 
         for interface in astarte_node.introspection.iter() {
             let astarte_interface: Interface = interface.clone().try_into()?;
-            self.device_sdk
-                .add_interface(astarte_interface.clone())
-                .await?;
+            self.client.add_interface(astarte_interface.clone()).await?;
 
             astarte_interfaces.push(astarte_interface);
         }
@@ -273,7 +260,7 @@ where
         };
 
         for interface in interfaces_to_remove.iter() {
-            self.device_sdk
+            self.client
                 .remove_interface(interface.interface_name())
                 .await?;
         }
@@ -295,10 +282,7 @@ where
 }
 
 #[async_trait]
-impl<T> AstartePublisher for DevicePublisher<T>
-where
-    T: Client + Send + Sync,
-{
+impl AstartePublisher for DevicePublisher {
     async fn publish(
         &self,
         astarte_message: &AstarteMessage,
@@ -309,7 +293,7 @@ where
 
         match astarte_message_payload {
             Payload::AstarteUnset(_) => self
-                .device_sdk
+                .client
                 .unset(&astarte_message.interface_name, &astarte_message.path)
                 .await
                 .map_err(AstarteMessageHubError::AstarteError),
@@ -349,18 +333,17 @@ where
 mod test {
     use super::*;
 
-    use astarte_device_sdk::Aggregation;
+    use astarte_device_sdk::transport::grpc::Grpc;
+    use astarte_device_sdk::Value;
+    use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
+    use std::error::Error;
     use std::str::FromStr;
 
     use astarte_device_sdk::error::Error as AstarteSdkError;
-    use astarte_device_sdk::store::memory::MemoryStore;
-    use astarte_device_sdk::transport::mqtt::Mqtt;
     use astarte_message_hub_proto::astarte_data_type_individual::IndividualData;
     use astarte_message_hub_proto::AstarteUnset;
     use chrono::Utc;
     use pbjson_types::Timestamp;
-
-    use crate::data::mock_astarte_sdk::MockAstarteDeviceSdk;
 
     const SERV_PROPS_IFACE: &str = r#"
         {
@@ -423,12 +406,12 @@ mod test {
 
     #[tokio::test]
     async fn subscribe_success() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
+        let mut device_sdk = DeviceClient::<SqliteStore>::default();
 
         device_sdk
             .expect_add_interface()
             .withf(|i| i.interface_name() == "org.astarte-platform.test.test")
-            .returning(|_| Ok(()));
+            .returning(|_| Ok(true));
 
         let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
 
@@ -440,12 +423,16 @@ mod test {
         let astarte_handler = DevicePublisher::new(device_sdk, Default::default());
 
         let result = astarte_handler.subscribe(&astarte_node).await;
-        assert!(result.is_ok());
+        assert!(
+            result.is_ok(),
+            "error {}",
+            result.unwrap_err().source().unwrap().source().unwrap()
+        );
     }
 
     #[tokio::test]
     async fn subscribe_failed_invalid_interface() {
-        let device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
+        let device_sdk = DeviceClient::<SqliteStore>::default();
         let interfaces = vec!["INVALID".to_string().into_bytes()];
 
         let astarte_node = AstarteNode::new(
@@ -472,8 +459,8 @@ mod test {
         let path = "test";
         let value: i32 = 5;
 
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (tx_event, rx_event) = tokio::sync::mpsc::channel(2);
+        let mut client = DeviceClient::<SqliteStore>::default();
+        let mut connection = DeviceConnection::<SqliteStore, Grpc>::default();
 
         let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
 
@@ -482,22 +469,47 @@ mod test {
             interfaces,
         );
 
-        device_sdk.expect_handle_events().returning(|| Ok(()));
-        device_sdk
-            .expect_add_interface()
-            .withf(|i| i.interface_name() == "org.astarte-platform.test.test")
-            .returning(|_| Ok(()));
+        connection.expect_handle_events().returning(|| Ok(()));
 
-        tx_event
-            .send(Ok(AstarteDeviceDataEvent {
-                interface: interface_string.clone(),
-                path: path.to_string(),
-                data: Aggregation::Individual(value.into()),
-            }))
-            .await
-            .unwrap();
+        let mut seq = mockall::Sequence::new();
 
-        let (publisher, mut subscriber) = init_pub_sub(device_sdk, rx_event);
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::default();
+
+                client
+                    .expect_add_interface()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .withf(|i| i.interface_name() == "org.astarte-platform.test.test")
+                    .returning(|_| Ok(true));
+
+                client
+            });
+
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_recv()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                Ok(DeviceEvent {
+                    interface: interface_string.clone(),
+                    path: path.to_string(),
+                    data: Value::Individual(value.into()),
+                })
+            });
+        client
+            .expect_recv()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|| Err(AstarteError::Disconnected));
+
+        let (publisher, mut subscriber) = init_pub_sub(client);
 
         let handle = tokio::spawn(async move { subscriber.forward_events().await });
 
@@ -520,38 +532,53 @@ mod test {
 
         assert_eq!(IndividualData::AstarteInteger(value), individual_data);
 
-        handle.abort();
+        let err = handle.await.unwrap().unwrap_err();
 
-        assert!(handle.await.unwrap_err().is_cancelled());
+        assert!(matches!(err, DeviceError::Disconnected));
     }
 
     #[tokio::test]
     async fn poll_failed_with_astarte_error() {
-        let device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
+        let mut client = DeviceClient::<SqliteStore>::default();
 
-        let (tx, rx_event) = tokio::sync::mpsc::channel(2);
+        let mut seq = mockall::Sequence::new();
 
-        let (_publisher, mut subscriber) = init_pub_sub(device_sdk, rx_event);
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(DeviceClient::<SqliteStore>::default);
 
         // Simulate disconnect
-        drop(tx);
+        client
+            .expect_recv()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|| Err(AstarteError::Disconnected));
 
-        assert!(matches!(
-            subscriber.forward_events().await.unwrap_err(),
-            DeviceError::Subscriber
-        ));
+        let (_publisher, mut subscriber) = init_pub_sub(client);
+
+        let err = subscriber.forward_events().await.unwrap_err();
+        assert!(matches!(err, DeviceError::Disconnected));
     }
 
     #[tokio::test]
     async fn publish_failed_with_invalid_payload() {
-        let device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
+        let mut client = DeviceClient::<SqliteStore>::new();
 
         let expected_interface_name = "io.demo.Properties";
 
         let astarte_message = create_astarte_message(expected_interface_name, "/test", None, None);
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(DeviceClient::<SqliteStore>::default);
+
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_err());
@@ -565,12 +592,19 @@ mod test {
 
     #[tokio::test]
     async fn publish_failed_with_invalid_astarte_data() {
-        let device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
+        let mut client = DeviceClient::<SqliteStore>::default();
+
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(DeviceClient::<SqliteStore>::default);
 
         let astarte_message = create_astarte_message("io.demo.Properties", "/test", None, None);
 
-        let (publisher, _) = init_pub_sub(device_sdk, rx_event);
+        let (publisher, _) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
 
@@ -583,8 +617,9 @@ mod test {
 
     #[tokio::test]
     async fn publish_individual_success() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
+        let mut client = DeviceClient::<SqliteStore>::default();
+
+        let mut seq = mockall::Sequence::new();
 
         let expected_interface_name = "io.demo.Properties";
 
@@ -595,14 +630,25 @@ mod test {
             None,
         );
 
-        device_sdk
-            .expect_send()
-            .withf(move |interface_name: &str, _: &str, _: &AstarteType| {
-                interface_name == expected_interface_name
-            })
-            .returning(|_: &str, _: &str, _: AstarteType| Ok(()));
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::default();
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+                client
+                    .expect_send()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .withf(move |interface_name: &str, _: &str, _: &AstarteType| {
+                        interface_name == expected_interface_name
+                    })
+                    .returning(|_: &str, _: &str, _: AstarteType| Ok(()));
+                client
+            });
+
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_ok())
@@ -610,9 +656,6 @@ mod test {
 
     #[tokio::test]
     async fn publish_individual_with_timestamp_success() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
-
         let expected_interface_name = "io.demo.Properties";
 
         let astarte_message = create_astarte_message(
@@ -622,16 +665,35 @@ mod test {
             Some(Utc::now().into()),
         );
 
-        device_sdk
-            .expect_send_with_timestamp()
-            .withf(
-                move |interface_name: &str, _: &str, _: &AstarteType, _: &chrono::DateTime<Utc>| {
-                    interface_name == expected_interface_name
-                },
-            )
-            .returning(|_: &str, _: &str, _: AstarteType, _: chrono::DateTime<Utc>| Ok(()));
+        let mut client = DeviceClient::<SqliteStore>::default();
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::default();
+
+                client
+                    .expect_send_with_timestamp()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .withf(
+                        move |interface_name: &str,
+                              _: &str,
+                              _: &AstarteType,
+                              _: &chrono::DateTime<Utc>| {
+                            interface_name == expected_interface_name
+                        },
+                    )
+                    .returning(|_: &str, _: &str, _: AstarteType, _: chrono::DateTime<Utc>| Ok(()));
+
+                client
+            });
+
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_ok())
@@ -639,9 +701,6 @@ mod test {
 
     #[tokio::test]
     async fn publish_individual_failed() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
-
         let expected_interface_name = "io.demo.Properties";
 
         let astarte_message = create_astarte_message(
@@ -651,19 +710,35 @@ mod test {
             None,
         );
 
-        device_sdk
-            .expect_send()
-            .withf(move |interface_name: &str, _: &str, _: &AstarteType| {
-                interface_name == expected_interface_name
-            })
-            .returning(|_: &str, _: &str, _: AstarteType| {
-                Err(AstarteSdkError::MappingNotFound {
-                    interface: expected_interface_name.to_string(),
-                    mapping: String::new(),
-                })
+        let mut client = DeviceClient::<SqliteStore>::new();
+
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::new();
+
+                client
+                    .expect_send()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .withf(move |interface_name: &str, _: &str, _: &AstarteType| {
+                        interface_name == expected_interface_name
+                    })
+                    .returning(|_: &str, _: &str, _: AstarteType| {
+                        Err(AstarteSdkError::MappingNotFound {
+                            interface: expected_interface_name.to_string(),
+                            mapping: String::new(),
+                        })
+                    });
+
+                client
             });
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_err());
@@ -680,9 +755,6 @@ mod test {
 
     #[tokio::test]
     async fn publish_individual_with_timestamp_failed() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
-
         let expected_interface_name = "io.demo.Properties";
 
         let astarte_message = create_astarte_message(
@@ -692,23 +764,42 @@ mod test {
             Some(Utc::now().into()),
         );
 
-        device_sdk
-            .expect_send_with_timestamp()
-            .withf(
-                move |interface_name: &str, _: &str, _: &AstarteType, _: &chrono::DateTime<Utc>| {
-                    interface_name == expected_interface_name
-                },
-            )
-            .returning(
-                |_: &str, _: &str, _: AstarteType, _: chrono::DateTime<Utc>| {
-                    Err(AstarteSdkError::MappingNotFound {
-                        interface: expected_interface_name.to_string(),
-                        mapping: String::new(),
-                    })
-                },
-            );
+        let mut client = DeviceClient::<SqliteStore>::default();
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::default();
+
+                client
+                    .expect_send_with_timestamp()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .withf(
+                        move |interface_name: &str,
+                              _: &str,
+                              _: &AstarteType,
+                              _: &chrono::DateTime<Utc>| {
+                            interface_name == expected_interface_name
+                        },
+                    )
+                    .returning(
+                        |_: &str, _: &str, _: AstarteType, _: chrono::DateTime<Utc>| {
+                            Err(AstarteSdkError::MappingNotFound {
+                                interface: expected_interface_name.to_string(),
+                                mapping: String::new(),
+                            })
+                        },
+                    );
+
+                client
+            });
+
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_err());
@@ -725,9 +816,6 @@ mod test {
 
     #[tokio::test]
     async fn publish_object_success() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
-
         let expected_interface_name = "io.demo.Object";
 
         let expected_i32 = 5;
@@ -743,16 +831,32 @@ mod test {
             None,
         );
 
-        device_sdk
-            .expect_send_object()
-            .withf(
-                move |interface_name: &str, _: &str, _: &HashMap<String, AstarteType>| {
-                    interface_name == expected_interface_name
-                },
-            )
-            .returning(|_: &str, _: &str, _: HashMap<String, AstarteType>| Ok(()));
+        let mut client = DeviceClient::<SqliteStore>::default();
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::new();
+
+                client
+                    .expect_send_object()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .withf(
+                        move |interface_name: &str, _: &str, _: &HashMap<String, AstarteType>| {
+                            interface_name == expected_interface_name
+                        },
+                    )
+                    .returning(|_: &str, _: &str, _: HashMap<String, AstarteType>| Ok(()));
+
+                client
+            });
+
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_ok())
@@ -760,9 +864,6 @@ mod test {
 
     #[tokio::test]
     async fn publish_object_with_timestamp_success() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
-
         let expected_interface_name = "io.demo.Object";
 
         let expected_i32 = 5;
@@ -778,24 +879,40 @@ mod test {
             Some(Utc::now().into()),
         );
 
-        device_sdk
-             .expect_send_object_with_timestamp()
-             .withf(
-                 move |interface_name: &str,
-                       _: &str,
-                       _: &HashMap<String, AstarteType>,
-                       _: &chrono::DateTime<Utc>| {
-                     interface_name == expected_interface_name
-                 },
-             )
-             .returning(
-                 |_: &str,
-                  _: &str,
-                  _: HashMap<String, AstarteType>,
-                  _: chrono::DateTime<Utc>| Ok(()),
-             );
+        let mut client = DeviceClient::<SqliteStore>::default();
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::default();
+
+                client
+                    .expect_send_object_with_timestamp()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .withf(
+                        move |interface_name: &str,
+                              _: &str,
+                              _: &HashMap<String, AstarteType>,
+                              _: &chrono::DateTime<Utc>| {
+                            interface_name == expected_interface_name
+                        },
+                    )
+                    .returning(
+                        |_: &str,
+                         _: &str,
+                         _: HashMap<String, AstarteType>,
+                         _: chrono::DateTime<Utc>| Ok(()),
+                    );
+
+                client
+            });
+
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_ok())
@@ -803,9 +920,6 @@ mod test {
 
     #[tokio::test]
     async fn publish_object_failed() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
-
         let expected_interface_name = "io.demo.Object";
 
         let expected_i32 = 5;
@@ -821,21 +935,37 @@ mod test {
             None,
         );
 
-        device_sdk
-            .expect_send_object()
-            .withf(
-                move |interface_name: &str, _: &str, _: &HashMap<String, AstarteType>| {
-                    interface_name == expected_interface_name
-                },
-            )
-            .returning(|_: &str, _: &str, _: HashMap<String, AstarteType>| {
-                Err(AstarteSdkError::MappingNotFound {
-                    interface: expected_interface_name.to_string(),
-                    mapping: String::new(),
-                })
+        let mut client = DeviceClient::<SqliteStore>::new();
+
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::new();
+
+                client
+                    .expect_send_object()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .withf(
+                        move |interface_name: &str, _: &str, _: &HashMap<String, AstarteType>| {
+                            interface_name == expected_interface_name
+                        },
+                    )
+                    .returning(|_: &str, _: &str, _: HashMap<String, AstarteType>| {
+                        Err(AstarteSdkError::MappingNotFound {
+                            interface: expected_interface_name.to_string(),
+                            mapping: String::new(),
+                        })
+                    });
+
+                client
             });
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_err());
@@ -852,9 +982,6 @@ mod test {
 
     #[tokio::test]
     async fn publish_object_with_timestamp_failed() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
-
         let expected_interface_name = "io.demo.Object";
 
         let expected_i32 = 5;
@@ -870,26 +997,45 @@ mod test {
             Some(Utc::now().into()),
         );
 
-        device_sdk
-            .expect_send_object_with_timestamp()
-            .withf(
-                move |interface_name: &str,
-                      _: &str,
-                      _: &HashMap<String, AstarteType>,
-                      _: &chrono::DateTime<Utc>| {
-                    interface_name == expected_interface_name
-                },
-            )
-            .returning(
-                |_: &str, _: &str, _: HashMap<String, AstarteType>, _: chrono::DateTime<Utc>| {
-                    Err(AstarteSdkError::MappingNotFound {
-                        interface: expected_interface_name.to_string(),
-                        mapping: String::new(),
-                    })
-                },
-            );
+        let mut client = DeviceClient::<SqliteStore>::default();
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::default();
+
+                client
+                    .expect_send_object_with_timestamp()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .withf(
+                        move |interface_name: &str,
+                              _: &str,
+                              _: &HashMap<String, AstarteType>,
+                              _: &chrono::DateTime<Utc>| {
+                            interface_name == expected_interface_name
+                        },
+                    )
+                    .returning(
+                        |_: &str,
+                         _: &str,
+                         _: HashMap<String, AstarteType>,
+                         _: chrono::DateTime<Utc>| {
+                            Err(AstarteSdkError::MappingNotFound {
+                                interface: expected_interface_name.to_string(),
+                                mapping: String::new(),
+                            })
+                        },
+                    );
+
+                client
+            });
+
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_err());
@@ -906,9 +1052,6 @@ mod test {
 
     #[tokio::test]
     async fn publish_unset_success() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
-
         let expected_interface_name = "io.demo.Object";
 
         let astarte_message = create_astarte_message(
@@ -918,21 +1061,36 @@ mod test {
             None,
         );
 
-        device_sdk
-            .expect_unset()
-            .withf(move |interface_name: &str, _: &str| interface_name == expected_interface_name)
-            .returning(|_: &str, _: &str| Ok(()));
+        let mut client = DeviceClient::<SqliteStore>::default();
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::new();
+
+                client
+                    .expect_unset()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .withf(move |interface_name: &str, _: &str| {
+                        interface_name == expected_interface_name
+                    })
+                    .returning(|_: &str, _: &str| Ok(()));
+
+                client
+            });
+
+        let (publisher, _subscriber) = init_pub_sub(client);
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
     #[tokio::test]
     async fn publish_unset_failed() {
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
-
         let expected_interface_name = "io.demo.Object";
 
         let astarte_message = create_astarte_message(
@@ -942,17 +1100,35 @@ mod test {
             None,
         );
 
-        device_sdk
-            .expect_unset()
-            .withf(move |interface_name: &str, _: &str| interface_name == expected_interface_name)
-            .returning(|_: &str, _: &str| {
-                Err(AstarteSdkError::MappingNotFound {
-                    interface: expected_interface_name.to_string(),
-                    mapping: String::new(),
-                })
+        let mut client = DeviceClient::<SqliteStore>::default();
+
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::default();
+
+                client
+                    .expect_unset()
+                    .withf(move |interface_name: &str, _: &str| {
+                        interface_name == expected_interface_name
+                    })
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|_: &str, _: &str| {
+                        Err(AstarteSdkError::MappingNotFound {
+                            interface: expected_interface_name.to_string(),
+                            mapping: String::new(),
+                        })
+                    });
+
+                client
             });
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.publish(&astarte_message).await;
         assert!(result.is_err());
@@ -974,18 +1150,37 @@ mod test {
             SERV_OBJ_IFACE.to_string().into_bytes(),
         ];
 
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
+        let mut client = DeviceClient::<SqliteStore>::default();
 
-        device_sdk.expect_add_interface().returning(|_| Ok(()));
-        device_sdk.expect_remove_interface().returning(|_| Ok(()));
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::default();
+
+                client
+                    .expect_add_interface()
+                    .times(2)
+                    .in_sequence(&mut seq)
+                    .returning(|_| Ok(true));
+                client
+                    .expect_remove_interface()
+                    .times(2)
+                    .in_sequence(&mut seq)
+                    .returning(|_| Ok(true));
+
+                client
+            });
 
         let astarte_node = AstarteNode::new(
             "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
             interfaces,
         );
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let result = publisher.subscribe(&astarte_node).await;
         assert!(result.is_ok());
@@ -998,18 +1193,32 @@ mod test {
     async fn detach_node_unsubscribe_failed() {
         let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
 
-        let mut device_sdk = MockAstarteDeviceSdk::<MemoryStore, Mqtt>::new();
-        let (_, rx_event) = tokio::sync::mpsc::channel(2);
+        let mut client = DeviceClient::<SqliteStore>::new();
 
-        device_sdk.expect_add_interface().returning(|_| Ok(()));
-        device_sdk.expect_remove_interface().returning(|_| Ok(()));
+        let mut seq = mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::new();
+
+                client
+                    .expect_remove_interface()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|_| Ok(false));
+
+                client
+            });
 
         let astarte_node = AstarteNode::new(
             "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
             interfaces,
         );
 
-        let (publisher, _subscriber) = init_pub_sub(device_sdk, rx_event);
+        let (publisher, _subscriber) = init_pub_sub(client);
 
         let detach_result = publisher.unsubscribe(&astarte_node).await;
 
