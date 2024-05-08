@@ -19,7 +19,7 @@
  */
 //! Contains the implementation for the Astarte message hub.
 
-use hyper::{http, Body};
+use hyper::{http, Body, Uri};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
@@ -119,8 +119,8 @@ impl From<InterceptorError> for Status {
     }
 }
 
-pub(crate) fn is_attach(uri: &http::uri::Uri) -> bool {
-    matches!(uri.path(), "/astarteplatform.msghub.MessageHub/Attach")
+pub(crate) fn is_attach(uri: &Uri) -> bool {
+    uri.path() == "/astarteplatform.msghub.MessageHub/Attach"
 }
 
 #[derive(Clone, Default)]
@@ -195,7 +195,7 @@ impl<S> NodeIdInterceptor<S> {
 
 /// Node Id
 #[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
-pub(crate) struct NodeId(Uuid);
+pub struct NodeId(Uuid);
 
 impl Display for NodeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -278,21 +278,20 @@ where
     }
 }
 
-impl<T> AstarteMessageHub<T>
-where
-    T: Clone + AstartePublisher + AstarteSubscriber,
-{
-    fn retrieve_node_id<'a: 'b, 'b, R>(
-        &'a self,
-        request: &'a Request<R>,
-    ) -> Result<&'b NodeId, Status> {
-        if let Some(node_id) = request.extensions().get::<NodeId>() {
+/// Retrieve information from a [`Request`]
+pub trait RequestExt {
+    fn get_node_id(&self) -> Result<&NodeId, Status>;
+}
+
+impl<R> RequestExt for Request<R> {
+    fn get_node_id(&self) -> Result<&NodeId, Status> {
+        if let Some(node_id) = self.extensions().get::<NodeId>() {
             trace!("node id {node_id} checked");
             return Ok(node_id);
         }
 
         error!("missing node id");
-        Err(Status::internal("missing node id"))
+        Err(Status::failed_precondition("missing node id"))
     }
 }
 
@@ -410,7 +409,7 @@ impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
         request: Request<AstarteMessage>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
         // verify that the request contains a Node Id in the metadata
-        let node_id = self.retrieve_node_id(&request)?;
+        let node_id = request.get_node_id()?;
         debug!("Node {node_id} Send Request");
 
         let astarte_message = request.into_inner();
@@ -428,7 +427,7 @@ impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
         &self,
         request: Request<astarte_message_hub_proto::Node>,
     ) -> Result<Response<pbjson_types::Empty>, Status> {
-        let node_id = self.retrieve_node_id(&request)?;
+        let node_id = request.get_node_id()?;
         info!("Node {node_id} Detach Request => {:?}", request);
 
         let node = request.into_inner();

@@ -31,7 +31,7 @@ use tokio::{
 };
 use tower::{Layer, Service, ServiceBuilder};
 use tower_http::trace::TraceLayer;
-use tracing::instrument;
+use tracing::{instrument, trace};
 
 use crate::{utils::read_env, GRPC_PORT};
 
@@ -92,6 +92,7 @@ pub async fn init_message_hub(
             .layer(layer)
             .trace_fn(|_| tracing::debug_span!("message_hub"))
             .timeout(Duration::from_secs(10))
+            .layer(message_hub.make_interceptor_layer())
             .add_service(MessageHubServer::new(message_hub))
             .serve((Ipv6Addr::LOCALHOST, GRPC_PORT).into())
             .await
@@ -178,7 +179,11 @@ where
         async move {
             let res = service.inner.call(req).await;
 
+            trace!("inner call resolved");
+
             service.barrier.wait().await;
+
+            trace!("synced with client");
 
             res
         }

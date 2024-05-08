@@ -202,11 +202,10 @@ sequenceDiagram
     participant AstarteMessageHub
     participant Astarte
     Node1->>AstarteMessageHub: send(message)
-    alt check Node UUID metadata
-        AstarteMessageHub ->> Astarte: sendData()
-    else Node UUID check failed
+    alt Node UUID check failed
         AstarteMessageHub ->> Node1: Unauthorized
     end
+    AstarteMessageHub ->> Astarte: sendData()
     alt when the send process fails
          AstarteMessageHub->>Node1: Unable to send message
     end
@@ -230,13 +229,11 @@ sequenceDiagram
     participant AstarteMessageHub
     participant Astarte
     Node1->>AstarteMessageHub: detach(node)
-    alt check Node UUID metadata
-        AstarteMessageHub ->> Astarte: sendIntrospection()
-    else Node UUID check failed
+    alt Node UUID check failed
         AstarteMessageHub ->> Node1: Unauthorized
     end
-
+    AstarteMessageHub ->> Astarte: sendIntrospection()
     alt when the introspection process fails
-         AstarteMessageHub->>Node1: Unable to attach the node
+        AstarteMessageHub ->> Node1: Unable to detach the node
     end
 ```
