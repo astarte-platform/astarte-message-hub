@@ -20,7 +20,7 @@
 
 //! Provides a Protobuf API to set The Message Hub configurations
 
-use std::io::Write;
+use std::net::AddrParseError;
 use std::num::TryFromIntError;
 use std::path::Path;
 use std::sync::Arc;
@@ -29,8 +29,10 @@ use astarte_message_hub_proto::message_hub_config_server::{
     MessageHubConfig, MessageHubConfigServer,
 };
 use astarte_message_hub_proto::ConfigMessage;
+use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::Notify;
+use tokio::task::{JoinError, JoinHandle};
 use tonic::transport::Server;
 use tonic::{Code, Request, Response, Status};
 
@@ -38,15 +40,30 @@ use crate::config::MessageHubOptions;
 
 use super::DeviceSdkOptions;
 
-#[derive(Debug)]
+/// Protobuf server error
+#[derive(thiserror::Error, Debug, displaydoc::Display)]
+pub enum ProtobufConfigError {
+    /// couldn't parse the socket address
+    ParseSocketAddr(#[from] AddrParseError),
+    /// couldn't start the protobuf server
+    Start(#[from] tonic::transport::Error),
+    /// server panicked
+    Join(#[from] JoinError),
+    /// failed to send over channel
+    Channel(#[from] SendError<()>),
+}
+
+#[derive(Debug, Clone)]
 struct AstarteMessageHubConfig {
     configuration_ready_channel: Arc<Notify>,
     toml_file: String,
 }
 
 /// Provides a Protobuf API to set The Message Hub configurations
+#[derive(Debug)]
 pub struct ProtobufConfigProvider {
     shutdown_channel: Sender<()>,
+    handle: JoinHandle<Result<(), ProtobufConfigError>>,
 }
 
 #[tonic::async_trait]
@@ -80,23 +97,16 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             astarte: DeviceSdkOptions::default(),
         };
 
-        if let Err(err) = message_hub_options.validate() {
-            return Err(Status::new(
-                Code::InvalidArgument,
-                format!("Invalid configuration: {}.", err),
-            ));
-        }
+        message_hub_options.validate().map_err(|e| {
+            let err_msg = format!("Invalid configuration: {e}.");
+            Status::new(Code::InvalidArgument, err_msg)
+        })?;
 
-        let mut file = std::fs::File::create(Path::new(&self.toml_file))?;
+        let file_path = Path::new(&self.toml_file);
+        let cfg = toml::to_string(&message_hub_options)
+            .map_err(|e| Status::new(Code::InvalidArgument, e.to_string()))?;
 
-        let result = toml::to_string(&message_hub_options);
-        if let Err(e) = result {
-            return Err(Status::new(Code::InvalidArgument, e.to_string()));
-        }
-
-        let cfg = result.unwrap();
-
-        write!(file, "{cfg}")?;
+        tokio::fs::write(file_path, cfg).await?;
 
         self.configuration_ready_channel.notify_one();
 
@@ -111,28 +121,32 @@ impl ProtobufConfigProvider {
         address: &str,
         configuration_ready_channel: Arc<Notify>,
         toml_file: &str,
-    ) -> ProtobufConfigProvider {
-        let addr = address.parse().unwrap();
+    ) -> Result<ProtobufConfigProvider, ProtobufConfigError> {
+        let addr = address.parse()?;
         let service = AstarteMessageHubConfig {
             configuration_ready_channel,
             toml_file: toml_file.to_string(),
         };
         let (tx, mut rx) = channel::<()>(1);
-        tokio::spawn(async move {
+
+        let handle = tokio::spawn(async move {
             Server::builder()
                 .add_service(MessageHubConfigServer::new(service))
                 .serve_with_shutdown(addr, async { rx.recv().await.unwrap() })
                 .await
-                .unwrap_or_else(|e| panic!("Unable to start protobuf service: {}", e));
+                .map_err(ProtobufConfigError::Start)
         });
-        ProtobufConfigProvider {
+
+        Ok(ProtobufConfigProvider {
             shutdown_channel: tx,
-        }
+            handle,
+        })
     }
 
     /// Stop the Protobuf API Server
-    pub async fn stop(&self) {
-        self.shutdown_channel.send(()).await.unwrap();
+    pub async fn stop(self) -> Result<(), ProtobufConfigError> {
+        self.shutdown_channel.send(()).await?;
+        self.handle.await.map_err(ProtobufConfigError::Join)?
     }
 }
 
@@ -215,8 +229,9 @@ mod test {
             .to_string();
 
         let notify = Arc::new(Notify::new());
-        let server =
-            ProtobufConfigProvider::new("127.0.0.1:1400", Arc::clone(&notify), &toml_file).await;
+        let server = ProtobufConfigProvider::new("127.0.0.1:1400", Arc::clone(&notify), &toml_file)
+            .await
+            .expect("failed to create a protobuf server");
         let channel = Endpoint::from_static("http://localhost:1400")
             .connect()
             .await
@@ -233,7 +248,7 @@ mod test {
         let response = client.set_config(msg).await;
         assert!(response.is_ok());
         notify.notified().await;
-        server.stop().await;
+        server.stop().await.expect("failed to stop the server");
         assert!(MessageHubConfigClient::connect("http://localhost:1400")
             .await
             .is_err());

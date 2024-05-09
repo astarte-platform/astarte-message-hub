@@ -313,7 +313,7 @@ impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
     /// async fn main() -> Result<(), tonic::Status> {
     ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
     ///
-    ///     let interface_json = std::fs::read("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json")
+    ///     let interface_json = tokio::fs::read("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json").await
     ///         .unwrap();
     ///
     ///     let node = Node {
@@ -379,7 +379,7 @@ impl<T: Clone + AstartePublisher + AstarteSubscriber + 'static>
     ///
     ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
     ///
-    ///     let interface_json = std::fs::read("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json")
+    ///     let interface_json = tokio::fs::read("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json").await
     ///         .unwrap();
     ///
     ///     let node = Node {
