@@ -37,8 +37,10 @@ axum = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 displaydoc = { workspace = true }
+futures = { workspace = true }
 env_logger = { workspace = true }
 eyre = { workspace = true }
+hyper = { workspace = true }
 log = { workspace = true }
 pbjson-types = { workspace = true }
 prost = { workspace = true }
@@ -51,6 +53,7 @@ tokio-stream = { workspace = true, features = ["net"] }
 tokio-util = { workspace = true }
 toml = { workspace = true }
 tonic = { workspace = true }
+tower = { workspace = true }
 uuid = { workspace = true }
 zbus = { workspace = true, default-features = false, features = ["tokio"] }
 
@@ -82,7 +85,7 @@ pbjson-types = "0.6.0"
 prost = "0.12.4"
 reqwest = "0.12.3"
 serde = "1.0.198"
-serde_json = "1.0"
+serde_json = "1.0.0"
 serial_test = "3.0.0"
 stable-eyre = "0.2.2"
 tempfile = "3.10.1"

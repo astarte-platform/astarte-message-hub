@@ -74,7 +74,7 @@ message Node {
 
 When a new node is connected to Message Hub, it will have to call `Attach` method to exchange data
 with Astarte. If the node was successfully attached, the method returns a gRPC stream into which the
-events received from Astarte(based on the declared Introspection) will be redirected.
+events received from Astarte (based on the declared Introspection) will be redirected.
 
 ```protobuf
 service MessageHub {
@@ -100,6 +100,11 @@ sequenceDiagram
     Astarte->AstarteMessageHub: Event data for node1
     AstarteMessageHub->>Node1: Event data
 ```
+
+To prevent sending messages from an unknown node, all subsequent gRPC messages must include the Node
+UUID in their corresponding metadata fields. The metadata will be checked as soon as the Message Hub
+receives a message from a node. If the UUID is neither present nor correctly recognized as belonging
+to an attached node, the related message will be discarded.
 
 ## Send Method
 
@@ -197,11 +202,14 @@ sequenceDiagram
     participant AstarteMessageHub
     participant Astarte
     Node1->>AstarteMessageHub: send(message)
-    AstarteMessageHub->>Astarte: sendData()
-
+    alt Node UUID check failed
+        AstarteMessageHub ->> Node1: Unauthorized
+    end
+    AstarteMessageHub ->> Astarte: sendData()
     alt when the send process fails
          AstarteMessageHub->>Node1: Unable to send message
     end
+
 ```
 
 ## Detach Method
@@ -221,9 +229,11 @@ sequenceDiagram
     participant AstarteMessageHub
     participant Astarte
     Node1->>AstarteMessageHub: detach(node)
-    AstarteMessageHub->>Astarte: sendIntrospection()
-
+    alt Node UUID check failed
+        AstarteMessageHub ->> Node1: Unauthorized
+    end
+    AstarteMessageHub ->> Astarte: sendIntrospection()
     alt when the introspection process fails
-         AstarteMessageHub->>Node1: Unable to attach the node
+        AstarteMessageHub ->> Node1: Unable to detach the node
     end
 ```

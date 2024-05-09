@@ -100,6 +100,7 @@ async fn main() -> eyre::Result<()> {
         let addrs = (Ipv6Addr::LOCALHOST, options.grpc_socket_port).into();
 
         tonic::transport::Server::builder()
+            .layer(message_hub.make_interceptor_layer())
             .add_service(MessageHubServer::new(message_hub))
             .serve(addrs)
             .await
