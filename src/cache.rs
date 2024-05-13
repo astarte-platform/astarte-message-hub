@@ -92,3 +92,185 @@ impl Introspection {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{io, path::Path, str::FromStr};
+
+    use tempfile::TempDir;
+    use tokio::fs;
+
+    use super::*;
+
+    const DEVICE_PROPERTY: &str = include_str!(
+        "../e2e-test/interfaces/org.astarte-platform.rust.e2etest.DeviceProperty.json"
+    );
+    const DEVICE_AGGREGATE: &str = include_str!(
+        "../e2e-test/interfaces/org.astarte-platform.rust.e2etest.DeviceAggregate.json"
+    );
+
+    #[tokio::test]
+    async fn should_store() {
+        let dir = TempDir::new().unwrap();
+
+        let intro = Introspection::new(dir.path());
+
+        let interface = Interface::from_str(DEVICE_PROPERTY).unwrap();
+
+        intro.store(&interface).await;
+
+        let cached = fs::read_to_string(
+            dir.path()
+                .join("org.astarte-platform.rust.e2etest.DeviceProperty.json"),
+        )
+        .await
+        .expect("failed to read cached interface file");
+
+        let res = Interface::from_str(&cached).unwrap();
+
+        assert_eq!(res, interface);
+    }
+
+    #[tokio::test]
+    async fn store_should_not_error() {
+        let dir = Path::new("/foo/bar/none-existing");
+
+        let intro = Introspection::new(dir);
+
+        let interface = Interface::from_str(DEVICE_PROPERTY).unwrap();
+
+        intro.store(&interface).await;
+    }
+
+    #[tokio::test]
+    async fn should_store_many() {
+        let dir = TempDir::new().unwrap();
+
+        let intro = Introspection::new(dir.path());
+
+        let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
+        let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
+
+        let exp = [prop.clone(), agg.clone()];
+
+        intro.store_many(&exp).await;
+
+        let cached = fs::read_to_string(
+            dir.path()
+                .join("org.astarte-platform.rust.e2etest.DeviceProperty.json"),
+        )
+        .await
+        .expect("failed to read cached interface file");
+
+        let res = Interface::from_str(&cached).unwrap();
+
+        assert_eq!(res, prop);
+
+        let cached = fs::read_to_string(
+            dir.path()
+                .join("org.astarte-platform.rust.e2etest.DeviceAggregate.json"),
+        )
+        .await
+        .expect("failed to read cached interface file");
+
+        let res = Interface::from_str(&cached).unwrap();
+
+        assert_eq!(res, agg);
+    }
+
+    #[tokio::test]
+    async fn store_many_should_not_error() {
+        let dir = Path::new("/foo/bar/none-existing");
+
+        let intro = Introspection::new(dir);
+
+        let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
+        let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
+
+        let exp = [prop.clone(), agg.clone()];
+
+        intro.store_many(&exp).await;
+    }
+
+    #[tokio::test]
+    async fn should_remove() {
+        let dir = TempDir::new().unwrap();
+
+        let intro = Introspection::new(dir.path());
+
+        let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
+        let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
+
+        let exp = [prop.clone(), agg.clone()];
+
+        intro.store_many(&exp).await;
+
+        let cached = dir
+            .path()
+            .join("org.astarte-platform.rust.e2etest.DeviceProperty.json");
+
+        assert!(cached.is_file());
+
+        intro.remove(prop.interface_name()).await;
+
+        let err = tokio::fs::read(cached).await.unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[tokio::test]
+    async fn remove_should_not_error() {
+        let dir = Path::new("/foo/bar/none-existing");
+
+        let intro = Introspection::new(dir);
+
+        let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
+        let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
+
+        let exp = [prop.clone(), agg.clone()];
+
+        intro.store_many(&exp).await;
+    }
+
+    #[tokio::test]
+    async fn should_remove_many() {
+        let dir = TempDir::new().unwrap();
+
+        let intro = Introspection::new(dir.path());
+
+        let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
+        let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
+
+        let exp = [prop.clone(), agg.clone()];
+
+        intro.store_many(&exp).await;
+
+        let cached = dir
+            .path()
+            .join("org.astarte-platform.rust.e2etest.DeviceProperty.json");
+
+        assert!(cached.is_file());
+
+        intro.remove_many(&[prop.interface_name()]).await;
+
+        let err = tokio::fs::read(cached).await.unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[tokio::test]
+    async fn remove_many_should_not_error() {
+        let dir = Path::new("/foo/bar/none-existing");
+
+        let intro = Introspection::new(dir);
+
+        let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
+        let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
+
+        let exp = [prop.clone(), agg.clone()];
+
+        intro.store_many(&exp).await;
+
+        intro.remove_many(&[prop.interface_name()]).await;
+    }
+}
