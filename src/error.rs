@@ -24,25 +24,20 @@
 use std::path::PathBuf;
 
 use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
-use thiserror::Error;
+use log::{debug, error};
+use tonic::{Code, Status};
+use uuid::Uuid;
 
+use crate::astarte::handler::DeviceError;
 use crate::config::http::HttpError;
 use crate::config::protobuf::ProtobufConfigError;
 
 /// A list specifying general categories of Astarte Message Hub error.
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum AstarteMessageHubError {
-    /// An infallible error
-    #[error(transparent)]
-    Infallible(#[from] std::convert::Infallible),
-
-    /// Failed to convert between types
-    #[error("unable to convert type")]
-    ConversionError,
-
     /// Error returned by the Astarte SDK
     #[error(transparent)]
-    AstarteError(#[from] astarte_device_sdk::error::Error),
+    Astarte(#[from] astarte_device_sdk::error::Error),
 
     /// Invalid date
     #[error("{0}")]
@@ -50,23 +45,23 @@ pub enum AstarteMessageHubError {
 
     /// Wrapper for an io error
     #[error(transparent)]
-    IOError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
 
     /// Unrecoverable error
     #[error("unrecoverable error ({0})")]
-    FatalError(String),
+    Fatal(String),
 
     /// Invalid configuration file
     #[error("configuration file error")]
-    ConfigFileError(#[from] toml::de::Error),
+    ConfigFile(#[from] toml::de::Error),
 
     /// Fail while sending or receiving data
     #[error(transparent)]
-    TransportError(#[from] tonic::transport::Error),
+    Transport(#[from] tonic::transport::Error),
 
     /// Error returned by Zbus
     #[error(transparent)]
-    ZbusError(#[from] zbus::Error),
+    Zbus(#[from] zbus::Error),
 
     /// Http server error
     #[error("HTTP server error, {0}")]
@@ -83,10 +78,47 @@ pub enum AstarteMessageHubError {
     /// Astarte Message Hub proto error
     #[error("Astarte Message Hub proto error, {0}")]
     Proto(#[from] MessageHubProtoError),
+
+    /// Error returned by  the device
+    #[error("error returned by the device")]
+    Device(#[from] DeviceError),
+
+    /// Couldn't parse the node ID
+    #[error("couldn't parse node id")]
+    Uuid(#[from] uuid::Error),
+
+    /// Couldn't find the node id
+    #[error("node id not found {0}")]
+    NodeId(Uuid),
+}
+
+impl From<AstarteMessageHubError> for Status {
+    fn from(value: AstarteMessageHubError) -> Self {
+        debug!("error {value:?}");
+
+        let code = match value {
+            AstarteMessageHubError::Astarte(_)
+            | AstarteMessageHubError::Io(_)
+            | AstarteMessageHubError::Fatal(_)
+            | AstarteMessageHubError::ConfigFile(_)
+            | AstarteMessageHubError::Transport(_)
+            | AstarteMessageHubError::Zbus(_)
+            | AstarteMessageHubError::HttpServer(_)
+            | AstarteMessageHubError::ProtobufConfig(_) => Code::Internal,
+            AstarteMessageHubError::Device(ref err) => err.into(),
+            AstarteMessageHubError::AstarteInvalidData(_)
+            | AstarteMessageHubError::Timestamp(_)
+            | AstarteMessageHubError::Proto(_)
+            | AstarteMessageHubError::Uuid(_)
+            | AstarteMessageHubError::NodeId(_) => Code::InvalidArgument,
+        };
+
+        Status::new(code, value.to_string())
+    }
 }
 
 /// Reason why a configuration is invalid.
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum ConfigValidationError {
     /// Missing required field in the configuration file
     #[error("{0} field is missing")]

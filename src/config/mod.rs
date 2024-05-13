@@ -101,9 +101,8 @@ impl MessageHubOptions {
             file::get_options_from_toml(&toml_str)
         } else if let Some(store_directory) = store_directory {
             if !store_directory.is_dir() {
-                let err_msg =
-                    "Provided store directory for HTTP and ProtoBuf does not exists.".to_string();
-                return Err(AstarteMessageHubError::FatalError(err_msg));
+                let err_msg = "Provided store directory for HTTP and ProtoBuf does not exists.";
+                return Err(AstarteMessageHubError::Fatal(err_msg.to_string()));
             }
             let configuration_file = store_directory.join(CONFIG_FILE_NAMES[0]);
             if !configuration_file.exists() {
@@ -205,7 +204,7 @@ impl MessageHubOptions {
                 debug!("credentials not found");
             }
             Err(err) => {
-                return Err(AstarteMessageHubError::FatalError(format!(
+                return Err(AstarteMessageHubError::Fatal(format!(
                     "failed to read {}: {}",
                     path.to_string_lossy(),
                     err
@@ -213,9 +212,10 @@ impl MessageHubOptions {
             }
         };
 
-        let token = self.pairing_token.as_ref().ok_or_else(|| {
-            AstarteMessageHubError::FatalError("missing pairing token".to_string())
-        })?;
+        let token = self
+            .pairing_token
+            .as_ref()
+            .ok_or_else(|| AstarteMessageHubError::Fatal("missing pairing token".to_string()))?;
 
         Ok(Credential::paring_token(token))
     }
@@ -243,7 +243,7 @@ impl MessageHubOptions {
         let proxy = DeviceProxy::new(&connection).await?;
         let device_id: String = proxy.get_hardware_id("").await?;
         if device_id.is_empty() {
-            return Err(AstarteMessageHubError::FatalError(
+            return Err(AstarteMessageHubError::Fatal(
                 "No hardware id provided".to_string(),
             ));
         }

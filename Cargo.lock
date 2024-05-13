@@ -198,6 +198,7 @@ dependencies = [
  "eyre",
  "futures",
  "hyper 0.14.28",
+ "itertools 0.12.1",
  "log",
  "mockall",
  "pbjson-types",
