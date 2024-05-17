@@ -459,7 +459,7 @@ where
     }
 
     /// Remove an existing Node from Astarte Message Hub.
-    async fn detach(&self, request: Request<Node>) -> Result<Response<Empty>, Status> {
+    async fn detach(&self, request: Request<Empty>) -> Result<Response<Empty>, Status> {
         let id = request.get_node_id()?;
 
         self.detach_node(id).await.map_err(Status::from)
@@ -822,49 +822,7 @@ mod test {
         req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
         assert!(astarte_message.attach(req_node_attach).await.is_ok());
 
-        let mut req_node_detach = Request::new(node);
-        req_node_detach.extensions_mut().insert(NodeId(TEST_UUID));
-        let detach_result = astarte_message.detach(req_node_detach).await;
-
-        assert!(detach_result.is_ok())
-    }
-
-    #[tokio::test]
-    async fn detach_success_mismatch_node_id() {
-        let mut mock_astarte = MockAstarteHandler::new();
-
-        mock_astarte
-            .expect_clone()
-            .returning(MockAstarteHandler::new);
-
-        mock_astarte.expect_subscribe().returning(|node| {
-            let (_, rx) = mpsc::channel(2);
-            Ok(Subscription {
-                added_interfaces: node.introspection.values().cloned().collect(),
-                receiver: rx,
-            })
-        });
-        mock_astarte
-            .expect_unsubscribe()
-            .returning(|_| Ok(vec!["org.astarte-platform.test.test".to_string()]));
-        let tmp = tempfile::tempdir().unwrap();
-        let astarte_message: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, tmp.path());
-
-        let interfaces = vec![SERV_PROPS_IFACE.to_string()];
-
-        let node = Node::new(&TEST_UUID, interfaces);
-
-        let mut req_node_attach = Request::new(node.clone());
-        // it is necessary to add the NodeId extensions otherwise sending is not allowed
-        req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
-        assert!(astarte_message.attach(req_node_attach).await.is_ok());
-
-        let invalid = Node {
-            uuid: "foo-bar".to_string(),
-            interfaces_json: Vec::new(),
-        };
-        let mut req_node_detach = Request::new(invalid);
+        let mut req_node_detach = Request::new(Empty {});
         req_node_detach.extensions_mut().insert(NodeId(TEST_UUID));
         let detach_result = astarte_message.detach(req_node_detach).await;
 
@@ -887,11 +845,8 @@ mod test {
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let interfaces = [SERV_PROPS_IFACE];
+        let mut req_node = Request::new(Empty {});
 
-        let node = Node::from_interfaces(&TEST_UUID, interfaces).unwrap();
-
-        let mut req_node = Request::new(node);
         // it is necessary to add the NodeId extensions otherwise sending is not allowed
         req_node.extensions_mut().insert(NodeId(TEST_UUID));
 
@@ -933,7 +888,7 @@ mod test {
         req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
         assert!(astarte_message.attach(req_node_attach).await.is_ok());
 
-        let mut req_node_detach = Request::new(node);
+        let mut req_node_detach = Request::new(Empty {});
         req_node_detach.extensions_mut().insert(NodeId(TEST_UUID));
         let detach_result = astarte_message.detach(req_node_detach).await;
 
