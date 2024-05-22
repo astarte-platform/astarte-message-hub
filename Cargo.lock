@@ -56,9 +56,9 @@ checksum = "9c7d0618f0e0b7e8ff11427422b64564d5fb0be1940354bfe2e0529b18a9d9b8"
 
 [[package]]
 name = "astarte-device-sdk"
-version = "0.5.2"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "688160018c42119b3944e2137a3522ae931d0e6e9f821a2ed9106ff37cb7758b"
+checksum = "2f1a283dfbc66664589bac4973e9d57ed8eb9078512b2217f4a6f9ac8a118d71"
 dependencies = [
  "astarte-device-sdk-derive",
  "async-trait",
@@ -88,9 +88,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-derive"
-version = "0.5.2"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "523061cb889682f66797cce11b1195932db2848ac2fbbe314dc7169bedd302b6"
+checksum = "1bc1b51586bf695f4b675a697b9710c7d41cbdc760c38efd0dff517365e73577"
 dependencies = [
  "quote",
  "syn 1.0.109",
