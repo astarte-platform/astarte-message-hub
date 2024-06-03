@@ -121,9 +121,9 @@ checksum = "0952808a6c2afd1aa8947271f3a60f1a6763c7b912d210184c5149b5cf147247"
 
 [[package]]
 name = "astarte-device-sdk"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "068c65d2198cd9bd78d3d5e5d8ea7ec4cbab99ccfc89ffb241166e03185f08af"
+checksum = "89c9c93c614a0a71a65f6bc892d4e361133043d650099e947dee52f7410687f4"
 dependencies = [
  "ahash",
  "astarte-device-sdk-derive",
@@ -161,9 +161,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-derive"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93014fc6af55b0b36bde484e7f8c67e22c5f1cd723422c5549dc4b7487b91119"
+checksum = "b7ec5a33d20902a899d188b2fd368a44666f5e606ab2fc7c5f248c88fbdb5678"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -172,9 +172,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-mock"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4fc8f3d063b5d5d0ec4ef627550f59573da38f52382af57ff27625a7547d409"
+checksum = "cf315365f13c6630a7bfbe14eea725510ce390b1d14628772be66d56568c26d1"
 dependencies = [
  "astarte-device-sdk",
  "async-trait",
@@ -3612,9 +3612,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.34"
+version = "0.3.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8248b6521bb14bc45b4067159b9b6ad792e2d6d754d6c41fb50e29fefe38749"
+checksum = "5dfd88e563464686c916c7e46e623e520ddc6d79fa6641390f2e3fa86e83e885"
 dependencies = [
  "deranged",
  "itoa",
@@ -3633,9 +3633,9 @@ checksum = "ef927ca75afb808a4d64dd374f00a2adf8d0fcff8e7b184af886c3c87ec4a3f3"
 
 [[package]]
 name = "time-macros"
-version = "0.2.17"
+version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ba3a3ef41e6672a2f0f001392bb5dcd3ff0a9992d618ca761a11c3121547774"
+checksum = "3f252a68540fde3a3877aeea552b832b40ab9a69e318efd078774a01ddee1ccf"
 dependencies = [
  "num-conv",
  "time-core",
