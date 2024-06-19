@@ -30,7 +30,9 @@ use std::task::{Context, Poll};
 
 use astarte_device_sdk::Interface;
 use astarte_message_hub_proto::message_hub_server::MessageHub;
-use astarte_message_hub_proto::{AstarteMessage, InterfacesJson, InterfacesName, Node};
+use astarte_message_hub_proto::{
+    AstarteMessage, InterfacesJson, InterfacesName, MessageHubEvent, Node,
+};
 use hyper::{http, Body, Uri};
 use itertools::Itertools;
 use log::{debug, error, info, trace};
@@ -86,7 +88,7 @@ where
     async fn attach_node(
         &self,
         req: Request<Node>,
-    ) -> Resp<ReceiverStream<Result<AstarteMessage, Status>>> {
+    ) -> Resp<ReceiverStream<Result<MessageHubEvent, Status>>> {
         debug!("Node Attach Request");
         let node = req.into_inner();
 
@@ -371,7 +373,7 @@ impl<T> MessageHub for AstarteMessageHub<T>
 where
     T: Clone + AstartePublisher + AstarteSubscriber + 'static,
 {
-    type AttachStream = ReceiverStream<Result<AstarteMessage, Status>>;
+    type AttachStream = ReceiverStream<Result<MessageHubEvent, Status>>;
 
     /// Attach a node to the Message hub. If the node was successfully attached,
     /// the method returns a gRPC stream into which the events received
@@ -640,6 +642,23 @@ mod test {
         }
         "#;
 
+    fn mock_msg_hub(mock_astarte: MockAstarteHandler) -> AstarteMessageHub<MockAstarteHandler> {
+        let tmp = tempfile::tempdir().unwrap();
+        AstarteMessageHub::new(mock_astarte, tmp.path())
+    }
+
+    async fn attach(
+        node_id: &Uuid,
+        msg_hub: &AstarteMessageHub<MockAstarteHandler>,
+    ) -> Result<tonic::Response<ReceiverStream<Result<MessageHubEvent, Status>>>, Status> {
+        let interfaces = vec![SERV_PROPS_IFACE.to_string(), SERV_OBJ_IFACE.to_string()];
+        let node_introspection = Node::new(node_id, interfaces);
+
+        let req_node = Request::new(node_introspection);
+
+        msg_hub.attach(req_node).await
+    }
+
     #[tokio::test]
     async fn attach_success_node() {
         let mut mock_astarte = MockAstarteHandler::new();
@@ -654,21 +673,47 @@ mod test {
             .expect_clone()
             .returning(MockAstarteHandler::new);
 
-        let tmp = tempfile::tempdir().unwrap();
-        let astarte_message: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, tmp.path());
-
-        let interfaces = vec![SERV_PROPS_IFACE.to_string(), SERV_OBJ_IFACE.to_string()];
-        let node_introspection = Node::new(&TEST_UUID, interfaces);
-
-        let req_node = Request::new(node_introspection);
-        let attach_result = astarte_message.attach(req_node).await;
+        let msg_hub = mock_msg_hub(mock_astarte);
+        let attach_result = attach(&TEST_UUID, &msg_hub).await;
 
         assert!(
             attach_result.is_ok(),
             "error {:?}",
             attach_result.unwrap_err()
         );
+    }
+
+    #[tokio::test]
+    async fn send_message_hub_event() {
+        let (tx, rx) = mpsc::channel(2);
+
+        let mut mock_astarte = MockAstarteHandler::new();
+        mock_astarte.expect_subscribe().return_once(|node| {
+            Ok(Subscription {
+                added_interfaces: node.introspection.values().cloned().collect(),
+                receiver: rx,
+            })
+        });
+        mock_astarte
+            .expect_clone()
+            .returning(MockAstarteHandler::new);
+
+        let msg_hub = mock_msg_hub(mock_astarte);
+        let attach_result = attach(&TEST_UUID, &msg_hub).await;
+
+        // send a custom error to the Node
+        let msghub_event = MessageHubEvent::from_error(AstarteMessageHubError::Astarte(
+            astarte_device_sdk::Error::Interface(
+                astarte_device_sdk::interface::error::InterfaceError::MajorMinor,
+            ),
+        ));
+        if let Err(err) = tx.send(Ok(msghub_event.clone())).await {
+            panic!("send error: {err:?}");
+        }
+
+        let mut receiver = attach_result.unwrap().into_inner().into_inner();
+        let event = receiver.recv().await.unwrap().unwrap();
+        assert_eq!(event, msghub_event);
     }
 
     #[tokio::test]
