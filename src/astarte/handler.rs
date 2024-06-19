@@ -33,6 +33,7 @@ use astarte_device_sdk::{
 };
 use astarte_message_hub_proto::{
     astarte_data_type::Data, astarte_message::Payload, AstarteDataTypeIndividual, AstarteMessage,
+    MessageHubEvent,
 };
 use async_trait::async_trait;
 use itertools::Itertools;
@@ -117,22 +118,53 @@ impl DeviceSubscriber {
         &mut self,
         event: Result<DeviceEvent, AstarteError>,
     ) -> Result<(), DeviceError> {
-        let event = event.map_err(DeviceError::Astarte)?;
+        // determine if sending a proto message hub error or a correct message to the message hub nodes
+        let (msghub_event, to_notify) = match event {
+            Ok(event) => {
+                let itf_name = event.interface.clone();
 
-        let itf_name = event.interface.clone();
+                let msg = MessageHubEvent::from(AstarteMessage::from(event));
 
-        let msg = AstarteMessage::from(event);
+                (msg, NotifySubscribers::Some(itf_name))
+            }
+            Err(err) => {
+                let msg = MessageHubEvent::from_error(&err);
 
-        let sub = self.subscribers.read().await;
-        let subscribers = sub
-            .values()
-            .filter(|subscriber| subscriber.introspection.contains(&itf_name));
+                (msg, NotifySubscribers::All)
+            }
+        };
 
-        for subscriber in subscribers {
+        trace!("message hub event: {msghub_event:?}");
+
+        match to_notify {
+            // TODO: since the error doesn't bring with itself interface information, we send the
+            //      event to all the nodes. This is tracked with SDK Issue #[358]
+            NotifySubscribers::All => self.send_to_subscribers(msghub_event, |_| true).await,
+            NotifySubscribers::Some(iface) => {
+                self.send_to_subscribers(msghub_event, |s| s.introspection.contains(&iface))
+                    .await
+            }
+        }
+    }
+
+    /// Send a message to a subset of subscribers.
+    ///
+    /// The closure passed in input to the method discriminates which subscribers must receive a message.
+    async fn send_to_subscribers<F>(
+        &self,
+        msghub_event: MessageHubEvent,
+        f: F,
+    ) -> Result<(), DeviceError>
+    where
+        F: Fn(&&Subscriber) -> bool,
+    {
+        let subscribers = self.subscribers.read().await;
+
+        for subscriber in subscribers.values().filter(f) {
             subscriber
                 .sender
                 // This is needed to satisfy the tonic trait
-                .send(Ok(msg.clone()))
+                .send(Ok(msghub_event.clone()))
                 .await
                 .map_err(|_| DeviceError::Disconnected)?;
         }
@@ -141,11 +173,19 @@ impl DeviceSubscriber {
     }
 }
 
+/// Enum used to decide which subscribers should receive a message.
+enum NotifySubscribers {
+    /// All subscribers.
+    All,
+    /// All the subscribers containing in their introspection the specified interfaces
+    Some(String),
+}
+
 /// A subscriber for the Astarte handler.
 #[derive(Debug, Clone)]
 pub struct Subscriber {
     introspection: HashSet<String>,
-    sender: Sender<Result<AstarteMessage, Status>>,
+    sender: Sender<Result<MessageHubEvent, Status>>,
 }
 
 /// An Astarte Device SDK based implementation of an Astarte handler.
@@ -598,7 +638,14 @@ mod test {
 
         let mut subscription = subscribe_result.unwrap();
 
-        let astarte_message = subscription.receiver.recv().await.unwrap().unwrap();
+        let astarte_message = subscription
+            .receiver
+            .recv()
+            .await
+            .unwrap()
+            .unwrap()
+            .take_message()
+            .unwrap();
 
         assert_eq!(expected_interface_name, astarte_message.interface_name);
         assert_eq!(path, astarte_message.path);

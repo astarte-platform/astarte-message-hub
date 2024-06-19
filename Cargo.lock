@@ -122,7 +122,7 @@ checksum = "f538837af36e6f6a9be0faa67f9a314f8119e4e4b5867c6ab40ed60360142519"
 [[package]]
 name = "astarte-device-sdk"
 version = "0.8.2"
-source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust?rev=7e4ffb56c0775c08b680a15ba28da4858824a4e3#7e4ffb56c0775c08b680a15ba28da4858824a4e3"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust?branch=change-msg-api#5dce36014cc3ecf8e99584a909d64200414acd6b"
 dependencies = [
  "ahash",
  "astarte-device-sdk-derive",
@@ -151,7 +151,6 @@ dependencies = [
  "sqlx",
  "sync_wrapper 1.0.1",
  "thiserror",
- "time",
  "tokio",
  "tracing",
  "url",
@@ -162,7 +161,7 @@ dependencies = [
 [[package]]
 name = "astarte-device-sdk-derive"
 version = "0.8.2"
-source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust?rev=7e4ffb56c0775c08b680a15ba28da4858824a4e3#7e4ffb56c0775c08b680a15ba28da4858824a4e3"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust?branch=change-msg-api#5dce36014cc3ecf8e99584a909d64200414acd6b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -172,7 +171,7 @@ dependencies = [
 [[package]]
 name = "astarte-device-sdk-mock"
 version = "0.8.2"
-source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust?rev=7e4ffb56c0775c08b680a15ba28da4858824a4e3#7e4ffb56c0775c08b680a15ba28da4858824a4e3"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust?branch=change-msg-api#5dce36014cc3ecf8e99584a909d64200414acd6b"
 dependencies = [
  "astarte-device-sdk",
  "async-trait",
@@ -221,7 +220,7 @@ dependencies = [
 [[package]]
 name = "astarte-message-hub-proto"
 version = "0.6.2"
-source = "git+https://github.com/astarte-platform/astarte-message-hub-proto?rev=08ff0df376995d56b6c9d823ccf884afaeb7bdc7#08ff0df376995d56b6c9d823ccf884afaeb7bdc7"
+source = "git+https://github.com/rgallor/astarte-message-hub-proto.git?branch=change-msg-api#8afe8886042b4766f82c94c49bc324db50dba1f0"
 dependencies = [
  "chrono",
  "pbjson-types",
@@ -2813,7 +2812,7 @@ dependencies = [
 [[package]]
 name = "rumqttc"
 version = "0.24.0"
-source = "git+https://github.com/joshuachp/rumqtt?rev=9109f874ec10e1660448616e7054a887672dfd07#9109f874ec10e1660448616e7054a887672dfd07"
+source = "git+https://github.com/joshuachp/rumqtt?rev=146962ee07861b7e187b040ba92d482248294f8c#146962ee07861b7e187b040ba92d482248294f8c"
 dependencies = [
  "bytes",
  "flume",

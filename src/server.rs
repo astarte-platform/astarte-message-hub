@@ -30,7 +30,9 @@ use std::task::{Context, Poll};
 
 use astarte_device_sdk::Interface;
 use astarte_message_hub_proto::message_hub_server::MessageHub;
-use astarte_message_hub_proto::{AstarteMessage, InterfacesJson, InterfacesName, Node};
+use astarte_message_hub_proto::{
+    AstarteMessage, InterfacesJson, InterfacesName, MessageHubEvent, Node,
+};
 use hyper::{http, Body, Uri};
 use itertools::Itertools;
 use log::{debug, error, info, trace};
@@ -86,7 +88,7 @@ where
     async fn attach_node(
         &self,
         req: Request<Node>,
-    ) -> Resp<ReceiverStream<Result<AstarteMessage, Status>>> {
+    ) -> Resp<ReceiverStream<Result<MessageHubEvent, Status>>> {
         debug!("Node Attach Request");
         let node = req.into_inner();
 
@@ -371,7 +373,7 @@ impl<T> MessageHub for AstarteMessageHub<T>
 where
     T: Clone + AstartePublisher + AstarteSubscriber + 'static,
 {
-    type AttachStream = ReceiverStream<Result<AstarteMessage, Status>>;
+    type AttachStream = ReceiverStream<Result<MessageHubEvent, Status>>;
 
     /// Attach a node to the Message hub. If the node was successfully attached,
     /// the method returns a gRPC stream into which the events received
