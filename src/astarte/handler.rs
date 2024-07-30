@@ -21,8 +21,7 @@
 //! Contains an implementation of an Astarte handler.
 
 use std::collections::{HashMap, HashSet};
-use std::fmt::{Debug, Formatter};
-use std::str::Utf8Error;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use astarte_device_sdk::interface::error::InterfaceError;
@@ -59,9 +58,6 @@ pub enum DeviceError {
     Convert(#[from] MessageHubProtoError),
     /// subscriber already disconnected
     Disconnected,
-    // TODO: check if still necessary
-    /// interface json is not UTF-8
-    InterfaceNotUtf8(#[from] Utf8Error),
     /// invalid interface json in node introspection
     Interface(#[from] InterfaceError),
 }
@@ -71,9 +67,7 @@ impl From<&DeviceError> for Code {
         match value {
             DeviceError::Astarte(_) => Code::Aborted,
             DeviceError::Disconnected => Code::Internal,
-            DeviceError::Convert(_)
-            | DeviceError::InterfaceNotUtf8(_)
-            | DeviceError::Interface(_) => Code::InvalidArgument,
+            DeviceError::Convert(_) | DeviceError::Interface(_) => Code::InvalidArgument,
         }
     }
 }
@@ -148,16 +142,10 @@ impl DeviceSubscriber {
 }
 
 /// A subscriber for the Astarte handler.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Subscriber {
     introspection: HashSet<String>,
     sender: Sender<Result<AstarteMessage, Status>>,
-}
-
-impl Debug for Subscriber {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.introspection)
-    }
 }
 
 /// An Astarte Device SDK based implementation of an Astarte handler.
@@ -316,7 +304,7 @@ impl AstarteSubscriber for DevicePublisher {
 
         trace!(
             "extending introspection with the following interfaces: {:?}",
-            to_add.keys().collect_vec()
+            to_add.keys()
         );
         let added_names = self
             .client

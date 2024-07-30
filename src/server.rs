@@ -94,7 +94,7 @@ where
         let interfaces_json = InterfacesJson::from_iter(node.interfaces_json);
         let astarte_node = AstarteNode::from_json(id, &interfaces_json)?;
 
-        info!("ATTACH NODE: {:?}", astarte_node);
+        info!("Node attached {:?}", astarte_node);
 
         let sub = self.astarte_handler.subscribe(&astarte_node).await?;
 

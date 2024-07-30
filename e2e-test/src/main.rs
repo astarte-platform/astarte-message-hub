@@ -34,8 +34,8 @@ use crate::{
     device_sdk::{init_node, Node},
     interfaces::{
         AdditionalDeviceDatastream, AdditionalServerDatastream, DeviceAggregate, DeviceDatastream,
-        DeviceProperty, ServerDatastream, ServerProperty, ENDPOINTS, INTERFACE_NAMES,
-        INTERFACE_NAMES_WITH_ADDED,
+        DeviceProperty, ServerDatastream, ServerProperty, ADDITIONAL_INTERFACE_NAMES, ENDPOINTS,
+        INTERFACE_NAMES,
     },
     message_hub::{init_message_hub, MsgHub},
 };
@@ -360,12 +360,14 @@ async fn extend_node_interfaces(
     let mut added = handle.await??;
     added.sort();
 
-    let expected = vec![
-        "org.astarte-platform.rust.e2etest.AdditionalDeviceDatastream".to_string(),
-        "org.astarte-platform.rust.e2etest.AdditionalServerDatastream".to_string(),
-    ];
+    assert_eq!(added, ADDITIONAL_INTERFACE_NAMES);
 
-    assert_eq!(added, expected);
+    let mut exp_interfaces = INTERFACE_NAMES
+        .iter()
+        .merge(ADDITIONAL_INTERFACE_NAMES)
+        .copied()
+        .collect_vec();
+    exp_interfaces.sort();
 
     // Check that adding the interfaces worked by checking the message hub interfaces
     retry(20, || async {
@@ -375,11 +377,41 @@ async fn extend_node_interfaces(
         debug!(?interfaces);
 
         ensure!(
-            interfaces == INTERFACE_NAMES_WITH_ADDED,
+            interfaces == exp_interfaces,
             "different number of interfaces"
         );
 
         Ok(())
+    })
+    .await?;
+
+    debug!("sending AdditionalDeviceDatastream");
+    let mut data = AdditionalDeviceDatastream::default().astarte_aggregate()?;
+    for &endpoint in ENDPOINTS {
+        let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
+
+        node.client
+            .send(
+                AdditionalDeviceDatastream::name(),
+                &format!("/{endpoint}"),
+                value,
+            )
+            .await?;
+
+        barrier.wait().await;
+    }
+
+    retry(10, || {
+        let value = data.clone();
+
+        async move {
+            debug!("checking result");
+
+            api.check_individual(AdditionalDeviceDatastream::name(), &value)
+                .await?;
+
+            Ok(())
+        }
     })
     .await?;
 
