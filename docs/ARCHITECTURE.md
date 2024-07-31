@@ -209,7 +209,6 @@ sequenceDiagram
     alt when the send process fails
          AstarteMessageHub->>Node1: Unable to send message
     end
-
 ```
 
 ## Detach Method
@@ -218,7 +217,7 @@ Remove an existing Node and its introspection from Astarte Message Hub.
 
 ```protobuf
 service MessageHub {
-  rpc Detach(Node) returns (google.protobuf.Empty){}
+  rpc Detach(google.protobuf.Empty) returns (google.protobuf.Empty){}
   ....
 }
 ```
@@ -228,7 +227,7 @@ sequenceDiagram
     participant Node1
     participant AstarteMessageHub
     participant Astarte
-    Node1->>AstarteMessageHub: detach(node)
+    Node1 ->> AstarteMessageHub: detach()
     alt Node UUID check failed
         AstarteMessageHub ->> Node1: Unauthorized
     end
