@@ -22,10 +22,12 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::str::FromStr;
 use std::sync::Arc;
 
-use astarte_device_sdk::interface::error::InterfaceError;
 use astarte_device_sdk::{
+    client::RecvError,
+    interface::error::InterfaceError,
     store::SqliteStore,
     transport::grpc::convert::{map_values_to_astarte_type, MessageHubProtoError},
     types::AstarteType,
@@ -104,7 +106,7 @@ impl DeviceSubscriber {
     pub async fn forward_events(&mut self) -> Result<(), DeviceError> {
         loop {
             match self.client.recv().await {
-                Err(AstarteError::Disconnected) => return Err(DeviceError::Disconnected),
+                Err(RecvError::Disconnected) => return Err(DeviceError::Disconnected),
                 event => {
                     if let Err(err) = self.on_event(event).await {
                         error!("error on event receive: {err}");
@@ -114,23 +116,28 @@ impl DeviceSubscriber {
         }
     }
 
-    async fn on_event(
-        &mut self,
-        event: Result<DeviceEvent, AstarteError>,
-    ) -> Result<(), DeviceError> {
+    async fn on_event(&mut self, event: Result<DeviceEvent, RecvError>) -> Result<(), DeviceError> {
         // determine if sending a proto message hub error or a correct message to the message hub nodes
         let (msghub_event, to_notify) = match event {
             Ok(event) => {
-                let itf_name = event.interface.clone();
+                let iface_name = event.interface.clone();
 
                 let msg = MessageHubEvent::from(AstarteMessage::from(event));
 
-                (msg, NotifySubscribers::Some(itf_name))
+                (msg, NotifySubscribers::Some(iface_name))
             }
             Err(err) => {
                 let msg = MessageHubEvent::from_error(&err);
 
-                (msg, NotifySubscribers::All)
+                if let RecvError::MappingNotFound { interface, mapping } = err {
+                    error!("mapping {mapping} not found");
+                    let iface_name = Interface::from_str(&interface)?
+                        .interface_name()
+                        .to_string();
+                    (msg, NotifySubscribers::Some(iface_name))
+                } else {
+                    (msg, NotifySubscribers::All)
+                }
             }
         };
 
