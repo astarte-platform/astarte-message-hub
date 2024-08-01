@@ -33,6 +33,7 @@ pub static INTERFACES: &[&str] = &[
     SERVER_PROPERTY,
 ];
 
+/// List of all the interfaces name
 pub static INTERFACE_NAMES: &[&str] = &[
     DEVICE_AGGREGATE_NAME,
     DEVICE_DATASTREAM_NAME,
@@ -40,6 +41,16 @@ pub static INTERFACE_NAMES: &[&str] = &[
     SERVER_AGGREGATE_NAME,
     SERVER_DATASTREAM_NAME,
     SERVER_PROPERTY_NAME,
+];
+
+/// List of all the additional interfaces
+pub static ADDITIONAL_INTERFACES: &[&str] =
+    &[ADDITIONAL_DEVICE_DATASTREAM, ADDITIONAL_SERVER_DATASTREAM];
+
+/// List of all the additional interfaces name
+pub static ADDITIONAL_INTERFACE_NAMES: &[&str] = &[
+    ADDITIONAL_DEVICE_DATASTREAM_NAME,
+    ADDITIONAL_SERVER_DATASTREAM_NAME,
 ];
 
 pub const ENDPOINTS: &[&str] = &[
@@ -200,6 +211,56 @@ impl ServerProperty {
 }
 
 impl AstarteAggregate for ServerProperty {
+    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
+        self.0.astarte_aggregate()
+    }
+}
+
+pub const ADDITIONAL_DEVICE_DATASTREAM: &str = include_str!(
+    "../interfaces/additional/org.astarte-platform.rust.e2etest.AdditionalDeviceDatastream.json"
+);
+pub const ADDITIONAL_DEVICE_DATASTREAM_NAME: &str =
+    "org.astarte-platform.rust.e2etest.AdditionalDeviceDatastream";
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct AdditionalDeviceDatastream(pub Data);
+
+impl AdditionalDeviceDatastream {
+    pub const fn name() -> &'static str {
+        ADDITIONAL_DEVICE_DATASTREAM_NAME
+    }
+
+    pub const fn interface() -> &'static str {
+        ADDITIONAL_DEVICE_DATASTREAM
+    }
+}
+
+impl AstarteAggregate for AdditionalDeviceDatastream {
+    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
+        self.0.astarte_aggregate()
+    }
+}
+
+pub const ADDITIONAL_SERVER_DATASTREAM: &str = include_str!(
+    "../interfaces/additional/org.astarte-platform.rust.e2etest.AdditionalServerDatastream.json"
+);
+pub const ADDITIONAL_SERVER_DATASTREAM_NAME: &str =
+    "org.astarte-platform.rust.e2etest.AdditionalServerDatastream";
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct AdditionalServerDatastream(pub Data);
+
+impl AdditionalServerDatastream {
+    pub const fn name() -> &'static str {
+        ADDITIONAL_SERVER_DATASTREAM_NAME
+    }
+
+    pub const fn interface() -> &'static str {
+        ADDITIONAL_SERVER_DATASTREAM
+    }
+}
+
+impl AstarteAggregate for AdditionalServerDatastream {
     fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
         self.0.astarte_aggregate()
     }

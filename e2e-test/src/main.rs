@@ -16,23 +16,26 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use std::str::FromStr;
 use std::{env::VarError, future::Future, sync::Arc};
 
 use astarte_device_sdk::{prelude::*, Value};
 use eyre::{bail, ensure, eyre, Context, OptionExt};
 use interfaces::ServerAggregate;
+use itertools::Itertools;
 use tempfile::tempdir;
 use tokio::{sync::Barrier, task::JoinSet};
 use tracing::{debug, error, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use uuid::{uuid, Uuid};
 
+use crate::interfaces::ADDITIONAL_INTERFACES;
 use crate::{
     api::Api,
     device_sdk::{init_node, Node},
     interfaces::{
-        DeviceAggregate, DeviceDatastream, DeviceProperty, ServerDatastream, ServerProperty,
-        ENDPOINTS, INTERFACE_NAMES,
+        AdditionalDeviceDatastream, DeviceAggregate, DeviceDatastream, DeviceProperty,
+        ServerDatastream, ServerProperty, ADDITIONAL_INTERFACE_NAMES, ENDPOINTS, INTERFACE_NAMES,
     },
     message_hub::{init_message_hub, MsgHub},
 };
@@ -147,6 +150,17 @@ async fn e2e_test(
 
     // Receive the server data
     receive_server_data(&mut node, &api).await?;
+
+    // Extend the node interfaces
+    let additional_interfaces = additional_interfaces()?;
+    extend_node_interfaces(&mut node, &api, &barrier, additional_interfaces.clone()).await?;
+
+    // Remove some node interfaces
+    let to_remove = ADDITIONAL_INTERFACE_NAMES
+        .iter()
+        .map(|i| i.to_string())
+        .collect_vec();
+    remove_node_interfaces(&mut node, &api, &barrier, to_remove).await?;
 
     // Disconnect the message hub and cleanup
     node.close().await?;
@@ -313,6 +327,130 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
 
         assert_eq!(event.data, Value::Unset);
     }
+
+    Ok(())
+}
+
+#[instrument(skip_all)]
+fn additional_interfaces() -> eyre::Result<Vec<astarte_device_sdk::interface::Interface>> {
+    let to_add = ADDITIONAL_INTERFACES
+        .iter()
+        .copied()
+        .map(astarte_device_sdk::interface::Interface::from_str)
+        .try_collect()?;
+
+    Ok(to_add)
+}
+
+#[instrument(skip_all)]
+async fn extend_node_interfaces(
+    node: &mut Node,
+    api: &Api,
+    barrier: &Barrier,
+    to_add: Vec<astarte_device_sdk::interface::Interface>,
+) -> eyre::Result<()> {
+    debug!("extending interfaces with AdditionalDeviceDatastream");
+    let client = node.client.clone();
+    let handle = tokio::spawn(async move { client.extend_interfaces_vec(to_add).await });
+
+    barrier.wait().await;
+
+    let mut added = handle.await??;
+    added.sort();
+
+    assert_eq!(added, ADDITIONAL_INTERFACE_NAMES);
+
+    let mut exp_interfaces = INTERFACE_NAMES
+        .iter()
+        .merge(ADDITIONAL_INTERFACE_NAMES)
+        .copied()
+        .collect_vec();
+    exp_interfaces.sort();
+
+    // Check that adding the interfaces worked by checking the message hub interfaces
+    retry(20, || async {
+        let mut interfaces = api.interfaces().await?;
+        interfaces.sort_unstable();
+
+        debug!(?interfaces);
+
+        ensure!(
+            interfaces == exp_interfaces,
+            "different number of interfaces"
+        );
+
+        Ok(())
+    })
+    .await?;
+
+    debug!("sending AdditionalDeviceDatastream");
+    let mut data = AdditionalDeviceDatastream::default().astarte_aggregate()?;
+    for &endpoint in ENDPOINTS {
+        let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
+
+        node.client
+            .send(
+                AdditionalDeviceDatastream::name(),
+                &format!("/{endpoint}"),
+                value,
+            )
+            .await?;
+
+        barrier.wait().await;
+    }
+
+    retry(10, || {
+        let value = data.clone();
+
+        async move {
+            debug!("checking result");
+
+            api.check_individual(AdditionalDeviceDatastream::name(), &value)
+                .await?;
+
+            Ok(())
+        }
+    })
+    .await?;
+
+    Ok(())
+}
+
+#[instrument(skip_all)]
+async fn remove_node_interfaces(
+    node: &mut Node,
+    api: &Api,
+    barrier: &Barrier,
+    mut to_remove: Vec<String>,
+) -> eyre::Result<()> {
+    debug!("removing interfaces {to_remove:?}");
+    let client = node.client.clone();
+    let to_remove_cl = to_remove.clone();
+    let handle = tokio::spawn(async move { client.remove_interfaces_vec(to_remove_cl).await });
+
+    barrier.wait().await;
+
+    let mut removed = handle.await??;
+    removed.sort();
+    to_remove.sort();
+
+    assert_eq!(removed, to_remove);
+
+    // Check that removing the interfaces worked by checking the message hub interfaces
+    retry(20, || async {
+        let mut interfaces = api.interfaces().await?;
+        interfaces.sort_unstable();
+
+        debug!(?interfaces);
+
+        ensure!(
+            interfaces == INTERFACE_NAMES,
+            "different number of interfaces"
+        );
+
+        Ok(())
+    })
+    .await?;
 
     Ok(())
 }

@@ -19,9 +19,8 @@
  */
 //! Contains the implementation for the Astarte message hub.
 
-use hyper::{http, Body, Uri};
 use std::borrow::Borrow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -31,7 +30,8 @@ use std::task::{Context, Poll};
 
 use astarte_device_sdk::Interface;
 use astarte_message_hub_proto::message_hub_server::MessageHub;
-use astarte_message_hub_proto::{AstarteMessage, Node};
+use astarte_message_hub_proto::{AstarteMessage, InterfacesJson, InterfacesName, Node};
+use hyper::{http, Body, Uri};
 use itertools::Itertools;
 use log::{debug, error, info, trace};
 use pbjson_types::Empty;
@@ -44,7 +44,7 @@ use tonic::{Request, Response, Status};
 use tower::{Layer, Service};
 use uuid::Uuid;
 
-use crate::astarte::handler::{interface_from_json, DeviceError};
+use crate::astarte::handler::DeviceError;
 use crate::astarte::{AstartePublisher, AstarteSubscriber};
 use crate::cache::Introspection;
 use crate::error::AstarteMessageHubError;
@@ -91,8 +91,10 @@ where
         let node = req.into_inner();
 
         let id = Uuid::parse_str(&node.uuid)?;
+        let interfaces_json = InterfacesJson::from_iter(node.interfaces_json);
+        let astarte_node = AstarteNode::from_json(id, &interfaces_json)?;
 
-        let astarte_node = AstarteNode::from_json(id, &node.interface_jsons)?;
+        info!("Node attached {:?}", astarte_node);
 
         let sub = self.astarte_handler.subscribe(&astarte_node).await?;
 
@@ -100,8 +102,6 @@ where
 
         let mut nodes = self.nodes.write().await;
         nodes.insert(astarte_node.id, astarte_node);
-
-        self.introspection.store_many(&sub.added_interfaces).await;
 
         Ok(Response::new(ReceiverStream::new(sub.receiver)))
     }
@@ -114,6 +114,45 @@ where
         let removed = self.astarte_handler.unsubscribe(id).await?;
 
         nodes.remove(id);
+
+        self.introspection.remove_many(&removed).await;
+
+        Ok(Response::new(Empty {}))
+    }
+
+    async fn add_interfaces_node(
+        &self,
+        node_id: &Uuid,
+        interfaces_json: &InterfacesJson,
+    ) -> Resp<Empty> {
+        let to_add = interfaces_json
+            .interfaces_json
+            .iter()
+            .map(|i| {
+                Interface::from_str(i).map(|iface| (iface.interface_name().to_string(), iface))
+            })
+            .try_collect()?;
+
+        let interfaces = self
+            .astarte_handler
+            .extend_interfaces(node_id, to_add)
+            .await?;
+
+        self.introspection.store_many(interfaces.iter()).await;
+        Ok(Response::new(Empty {}))
+    }
+
+    async fn remove_interfaces_node(
+        &self,
+        node_id: &Uuid,
+        interfaces_name: InterfacesName,
+    ) -> Resp<Empty> {
+        let to_remove = HashSet::from_iter(interfaces_name.names);
+
+        let removed = self
+            .astarte_handler
+            .remove_interfaces(node_id, to_remove)
+            .await?;
 
         self.introspection.remove_many(&removed).await;
 
@@ -341,18 +380,17 @@ where
     /// ```no_run
     /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
     /// use astarte_message_hub_proto::Node;
+    /// use uuid::Uuid;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), tonic::Status> {
     ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
     ///
-    ///     let interface_json = tokio::fs::read("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json").await
+    ///     let uuid = Uuid::new_v4();
+    ///     let interface = tokio::fs::read_to_string("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json").await
     ///         .unwrap();
     ///
-    ///     let node = Node {
-    ///             uuid: "a2d4769f-0338-4f7f-b71d-9f81b41ae13f".to_string(),
-    ///             interface_jsons: vec![interface_json],
-    ///     };
+    ///     let node = Node::from_interfaces(&uuid, [&interface]).unwrap();
     ///
     ///     let mut stream = message_hub_client
     ///         .attach(tonic::Request::new(node))
@@ -373,23 +411,21 @@ where
     /// Send a message to Astarte for a node attached to the Astarte Message Hub.
     ///
     /// ```no_run
-    /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
     /// use astarte_message_hub_proto::Node;
+    /// use astarte_message_hub_proto::astarte_message::Payload;
+    /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
+    /// use astarte_message_hub_proto::AstarteMessage;
+    /// use uuid::Uuid;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), tonic::Status> {
-    /// use astarte_message_hub_proto::astarte_message::Payload;
-    /// use astarte_message_hub_proto::AstarteMessage;
-    ///
     ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
     ///
-    ///     let interface_json = tokio::fs::read("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json").await
+    ///     let uuid = Uuid::new_v4();
+    ///     let interface = tokio::fs::read_to_string("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json").await
     ///         .unwrap();
     ///
-    ///     let node = Node {
-    ///             uuid: "a2d4769f-0338-4f7f-b71d-9f81b41ae13f".to_string(),
-    ///             interface_jsons: vec![interface_json],
-    ///     };
+    ///     let node = Node::from_interfaces(&uuid, [&interface]).unwrap();
     ///
     ///     let stream = message_hub_client
     ///         .attach(tonic::Request::new(node))
@@ -428,6 +464,37 @@ where
 
         self.detach_node(id).await.map_err(Status::from)
     }
+
+    async fn add_interfaces(
+        &self,
+        request: Request<InterfacesJson>,
+    ) -> Result<Response<Empty>, Status> {
+        // retrieve the node id
+        let node_id = request.get_node_id()?;
+
+        info!("Node {node_id} Add Interfaces Request");
+
+        let interfaces = request.get_ref();
+
+        self.add_interfaces_node(node_id.as_ref(), interfaces)
+            .await
+            .map_err(Status::from)
+    }
+
+    async fn remove_interfaces(
+        &self,
+        request: Request<InterfacesName>,
+    ) -> Result<Response<Empty>, Status> {
+        // retrieve the node id
+        let node_id = *request.get_node_id()?;
+
+        info!("Node {node_id} Remove Interfaces Request");
+        let interfaces = request.into_inner();
+
+        self.remove_interfaces_node(node_id.as_ref(), interfaces)
+            .await
+            .map_err(Status::from)
+    }
 }
 
 /// A single node that can be connected to the Astarte message hub.
@@ -448,13 +515,15 @@ impl AstarteNode {
         }
     }
 
-    pub fn from_json<B>(uuid: Uuid, interface_jsons: &[B]) -> Result<Self, DeviceError>
-    where
-        B: AsRef<[u8]>,
-    {
-        let introspection = interface_jsons
+    pub fn from_json(uuid: Uuid, interfaces_json: &InterfacesJson) -> Result<Self, DeviceError> {
+        let introspection = interfaces_json
+            .interfaces_json
             .iter()
-            .map(|i| interface_from_json(i.as_ref()).map(|i| (i.interface_name().to_string(), i)))
+            .map(|i| {
+                Interface::from_str(i)
+                    .map_err(DeviceError::Interface)
+                    .map(|i| (i.interface_name().to_string(), i))
+            })
             .try_collect()?;
 
         Ok(Self::new(uuid, introspection))
@@ -471,8 +540,8 @@ mod test {
 
     use astarte_message_hub_proto::astarte_message::Payload;
     use astarte_message_hub_proto::message_hub_server::MessageHub;
-    use astarte_message_hub_proto::AstarteMessage;
     use astarte_message_hub_proto::Node;
+    use astarte_message_hub_proto::{AstarteMessage, InterfacesJson};
     use async_trait::async_trait;
     use hyper::{Body, Response, StatusCode};
     use mockall::mock;
@@ -494,7 +563,7 @@ mod test {
 
     use super::*;
 
-    const TEST_UUID: uuid::Uuid = uuid::uuid!("d1e7a6e9-cf99-4694-8fb6-997934be079c");
+    const TEST_UUID: Uuid = uuid::uuid!("d1e7a6e9-cf99-4694-8fb6-997934be079c");
 
     mock! {
         AstarteHandler { }
@@ -516,9 +585,13 @@ mod test {
             async fn subscribe(
                 &self,
                 astarte_node: &AstarteNode,
-            ) -> Result<crate::astarte::Subscription, AstarteMessageHubError>;
+            ) -> Result<Subscription, AstarteMessageHubError>;
 
             async fn unsubscribe(&self, id: &Uuid) -> Result<Vec<String>, AstarteMessageHubError>;
+
+            async fn extend_interfaces(&self, node_id: &Uuid, to_add: HashMap<String, Interface>) -> Result<Vec<Interface>, AstarteMessageHubError>;
+
+            async fn remove_interfaces(&self, node_id: &Uuid, to_remove: HashSet<String>) -> Result<Vec<String>, AstarteMessageHubError>;
         }
     }
 
@@ -547,7 +620,7 @@ mod test {
 
     const SERV_PROPS_IFACE: &str = r#"
         {
-            "interface_name": "org.astarte-platform.test.test",
+            "interface_name": "org.astarte-platform.Test",
             "version_major": 12,
             "version_minor": 1,
             "type": "properties",
@@ -585,15 +658,8 @@ mod test {
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let interfaces = vec![
-            SERV_PROPS_IFACE.to_string().into_bytes(),
-            SERV_OBJ_IFACE.to_string().into_bytes(),
-        ];
-
-        let node_introspection = Node {
-            uuid: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
-            interface_jsons: interfaces,
-        };
+        let interfaces = vec![SERV_PROPS_IFACE.to_string(), SERV_OBJ_IFACE.to_string()];
+        let node_introspection = Node::new(&TEST_UUID, interfaces);
 
         let req_node = Request::new(node_introspection);
         let attach_result = astarte_message.attach(req_node).await;
@@ -616,12 +682,12 @@ mod test {
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let node_introspection = Node {
-            uuid: "a1".to_owned(),
-            interface_jsons: vec![],
+        let node = Node {
+            uuid: "a1".to_string(),
+            interfaces_json: vec![],
         };
 
-        let req_node = Request::new(node_introspection);
+        let req_node = Request::new(node);
         let attach_result = astarte_message.attach(req_node).await;
 
         assert!(attach_result.is_err());
@@ -645,14 +711,11 @@ mod test {
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
+        let interfaces = [SERV_PROPS_IFACE];
 
-        let node_introspection = Node {
-            uuid: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
-            interface_jsons: interfaces,
-        };
+        let node = Node::from_interfaces(&TEST_UUID, interfaces).unwrap();
 
-        let req_node = Request::new(node_introspection);
+        let req_node = Request::new(node);
         let attach_result = astarte_message.attach(req_node).await;
 
         assert!(attach_result.is_err());
@@ -751,17 +814,14 @@ mod test {
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
-
-        let node = Node {
-            uuid: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
-            interface_jsons: interfaces,
-        };
+        let interfaces = vec![SERV_PROPS_IFACE.to_string()];
+        let node = Node::new(&TEST_UUID, interfaces);
 
         let mut req_node_attach = Request::new(node.clone());
         // it is necessary to add the NodeId extensions otherwise sending is not allowed
         req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
         assert!(astarte_message.attach(req_node_attach).await.is_ok());
+
         let mut req_node_detach = Request::new(node);
         req_node_detach.extensions_mut().insert(NodeId(TEST_UUID));
         let detach_result = astarte_message.detach(req_node_detach).await;
@@ -791,12 +851,9 @@ mod test {
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
+        let interfaces = vec![SERV_PROPS_IFACE.to_string()];
 
-        let node = Node {
-            uuid: TEST_UUID.to_string(),
-            interface_jsons: interfaces,
-        };
+        let node = Node::new(&TEST_UUID, interfaces);
 
         let mut req_node_attach = Request::new(node.clone());
         // it is necessary to add the NodeId extensions otherwise sending is not allowed
@@ -805,7 +862,7 @@ mod test {
 
         let invalid = Node {
             uuid: "foo-bar".to_string(),
-            interface_jsons: Vec::new(),
+            interfaces_json: Vec::new(),
         };
         let mut req_node_detach = Request::new(invalid);
         req_node_detach.extensions_mut().insert(NodeId(TEST_UUID));
@@ -830,12 +887,9 @@ mod test {
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
+        let interfaces = [SERV_PROPS_IFACE];
 
-        let node = Node {
-            uuid: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
-            interface_jsons: interfaces,
-        };
+        let node = Node::from_interfaces(&TEST_UUID, interfaces).unwrap();
 
         let mut req_node = Request::new(node);
         // it is necessary to add the NodeId extensions otherwise sending is not allowed
@@ -872,12 +926,8 @@ mod test {
         let tmp = tempfile::tempdir().unwrap();
         let astarte_message = AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let interfaces = vec![SERV_PROPS_IFACE.to_string().into_bytes()];
-
-        let node = Node {
-            uuid: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
-            interface_jsons: interfaces,
-        };
+        let interfaces = vec![SERV_PROPS_IFACE.to_string()];
+        let node = Node::new(&TEST_UUID, interfaces);
 
         let mut req_node_attach = Request::new(node.clone());
         req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
@@ -894,12 +944,9 @@ mod test {
 
     #[test]
     fn failed_invalid_interface() {
-        let interfaces = [b"INVALID"];
+        let interfaces = InterfacesJson::from_iter(["INVALID".to_string()]);
 
-        let astarte_node = AstarteNode::from_json(
-            "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
-            &interfaces,
-        );
+        let astarte_node = AstarteNode::from_json(TEST_UUID, &interfaces);
 
         assert!(astarte_node.is_err())
     }

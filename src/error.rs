@@ -23,6 +23,8 @@
 
 use std::path::PathBuf;
 
+use astarte_device_sdk::interface::error::InterfaceError;
+use astarte_device_sdk::introspection::AddInterfaceError;
 use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
 use log::{debug, error};
 use tonic::{Code, Status};
@@ -90,6 +92,14 @@ pub enum AstarteMessageHubError {
     /// Couldn't find the node id
     #[error("node id not found {0}")]
     NodeId(Uuid),
+
+    /// Failed to parse am Interface
+    #[error("failed to parse am Interface")]
+    ParseInterface(#[from] InterfaceError),
+
+    /// Failed to add interfaces while building an Astarte device
+    #[error("failed to add interfaces while building an Astarte device")]
+    AddInterface(#[from] AddInterfaceError),
 }
 
 impl From<AstarteMessageHubError> for Status {
@@ -104,7 +114,9 @@ impl From<AstarteMessageHubError> for Status {
             | AstarteMessageHubError::Transport(_)
             | AstarteMessageHubError::Zbus(_)
             | AstarteMessageHubError::HttpServer(_)
-            | AstarteMessageHubError::ProtobufConfig(_) => Code::Internal,
+            | AstarteMessageHubError::ProtobufConfig(_)
+            | AstarteMessageHubError::ParseInterface(_)
+            | AstarteMessageHubError::AddInterface(_) => Code::Internal,
             AstarteMessageHubError::Device(ref err) => err.into(),
             AstarteMessageHubError::AstarteInvalidData(_)
             | AstarteMessageHubError::Timestamp(_)

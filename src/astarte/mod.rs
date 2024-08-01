@@ -24,6 +24,7 @@
 use astarte_device_sdk::Interface;
 use astarte_message_hub_proto::AstarteMessage;
 use async_trait::async_trait;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::Receiver;
 use tonic::Status;
 use uuid::Uuid;
@@ -59,6 +60,20 @@ pub trait AstarteSubscriber {
     ///
     /// Returns the names of the interfaces that have been removed.
     async fn unsubscribe(&self, id: &Uuid) -> Result<Vec<String>, AstarteMessageHubError>;
+
+    /// Extend the device interfaces
+    async fn extend_interfaces(
+        &self,
+        node_id: &Uuid,
+        to_add: HashMap<String, Interface>,
+    ) -> Result<Vec<Interface>, AstarteMessageHubError>;
+
+    /// Remove the device interfaces
+    async fn remove_interfaces(
+        &self,
+        node_id: &Uuid,
+        interfaces: HashSet<String>,
+    ) -> Result<Vec<String>, AstarteMessageHubError>;
 }
 
 /// Values returned after a node has subscribed.

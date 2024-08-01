@@ -20,10 +20,9 @@
 
 //! Contains an implementation of an Astarte handler.
 
-use std::collections::HashSet;
-use std::str::Utf8Error;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use std::sync::Arc;
-use std::{collections::HashMap, str::FromStr};
 
 use astarte_device_sdk::interface::error::InterfaceError;
 use astarte_device_sdk::{
@@ -37,7 +36,7 @@ use astarte_message_hub_proto::{
 };
 use async_trait::async_trait;
 use itertools::Itertools;
-use log::{debug, error};
+use log::{debug, error, info, trace};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::RwLock;
 use tonic::{Code, Status};
@@ -59,8 +58,6 @@ pub enum DeviceError {
     Convert(#[from] MessageHubProtoError),
     /// subscriber already disconnected
     Disconnected,
-    /// interface json is not UTF-8
-    InterfaceNotUtf8(#[from] Utf8Error),
     /// invalid interface json in node introspection
     Interface(#[from] InterfaceError),
 }
@@ -70,9 +67,7 @@ impl From<&DeviceError> for Code {
         match value {
             DeviceError::Astarte(_) => Code::Aborted,
             DeviceError::Disconnected => Code::Internal,
-            DeviceError::Convert(_)
-            | DeviceError::InterfaceNotUtf8(_)
-            | DeviceError::Interface(_) => Code::InvalidArgument,
+            DeviceError::Convert(_) | DeviceError::Interface(_) => Code::InvalidArgument,
         }
     }
 }
@@ -147,7 +142,7 @@ impl DeviceSubscriber {
 }
 
 /// A subscriber for the Astarte handler.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Subscriber {
     introspection: HashSet<String>,
     sender: Sender<Result<AstarteMessage, Status>>,
@@ -223,13 +218,6 @@ impl DevicePublisher {
     }
 }
 
-/// Converts the [`InterfaceJson`] to an [`Interface`]
-pub(crate) fn interface_from_json(interface_json: &[u8]) -> Result<Interface, DeviceError> {
-    let i = std::str::from_utf8(interface_json)?;
-
-    Interface::from_str(i).map_err(DeviceError::Interface)
-}
-
 #[async_trait]
 impl AstarteSubscriber for DevicePublisher {
     async fn subscribe(&self, node: &AstarteNode) -> Result<Subscription, AstarteMessageHubError> {
@@ -288,23 +276,97 @@ impl AstarteSubscriber for DevicePublisher {
                             s_id != id && s_node.introspection.contains(interface)
                         })
                 })
+                .cloned()
                 .collect_vec();
 
             debug!("interfaces to remove {to_remove:?}");
 
-            let mut removed = Vec::new();
-            for interface in to_remove {
-                if self.client.remove_interface(interface).await? {
-                    removed.push(interface.to_string());
-                }
-            }
-
-            removed
+            self.client.remove_interfaces(to_remove).await?
         };
 
         subscribers.remove(id);
 
         Ok(removed)
+    }
+
+    /// Extend the existing Node interfaces and its introspection.
+    async fn extend_interfaces(
+        &self,
+        node_id: &Uuid,
+        to_add: HashMap<String, Interface>,
+    ) -> Result<Vec<Interface>, AstarteMessageHubError> {
+        let mut rw_subscribers = self.subscribers.write().await;
+
+        let Some(subscriber) = rw_subscribers.get_mut(node_id) else {
+            error!("invalid node id {node_id}");
+            return Err(AstarteMessageHubError::NodeId(*node_id));
+        };
+
+        trace!(
+            "extending introspection with the following interfaces: {:?}",
+            to_add.keys()
+        );
+        let added_names = self
+            .client
+            .extend_interfaces_vec(to_add.values().cloned().collect())
+            .await?;
+        info!("Node interfaces extended");
+
+        let added_interfaces = added_names
+            .iter()
+            .filter_map(|i| to_add.get(i).cloned())
+            .collect();
+
+        subscriber.introspection.extend(to_add.into_keys());
+
+        Ok(added_interfaces)
+    }
+
+    /// Remove one or more Node interfaces from its introspection.
+    async fn remove_interfaces(
+        &self,
+        node_id: &Uuid,
+        to_remove: HashSet<String>,
+    ) -> Result<Vec<String>, AstarteMessageHubError> {
+        let mut rw_subscribers = self.subscribers.write().await;
+
+        if !rw_subscribers.contains_key(node_id) {
+            error!("invalid node id {node_id}");
+            return Err(AstarteMessageHubError::NodeId(*node_id));
+        };
+
+        // check that each of the interfaces to remove is not present in other nodes:
+        // - if at least another node uses that interface, the interface should not be removed from the introspection but only from that node (in the subscriber map)
+        // - if none of the other nodes use that interface, it can also be removed from the introspection
+        let to_remove_from_intr = to_remove
+            .iter()
+            .filter(|&iface| {
+                !rw_subscribers
+                    .iter()
+                    // Check if any other subscriber use the same interface
+                    .any(|(s_id, s_node)| s_id != node_id && s_node.introspection.contains(iface))
+            })
+            .cloned()
+            .collect_vec();
+
+        trace!("removing the following interfaces from the introspection: {to_remove_from_intr:?}");
+        let removed_interfaces = self
+            .client
+            .remove_interfaces_vec(to_remove_from_intr)
+            .await?;
+        debug!("interfaces removed");
+
+        let sub = rw_subscribers
+            .get_mut(node_id)
+            .ok_or(AstarteMessageHubError::NodeId(*node_id))?;
+
+        // remove the specified interfaces from the current node
+        for to_remove in to_remove.iter() {
+            sub.introspection.remove(to_remove);
+        }
+        debug!("introspection updated after removing interfaces");
+
+        Ok(removed_interfaces)
     }
 }
 
@@ -360,15 +422,15 @@ impl AstartePublisher for DevicePublisher {
 mod test {
     use super::*;
 
-    use astarte_device_sdk::transport::grpc::Grpc;
-    use astarte_device_sdk::Value;
-    use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
     use std::error::Error;
     use std::str::FromStr;
 
     use astarte_device_sdk::error::Error as AstarteSdkError;
+    use astarte_device_sdk::transport::grpc::Grpc;
+    use astarte_device_sdk::Value;
+    use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
     use astarte_message_hub_proto::astarte_data_type_individual::IndividualData;
-    use astarte_message_hub_proto::AstarteUnset;
+    use astarte_message_hub_proto::{AstarteUnset, InterfacesJson};
     use chrono::Utc;
     use pbjson_types::Timestamp;
 
@@ -447,7 +509,7 @@ mod test {
             .withf(move |i| *i == interfaces)
             .returning(move |_| Ok(vec![interface.interface_name().to_string()]));
 
-        let interfaces = [SERV_PROPS_IFACE.as_bytes()];
+        let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
         let astarte_node = AstarteNode::from_json(
             "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
@@ -476,7 +538,7 @@ mod test {
         let mut client = DeviceClient::<SqliteStore>::default();
         let mut connection = DeviceConnection::<SqliteStore, Grpc>::default();
 
-        let interfaces = [SERV_PROPS_IFACE.as_bytes()];
+        let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
         let astarte_node = AstarteNode::from_json(
             "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
@@ -1163,10 +1225,12 @@ mod test {
 
     #[tokio::test]
     async fn detach_node_success() {
-        let interfaces = [SERV_PROPS_IFACE.as_bytes(), SERV_OBJ_IFACE.as_bytes()];
+        let interfaces = InterfacesJson::from_iter(vec![
+            SERV_PROPS_IFACE.to_string(),
+            SERV_OBJ_IFACE.to_string(),
+        ]);
 
         let mut client = DeviceClient::<SqliteStore>::default();
-
         let mut seq = mockall::Sequence::new();
 
         client
@@ -1187,10 +1251,15 @@ mod test {
                         ])
                     });
                 client
-                    .expect_remove_interface()
-                    .times(2)
+                    .expect_remove_interfaces()
+                    .once()
                     .in_sequence(&mut seq)
-                    .returning(|_| Ok(true));
+                    .returning(|_: Vec<String>| {
+                        Ok(vec![
+                            "org.astarte-platform.test.test".to_string(),
+                            "com.test.object".to_string(),
+                        ])
+                    });
 
                 client
             });
@@ -1212,7 +1281,7 @@ mod test {
 
     #[tokio::test]
     async fn detach_node_unsubscribe_failed() {
-        let interfaces = [SERV_PROPS_IFACE.as_bytes()];
+        let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
         let mut client = DeviceClient::<SqliteStore>::new();
 

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## Added
+
+- Provide support to dynamically add or remove interfaces from a Node introspection [#330](https://github.com/astarte-platform/astarte-device-sdk-rust/issues/330)
+
 ## [0.6.0] - 2024-05-09
 
 ### Changed
