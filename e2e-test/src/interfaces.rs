@@ -33,6 +33,7 @@ pub static INTERFACES: &[&str] = &[
     SERVER_PROPERTY,
 ];
 
+/// List of all the interfaces name
 pub static INTERFACE_NAMES: &[&str] = &[
     DEVICE_AGGREGATE_NAME,
     DEVICE_DATASTREAM_NAME,
@@ -42,6 +43,11 @@ pub static INTERFACE_NAMES: &[&str] = &[
     SERVER_PROPERTY_NAME,
 ];
 
+/// List of all the additional interfaces
+pub static ADDITIONAL_INTERFACES: &[&str] =
+    &[ADDITIONAL_DEVICE_DATASTREAM, ADDITIONAL_SERVER_DATASTREAM];
+
+/// List of all the additional interfaces name
 pub static ADDITIONAL_INTERFACE_NAMES: &[&str] = &[
     ADDITIONAL_DEVICE_DATASTREAM_NAME,
     ADDITIONAL_SERVER_DATASTREAM_NAME,

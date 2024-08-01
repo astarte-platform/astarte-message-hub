@@ -29,13 +29,13 @@ use tracing::{debug, error, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use uuid::{uuid, Uuid};
 
+use crate::interfaces::ADDITIONAL_INTERFACES;
 use crate::{
     api::Api,
     device_sdk::{init_node, Node},
     interfaces::{
-        AdditionalDeviceDatastream, AdditionalServerDatastream, DeviceAggregate, DeviceDatastream,
-        DeviceProperty, ServerDatastream, ServerProperty, ADDITIONAL_INTERFACE_NAMES, ENDPOINTS,
-        INTERFACE_NAMES,
+        AdditionalDeviceDatastream, DeviceAggregate, DeviceDatastream, DeviceProperty,
+        ServerDatastream, ServerProperty, ADDITIONAL_INTERFACE_NAMES, ENDPOINTS, INTERFACE_NAMES,
     },
     message_hub::{init_message_hub, MsgHub},
 };
@@ -156,10 +156,10 @@ async fn e2e_test(
     extend_node_interfaces(&mut node, &api, &barrier, additional_interfaces.clone()).await?;
 
     // Remove some node interfaces
-    let to_remove = additional_interfaces
-        .into_iter()
-        .map(|i| i.interface_name().to_string())
-        .collect();
+    let to_remove = ADDITIONAL_INTERFACE_NAMES
+        .iter()
+        .map(|i| i.to_string())
+        .collect_vec();
     remove_node_interfaces(&mut node, &api, &barrier, to_remove).await?;
 
     // Disconnect the message hub and cleanup
@@ -333,13 +333,11 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
 
 #[instrument(skip_all)]
 fn additional_interfaces() -> eyre::Result<Vec<astarte_device_sdk::interface::Interface>> {
-    let to_add = [
-        AdditionalDeviceDatastream::interface(),
-        AdditionalServerDatastream::interface(),
-    ]
-    .map(astarte_device_sdk::interface::Interface::from_str)
-    .into_iter()
-    .try_collect()?;
+    let to_add = ADDITIONAL_INTERFACES
+        .iter()
+        .copied()
+        .map(astarte_device_sdk::interface::Interface::from_str)
+        .try_collect()?;
 
     Ok(to_add)
 }
