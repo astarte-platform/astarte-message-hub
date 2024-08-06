@@ -93,10 +93,10 @@ impl MessageHubOptions {
     /// of the first found file is not valid HTTP and Protobuf APIs are exposed to provide a valid
     /// configuration.
     pub async fn get(
-        toml_file: Option<String>,
+        config: &Option<PathBuf>,
         store_directory: Option<&Path>,
     ) -> Result<MessageHubOptions, AstarteMessageHubError> {
-        let mut opt = if let Some(toml_file) = toml_file {
+        let mut opt = if let Some(toml_file) = config {
             let toml_str = fs::read_to_string(toml_file).await?;
             file::get_options_from_toml(&toml_str)
         } else if let Some(store_directory) = store_directory {
@@ -540,9 +540,9 @@ mod test {
             .await
             .unwrap();
 
-        let path = Some(path.to_string_lossy().to_string());
+        let path = Some(path);
 
-        let options = MessageHubOptions::get(path, None).await;
+        let options = MessageHubOptions::get(&path, None).await;
 
         assert!(options.is_ok(), "error loading config {:?}", options);
         assert_eq!(options.unwrap(), expected);
@@ -572,7 +572,7 @@ mod test {
             .await
             .unwrap();
 
-        let options = MessageHubOptions::get(None, Some(dir.path())).await;
+        let options = MessageHubOptions::get(&None, Some(dir.path())).await;
 
         // Set the store directory to the passed value
         expected.store_directory = dir.path().to_path_buf();

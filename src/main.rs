@@ -41,7 +41,7 @@ use astarte_message_hub::{
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::Parser;
 use eyre::eyre;
-use log::{debug, info};
+use log::{debug, info, warn};
 
 /// A central service that runs on (Linux) devices for collecting and delivering messages from N
 /// apps using 1 MQTT connection to Astarte.
@@ -49,8 +49,11 @@ use log::{debug, info};
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     /// Path to a valid .toml file containing the message hub configuration.
-    #[clap(short, long, conflicts_with = "store_directory")]
-    toml: Option<String>,
+    #[arg(short, long, conflicts_with = "store_directory")]
+    toml: Option<PathBuf>,
+    /// Path to the message hub configuration.
+    #[arg(short, long)]
+    config: Option<PathBuf>,
     /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
     #[clap(short, long, conflicts_with = "toml")]
     store_directory: Option<PathBuf>,
@@ -63,9 +66,15 @@ async fn main() -> eyre::Result<()> {
 
     let args = Cli::parse();
 
+    if args.toml.is_some() {
+        warn!(
+            "DEPRECATED: the '-t/--toml' option is deprecated in favour of the '-c/--config' flag"
+        )
+    }
+
     let store_directory = args.store_directory.as_deref();
 
-    let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
+    let mut options = MessageHubOptions::get(&args.config.or(args.toml), store_directory).await?;
 
     // Directory to store the Nodes introspection
     let interfaces_dir = options.store_directory.join("interfaces");
