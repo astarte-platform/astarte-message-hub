@@ -71,7 +71,7 @@ astarte-device-sdk-mock = { git = "https://github.com/astarte-platform/astarte-d
 astarte-message-hub-proto = { git = "https://github.com/astarte-platform/astarte-message-hub-proto", rev = "08ff0df376995d56b6c9d823ccf884afaeb7bdc7" }
 async-trait = "0.1.80"
 axum = "0.7.5"
-base64 = "0.22.0"
+base64 = "0.22.1"
 chrono = "0.4.38"
 clap = "<4.5.0"
 color-eyre = "0.6.3"
