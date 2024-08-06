@@ -84,7 +84,7 @@ mod test {
         let ignore_ssl = !options.astarte_ignore_ssl;
         assert!(ignore_ssl);
         assert!(!options.astarte.ignore_ssl);
-        assert_eq!(options.grpc_socket_port, 5);
+        assert_eq!(options.grpc_socket_port, Some(5));
     }
 
     #[test]
@@ -111,7 +111,7 @@ mod test {
         let ignore_ssl = options.astarte_ignore_ssl;
         assert!(ignore_ssl);
         assert!(options.astarte.ignore_ssl);
-        assert_eq!(options.grpc_socket_port, 5);
+        assert_eq!(options.grpc_socket_port, Some(5));
     }
 
     #[test]
@@ -139,7 +139,7 @@ mod test {
         let ignore_ssl = options.astarte_ignore_ssl;
         assert!(ignore_ssl);
         assert!(options.astarte.ignore_ssl);
-        assert_eq!(options.grpc_socket_port, 6);
+        assert_eq!(options.grpc_socket_port, Some(6));
     }
 
     #[test]

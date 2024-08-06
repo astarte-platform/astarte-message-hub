@@ -21,6 +21,7 @@
 //! Provides an HTTP API to set The Message Hub configurations
 
 use std::io;
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::extract::State;
@@ -141,7 +142,8 @@ struct ConfigPayload {
     credentials_secret: Option<String>,
     pairing_url: String,
     pairing_token: Option<String>,
-    grpc_socket_port: u16,
+    grpc_socket_host: Option<IpAddr>,
+    grpc_socket_port: Option<u16>,
 }
 
 /// Provides an HTTP API to set The Message Hub configurations
@@ -217,6 +219,7 @@ async fn set_config(
         pairing_token: payload.pairing_token,
         interfaces_directory: None,
         astarte_ignore_ssl: false,
+        grpc_socket_host: payload.grpc_socket_host,
         grpc_socket_port: payload.grpc_socket_port,
         store_directory: MessageHubOptions::default_store_directory(),
         astarte: DeviceSdkOptions {

@@ -20,9 +20,10 @@
 
 //! Provides a Protobuf API to set The Message Hub configurations
 
-use std::net::AddrParseError;
+use std::net::{AddrParseError, IpAddr};
 use std::num::TryFromIntError;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use astarte_message_hub_proto::message_hub_config_server::{
@@ -75,10 +76,19 @@ impl MessageHubConfig for AstarteMessageHubConfig {
     ) -> Result<Response<pbjson_types::Empty>, Status> {
         let req = request.into_inner();
 
+        let host = req
+            .grpc_socket_host
+            .map(|host| IpAddr::from_str(&host))
+            .transpose()
+            .map_err(|err| {
+                Status::new(Code::InvalidArgument, format!("Invalid grpc host: {}", err))
+            })?;
+
         // Protobuf version 3 only supports u32
-        let port: u16 = req
+        let port = req
             .grpc_socket_port
-            .try_into()
+            .map(u16::try_from)
+            .transpose()
             .map_err(|err: TryFromIntError| {
                 Status::new(Code::InvalidArgument, format!("Invalid grpc port: {}", err))
             })?;
@@ -93,6 +103,7 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: port,
+            grpc_socket_host: host,
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -184,7 +195,8 @@ mod test {
             credentials_secret: None,
             pairing_url: "rpc_pairing_url".to_string(),
             pairing_token: Some("rpc_pairing_token".to_string()),
-            grpc_socket_port: 42,
+            grpc_socket_port: Some(42),
+            grpc_socket_host: None,
         };
 
         let result = config_server.set_config(Request::new(msg)).await;
@@ -212,7 +224,8 @@ mod test {
             credentials_secret: None,
             pairing_url: "rpc_pairing_url".to_string(),
             pairing_token: Some("rpc_pairing_token".to_string()),
-            grpc_socket_port: 42,
+            grpc_socket_port: Some(42),
+            grpc_socket_host: None,
         };
         let result = config_server.set_config(Request::new(msg)).await;
         assert!(result.is_err());
@@ -243,7 +256,8 @@ mod test {
             credentials_secret: None,
             pairing_url: "rpc_pairing_url".to_string(),
             pairing_token: Some("rpc_pairing_token".to_string()),
-            grpc_socket_port: 42,
+            grpc_socket_port: Some(42),
+            grpc_socket_host: None,
         };
         let response = client.set_config(msg).await;
         assert!(response.is_ok());

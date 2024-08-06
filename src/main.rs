@@ -30,7 +30,7 @@ use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
 use eyre::Context;
 use std::convert::identity;
-use std::net::Ipv6Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -43,20 +43,34 @@ use clap::Parser;
 use eyre::eyre;
 use log::{debug, info, warn};
 
+const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+const DEFAULT_PORT: u16 = 50051;
+
 /// A central service that runs on (Linux) devices for collecting and delivering messages from N
 /// apps using 1 MQTT connection to Astarte.
+///
+/// # Options precedence
+///
+/// The flags will take precedence over the config, this lets us override the default values set by
+/// the configuration.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     /// Path to a valid .toml file containing the message hub configuration.
-    #[arg(short, long, conflicts_with = "store_directory")]
+    #[arg(short, long)]
     toml: Option<PathBuf>,
-    /// Path to the message hub configuration.
+    /// Path to the Astarte Message Hub configuration file.
     #[arg(short, long)]
     config: Option<PathBuf>,
     /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
-    #[clap(short, long, conflicts_with = "toml")]
+    #[clap(short, long)]
     store_directory: Option<PathBuf>,
+    /// Address the gRPC connection will bind to (e.g. 127.0.0.1).
+    #[arg(long)]
+    host: Option<IpAddr>,
+    /// Port the gRPC connection will bind to (e.g 50051)
+    #[arg(long, short)]
+    port: Option<u16>,
 }
 
 #[tokio::main]
@@ -106,10 +120,21 @@ async fn main() -> eyre::Result<()> {
             .wrap_err("subscriber disconnected")
     });
 
+    let host = args
+        .host
+        .or(options.grpc_socket_host)
+        .unwrap_or(DEFAULT_HOST);
+    let port = args
+        .port
+        .or(options.grpc_socket_port)
+        .unwrap_or(DEFAULT_PORT);
+
     // Handles the Message Hub gRPC server
     tasks.spawn(async move {
         // Run the proto-buff server
-        let addrs = (Ipv6Addr::LOCALHOST, options.grpc_socket_port).into();
+        let addrs = (host, port).into();
+
+        info!("Starting the server on grpc://{addrs}");
 
         tonic::transport::Server::builder()
             .layer(message_hub.make_interceptor_layer())

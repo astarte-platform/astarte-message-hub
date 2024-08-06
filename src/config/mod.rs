@@ -20,6 +20,7 @@
 //! Helper module to retrieve the configuration of the Astarte message hub.
 
 use std::io;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -71,8 +72,10 @@ pub struct MessageHubOptions {
     )]
     #[serde(default)]
     pub astarte_ignore_ssl: bool,
+    /// The gRPC host to use bind.
+    pub grpc_socket_host: Option<IpAddr>,
     /// The gRPC port to use.
-    pub grpc_socket_port: u16,
+    pub grpc_socket_port: Option<u16>,
     /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
     #[serde(default = "MessageHubOptions::default_store_directory")]
     pub store_directory: PathBuf,
@@ -297,7 +300,8 @@ mod test {
             pairing_token: None,
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 5,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(5),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -317,7 +321,8 @@ mod test {
             pairing_token: Some("4".to_string()),
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 5,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(5),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -337,7 +342,8 @@ mod test {
             pairing_token: Some("4".to_string()),
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 5,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(5),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -355,7 +361,8 @@ mod test {
             pairing_token: Some("4".to_string()),
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 5,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(5),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -373,7 +380,8 @@ mod test {
             pairing_token: Some("4".to_string()),
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 5,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(5),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -391,7 +399,8 @@ mod test {
             pairing_token: None,
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 5,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(5),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -409,7 +418,8 @@ mod test {
             pairing_token: Some("".to_string()),
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 5,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(5),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -427,7 +437,8 @@ mod test {
             pairing_token: Some("4".to_string()),
             interfaces_directory: Some(PathBuf::from("")),
             astarte_ignore_ssl: false,
-            grpc_socket_port: 5,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(5),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -445,7 +456,8 @@ mod test {
             pairing_token: None,
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 655,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(655),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -470,7 +482,8 @@ mod test {
             pairing_token: None,
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 655,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(655),
             store_directory: dir.path().to_path_buf(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -496,7 +509,8 @@ mod test {
             pairing_token: Some("42".to_string()),
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 655,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(655),
             store_directory: dir.path().to_path_buf(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -527,7 +541,8 @@ mod test {
             pairing_token: Some("42".to_string()),
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 655,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(655),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -559,7 +574,8 @@ mod test {
             pairing_token: Some("42".to_string()),
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 655,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(655),
             store_directory: MessageHubOptions::default_store_directory(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -600,7 +616,8 @@ mod test {
             pairing_token: Some("YOUR_PAIRING_TOKEN".to_string()),
             interfaces_directory: Some(PathBuf::from("/usr/share/message-hub/astarte-interfaces/")),
             astarte_ignore_ssl: false,
-            grpc_socket_port: 50051,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(50051),
             store_directory: PathBuf::from("/var/lib/message-hub"),
             astarte: DeviceSdkOptions::default(),
         };
@@ -626,7 +643,8 @@ mod test {
             pairing_token: None,
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 655,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(655),
             store_directory: dir.path().to_path_buf(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -659,7 +677,8 @@ mod test {
             pairing_token: None,
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 655,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(655),
             store_directory: dir.path().to_path_buf(),
             astarte: DeviceSdkOptions::default(),
         };
@@ -692,7 +711,8 @@ mod test {
             pairing_token: None,
             interfaces_directory: None,
             astarte_ignore_ssl: false,
-            grpc_socket_port: 655,
+            grpc_socket_host: None,
+            grpc_socket_port: Some(655),
             store_directory: dir.path().to_path_buf(),
             astarte: DeviceSdkOptions::default(),
         };
