@@ -18,3 +18,5 @@
 
 /.github
 /.reuse
+/scripts/docker
+!/scripts/docker/entrypoint.sh
