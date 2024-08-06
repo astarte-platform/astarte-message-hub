@@ -20,4 +20,4 @@
 
 set -exu
 
-astarte-message-hub -c /etc/astarte-message-hub/config.toml
+exec astarte-message-hub --host 0.0.0.0 -c /etc/astarte-message-hub/config.toml

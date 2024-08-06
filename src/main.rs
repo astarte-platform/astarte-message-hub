@@ -41,7 +41,7 @@ use astarte_message_hub::{
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::Parser;
 use eyre::eyre;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 
 const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const DEFAULT_PORT: u16 = 50051;
@@ -136,10 +136,12 @@ async fn main() -> eyre::Result<()> {
 
         info!("Starting the server on grpc://{addrs}");
 
+        let shutdown = shutdown()?;
+
         tonic::transport::Server::builder()
             .layer(message_hub.make_interceptor_layer())
             .add_service(MessageHubServer::new(message_hub))
-            .serve(addrs)
+            .serve_with_shutdown(addrs, shutdown)
             .await
             .wrap_err("couldn't start the server")
     });
@@ -147,6 +149,9 @@ async fn main() -> eyre::Result<()> {
     while let Some(res) = tasks.join_next().await {
         // Crash if one of the tasks returned an error
         res.wrap_err("failed to join task").and_then(identity)?;
+
+        // Abort other wise
+        tasks.abort_all();
     }
 
     Ok(())
@@ -217,4 +222,42 @@ async fn initialize_astarte_device_sdk(
     let (client, connection) = builder.store(store).connect(mqtt_config).await?.build();
 
     Ok((client, connection))
+}
+
+#[cfg(unix)]
+fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
+    use futures::FutureExt;
+    use tokio::signal::unix::SignalKind;
+
+    let mut term = tokio::signal::unix::signal(SignalKind::terminate())
+        .wrap_err("couldn't create SIGTERM listener")?;
+
+    let future = async move {
+        let term = std::pin::pin!(async move {
+            if term.recv().await.is_none() {
+                error!("no more signal events can be received")
+            }
+        });
+
+        let ctrl_c = std::pin::pin!(tokio::signal::ctrl_c().map(|res| {
+            if let Err(err) = res {
+                error!("couldn't receive SIGINT {err}");
+            }
+        }));
+
+        futures::future::select(term, ctrl_c).await;
+    };
+
+    Ok(future)
+}
+
+#[cfg(not(unix))]
+fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
+    use futures::FutureExt;
+
+    Ok(tokio::signal::ctrl_c().map(|res| {
+        if let Err(err) = res {
+            error!("couldn't receive SIGINT {err}");
+        }
+    }))
 }
