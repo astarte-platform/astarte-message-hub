@@ -69,6 +69,11 @@ async fn main() -> eyre::Result<()> {
 
     // Directory to store the Nodes introspection
     let interfaces_dir = options.store_directory.join("interfaces");
+    if !interfaces_dir.exists() {
+        tokio::fs::create_dir_all(&interfaces_dir)
+            .await
+            .wrap_err("couldn't create interface directory")?;
+    }
 
     // Initialize an Astarte device
     let (client, connection) = initialize_astarte_device_sdk(&mut options, &interfaces_dir).await?;
