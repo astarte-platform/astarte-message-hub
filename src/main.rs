@@ -30,7 +30,7 @@ use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
 use eyre::Context;
 use std::convert::identity;
-use std::net::Ipv6Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -41,19 +41,36 @@ use astarte_message_hub::{
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::Parser;
 use eyre::eyre;
-use log::{debug, info};
+use log::{debug, error, info, warn};
+
+const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+const DEFAULT_PORT: u16 = 50051;
 
 /// A central service that runs on (Linux) devices for collecting and delivering messages from N
 /// apps using 1 MQTT connection to Astarte.
+///
+/// # Options precedence
+///
+/// The flags will take precedence over the config, this lets us override the default values set by
+/// the configuration.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     /// Path to a valid .toml file containing the message hub configuration.
-    #[clap(short, long, conflicts_with = "store_directory")]
-    toml: Option<String>,
+    #[arg(short, long)]
+    toml: Option<PathBuf>,
+    /// Path to the Astarte Message Hub configuration file.
+    #[arg(short, long)]
+    config: Option<PathBuf>,
     /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
-    #[clap(short, long, conflicts_with = "toml")]
+    #[clap(short, long)]
     store_directory: Option<PathBuf>,
+    /// Address the gRPC connection will bind to (e.g. 127.0.0.1).
+    #[arg(long)]
+    host: Option<IpAddr>,
+    /// Port the gRPC connection will bind to (e.g 50051)
+    #[arg(long, short)]
+    port: Option<u16>,
 }
 
 #[tokio::main]
@@ -63,9 +80,15 @@ async fn main() -> eyre::Result<()> {
 
     let args = Cli::parse();
 
+    if args.toml.is_some() {
+        warn!(
+            "DEPRECATED: the '-t/--toml' option is deprecated in favour of the '-c/--config' flag"
+        )
+    }
+
     let store_directory = args.store_directory.as_deref();
 
-    let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
+    let mut options = MessageHubOptions::get(&args.config.or(args.toml), store_directory).await?;
 
     // Directory to store the Nodes introspection
     let interfaces_dir = options.store_directory.join("interfaces");
@@ -102,15 +125,28 @@ async fn main() -> eyre::Result<()> {
             .wrap_err("subscriber disconnected")
     });
 
+    let host = args
+        .host
+        .or(options.grpc_socket_host)
+        .unwrap_or(DEFAULT_HOST);
+    let port = args
+        .port
+        .or(options.grpc_socket_port)
+        .unwrap_or(DEFAULT_PORT);
+
     // Handles the Message Hub gRPC server
     tasks.spawn(async move {
         // Run the proto-buff server
-        let addrs = (Ipv6Addr::LOCALHOST, options.grpc_socket_port).into();
+        let addrs = (host, port).into();
+
+        info!("Starting the server on grpc://{addrs}");
+
+        let shutdown = shutdown()?;
 
         tonic::transport::Server::builder()
             .layer(message_hub.make_interceptor_layer())
             .add_service(MessageHubServer::new(message_hub))
-            .serve(addrs)
+            .serve_with_shutdown(addrs, shutdown)
             .await
             .wrap_err("couldn't start the server")
     });
@@ -118,6 +154,9 @@ async fn main() -> eyre::Result<()> {
     while let Some(res) = tasks.join_next().await {
         // Crash if one of the tasks returned an error
         res.wrap_err("failed to join task").and_then(identity)?;
+
+        // Abort other wise
+        tasks.abort_all();
     }
 
     Ok(())
@@ -188,4 +227,42 @@ async fn initialize_astarte_device_sdk(
     let (client, connection) = builder.store(store).connect(mqtt_config).await?.build();
 
     Ok((client, connection))
+}
+
+#[cfg(unix)]
+fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
+    use futures::FutureExt;
+    use tokio::signal::unix::SignalKind;
+
+    let mut term = tokio::signal::unix::signal(SignalKind::terminate())
+        .wrap_err("couldn't create SIGTERM listener")?;
+
+    let future = async move {
+        let term = std::pin::pin!(async move {
+            if term.recv().await.is_none() {
+                error!("no more signal events can be received")
+            }
+        });
+
+        let ctrl_c = std::pin::pin!(tokio::signal::ctrl_c().map(|res| {
+            if let Err(err) = res {
+                error!("couldn't receive SIGINT {err}");
+            }
+        }));
+
+        futures::future::select(term, ctrl_c).await;
+    };
+
+    Ok(future)
+}
+
+#[cfg(not(unix))]
+fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
+    use futures::FutureExt;
+
+    Ok(tokio::signal::ctrl_c().map(|res| {
+        if let Err(err) = res {
+            error!("couldn't receive SIGINT {err}");
+        }
+    }))
 }
