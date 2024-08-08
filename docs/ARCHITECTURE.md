@@ -78,7 +78,7 @@ events received from Astarte (based on the declared Introspection) will be redir
 
 ```protobuf
 service MessageHub {
-  rpc Attach(Node) returns (stream AstarteMessage) {}
+  rpc Attach(Node) returns (stream MessageHubEvent) {}
   ....
 }
 ```
