@@ -248,7 +248,7 @@ impl DevicePublisher {
         futures::stream::iter(iter)
             .then(|msg| async { sender.send(Ok(msg)).await })
             .inspect_err(|_| error!("failed to send prop, device disconnected"))
-            .try_collect()
+            .try_collect::<()>()
             .await
             .map_err(|_| DeviceError::Disconnected)?;
 
