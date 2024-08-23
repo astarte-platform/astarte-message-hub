@@ -122,13 +122,13 @@ async fn main() -> eyre::Result<()> {
 }
 
 async fn get_config_options(args: Cli) -> eyre::Result<MessageHubOptions> {
-    let store_directory = args.device.store_directory.as_deref();
+    let store_directory = args.device.store_dir.as_deref();
     let custom_config = args.config.as_deref().or(args.toml.as_deref());
 
     let mut config = match Config::find_config(custom_config, store_directory).await? {
         Some(config) => config,
         None => {
-            let store_directory = args.device.store_directory.as_deref().ok_or_eyre(
+            let store_directory = args.device.store_dir.as_deref().ok_or_eyre(
                 "no configuration file specified and store directory missing  to start dynamic configuration",
             )?;
 
