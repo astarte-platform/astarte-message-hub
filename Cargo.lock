@@ -121,8 +121,8 @@ checksum = "f538837af36e6f6a9be0faa67f9a314f8119e4e4b5867c6ab40ed60360142519"
 
 [[package]]
 name = "astarte-device-sdk"
-version = "0.8.2"
-source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust?rev=7e4ffb56c0775c08b680a15ba28da4858824a4e3#7e4ffb56c0775c08b680a15ba28da4858824a4e3"
+version = "0.8.3"
+source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust?rev=f032ae28435c52623f268a3356439b2e1570caab#f032ae28435c52623f268a3356439b2e1570caab"
 dependencies = [
  "ahash",
  "astarte-device-sdk-derive",
@@ -161,8 +161,8 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-derive"
-version = "0.8.2"
-source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust?rev=7e4ffb56c0775c08b680a15ba28da4858824a4e3#7e4ffb56c0775c08b680a15ba28da4858824a4e3"
+version = "0.8.3"
+source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust?rev=f032ae28435c52623f268a3356439b2e1570caab#f032ae28435c52623f268a3356439b2e1570caab"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -171,8 +171,8 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-mock"
-version = "0.8.2"
-source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust?rev=7e4ffb56c0775c08b680a15ba28da4858824a4e3#7e4ffb56c0775c08b680a15ba28da4858824a4e3"
+version = "0.8.3"
+source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust?rev=f032ae28435c52623f268a3356439b2e1570caab#f032ae28435c52623f268a3356439b2e1570caab"
 dependencies = [
  "astarte-device-sdk",
  "async-trait",

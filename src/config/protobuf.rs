@@ -20,9 +20,9 @@
 
 //! Provides a Protobuf API to set The Message Hub configurations
 
-use std::net::{AddrParseError, IpAddr};
+use std::net::{AddrParseError, IpAddr, SocketAddr};
 use std::num::TryFromIntError;
-use std::path::Path;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -30,6 +30,7 @@ use astarte_message_hub_proto::message_hub_config_server::{
     MessageHubConfig, MessageHubConfigServer,
 };
 use astarte_message_hub_proto::ConfigMessage;
+use log::error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::Notify;
@@ -37,9 +38,7 @@ use tokio::task::{JoinError, JoinHandle};
 use tonic::transport::Server;
 use tonic::{Code, Request, Response, Status};
 
-use crate::config::MessageHubOptions;
-
-use super::DeviceSdkOptions;
+use super::{Config, DeviceSdkOptions};
 
 /// Protobuf server error
 #[derive(thiserror::Error, Debug, displaydoc::Display)]
@@ -57,7 +56,8 @@ pub enum ProtobufConfigError {
 #[derive(Debug, Clone)]
 struct AstarteMessageHubConfig {
     configuration_ready_channel: Arc<Notify>,
-    toml_file: String,
+    config_file: PathBuf,
+    store_dir: PathBuf,
 }
 
 /// Provides a Protobuf API to set The Message Hub configurations
@@ -94,30 +94,30 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             })?;
 
         #[allow(deprecated)]
-        let message_hub_options = MessageHubOptions {
-            realm: req.realm,
+        let message_hub_options = Config {
+            realm: Some(req.realm),
             device_id: req.device_id,
             credentials_secret: req.credentials_secret,
-            pairing_url: req.pairing_url,
             pairing_token: req.pairing_token,
+            pairing_url: Some(req.pairing_url),
             interfaces_directory: None,
             astarte_ignore_ssl: false,
             grpc_socket_port: port,
             grpc_socket_host: host,
-            store_directory: MessageHubOptions::default_store_directory(),
+            store_directory: Some(self.store_dir.clone()),
             astarte: DeviceSdkOptions::default(),
         };
 
-        message_hub_options.validate().map_err(|e| {
-            let err_msg = format!("Invalid configuration: {e}.");
-            Status::new(Code::InvalidArgument, err_msg)
+        message_hub_options.validate().map_err(|err| {
+            error!("invalid config: {err}");
+
+            Status::invalid_argument(err.to_string())
         })?;
 
-        let file_path = Path::new(&self.toml_file);
-        let cfg = toml::to_string(&message_hub_options)
-            .map_err(|e| Status::new(Code::InvalidArgument, e.to_string()))?;
+        let cfg =
+            toml::to_string(&message_hub_options).map_err(|e| Status::internal(e.to_string()))?;
 
-        tokio::fs::write(file_path, cfg).await?;
+        tokio::fs::write(&self.config_file, cfg).await?;
 
         self.configuration_ready_channel.notify_one();
 
@@ -129,21 +129,22 @@ impl ProtobufConfigProvider {
     /// Start a new Protobuf API Server to allow a third party to feed the Message Hub
     /// configurations
     pub async fn new(
-        address: &str,
+        address: SocketAddr,
         configuration_ready_channel: Arc<Notify>,
-        toml_file: &str,
+        config_file: PathBuf,
+        store_dir: PathBuf,
     ) -> Result<ProtobufConfigProvider, ProtobufConfigError> {
-        let addr = address.parse()?;
         let service = AstarteMessageHubConfig {
             configuration_ready_channel,
-            toml_file: toml_file.to_string(),
+            config_file,
+            store_dir,
         };
         let (tx, mut rx) = channel::<()>(1);
 
         let handle = tokio::spawn(async move {
             Server::builder()
                 .add_service(MessageHubConfigServer::new(service))
-                .serve_with_shutdown(addr, async { rx.recv().await.unwrap() })
+                .serve_with_shutdown(address, async { rx.recv().await.unwrap() })
                 .await
                 .map_err(ProtobufConfigError::Start)
         });
@@ -168,26 +169,29 @@ mod test {
     use tempfile::TempDir;
     use tonic::transport::Endpoint;
 
-    use crate::config::file::CONFIG_FILE_NAMES;
+    use crate::config::CONFIG_FILE_NAME;
 
     use super::*;
 
-    #[tokio::test]
-    #[serial]
-    async fn set_config_test() {
+    fn create_config() -> (TempDir, AstarteMessageHubConfig) {
         let dir = TempDir::new().unwrap();
-        let toml_file = dir
-            .path()
-            .join(CONFIG_FILE_NAMES[0])
-            .to_string_lossy()
-            .to_string();
+        let config_file = dir.path().join(CONFIG_FILE_NAME);
 
         let notify = Arc::new(Notify::new());
 
         let config_server = AstarteMessageHubConfig {
             configuration_ready_channel: notify,
-            toml_file,
+            config_file,
+            store_dir: dir.path().to_owned(),
         };
+
+        (dir, config_server)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn set_config_test() {
+        let (_dir, config_server) = create_config();
 
         let msg = ConfigMessage {
             realm: "rpc_realm".to_string(),
@@ -206,18 +210,8 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_set_config_invalid_config() {
-        let dir = TempDir::new().unwrap();
-        let toml_file = dir
-            .path()
-            .join(CONFIG_FILE_NAMES[0])
-            .to_string_lossy()
-            .to_string();
+        let (_dir, config_server) = create_config();
 
-        let notify = Arc::new(Notify::new());
-        let config_server = AstarteMessageHubConfig {
-            configuration_ready_channel: notify,
-            toml_file,
-        };
         let msg = ConfigMessage {
             realm: "".to_string(),
             device_id: Some("rpc_device_id".to_string()),
@@ -235,16 +229,17 @@ mod test {
     #[serial]
     async fn server_test() {
         let dir = TempDir::new().unwrap();
-        let toml_file = dir
-            .path()
-            .join(CONFIG_FILE_NAMES[0])
-            .to_string_lossy()
-            .to_string();
+        let config_file = dir.path().join(CONFIG_FILE_NAME);
 
         let notify = Arc::new(Notify::new());
-        let server = ProtobufConfigProvider::new("127.0.0.1:1400", Arc::clone(&notify), &toml_file)
-            .await
-            .expect("failed to create a protobuf server");
+        let server = ProtobufConfigProvider::new(
+            "127.0.0.1:1400".parse().unwrap(),
+            Arc::clone(&notify),
+            config_file,
+            dir.path().to_path_buf(),
+        )
+        .await
+        .expect("failed to create a protobuf server");
         let channel = Endpoint::from_static("http://localhost:1400")
             .connect()
             .await

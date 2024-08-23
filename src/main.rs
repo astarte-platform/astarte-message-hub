@@ -28,10 +28,10 @@ use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
-use eyre::Context;
+use astarte_message_hub::config::{Config, DEFAULT_HOST, DEFAULT_HTTP_PORT};
+use eyre::{Context, OptionExt};
 use std::convert::identity;
-use std::net::{IpAddr, Ipv4Addr};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 use tokio::task::JoinSet;
 
@@ -43,35 +43,9 @@ use clap::Parser;
 use eyre::eyre;
 use log::{debug, error, info, warn};
 
-const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
-const DEFAULT_PORT: u16 = 50051;
+use crate::cli::Cli;
 
-/// A central service that runs on (Linux) devices for collecting and delivering messages from N
-/// apps using 1 MQTT connection to Astarte.
-///
-/// # Options precedence
-///
-/// The flags will take precedence over the config, this lets us override the default values set by
-/// the configuration.
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Cli {
-    /// Path to a valid .toml file containing the message hub configuration.
-    #[arg(short, long)]
-    toml: Option<PathBuf>,
-    /// Path to the Astarte Message Hub configuration file.
-    #[arg(short, long)]
-    config: Option<PathBuf>,
-    /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
-    #[clap(short, long)]
-    store_directory: Option<PathBuf>,
-    /// Address the gRPC connection will bind to (e.g. 127.0.0.1).
-    #[arg(long)]
-    host: Option<IpAddr>,
-    /// Port the gRPC connection will bind to (e.g 50051)
-    #[arg(long, short)]
-    port: Option<u16>,
-}
+mod cli;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -86,15 +60,13 @@ async fn main() -> eyre::Result<()> {
         )
     }
 
-    let store_directory = args.store_directory.as_deref();
-
-    let mut options = MessageHubOptions::get(&args.config.or(args.toml), store_directory).await?;
+    let options = get_config_options(args).await?;
 
     // Directory to store the Nodes introspection
     let interfaces_dir = options.store_directory.join("interfaces");
 
     // Initialize an Astarte device
-    let (client, connection) = initialize_astarte_device_sdk(&mut options, &interfaces_dir).await?;
+    let (client, connection) = initialize_astarte_device_sdk(&options, &interfaces_dir).await?;
     info!("Connection to Astarte established.");
 
     let (publisher, mut subscriber) = init_pub_sub(client);
@@ -120,19 +92,11 @@ async fn main() -> eyre::Result<()> {
             .wrap_err("subscriber disconnected")
     });
 
-    let host = args
-        .host
-        .or(options.grpc_socket_host)
-        .unwrap_or(DEFAULT_HOST);
-    let port = args
-        .port
-        .or(options.grpc_socket_port)
-        .unwrap_or(DEFAULT_PORT);
+    let addrs = (options.grpc_socket_host, options.grpc_socket_port).into();
 
     // Handles the Message Hub gRPC server
     tasks.spawn(async move {
         // Run the proto-buff server
-        let addrs = (host, port).into();
 
         info!("Starting the server on grpc://{addrs}");
 
@@ -157,8 +121,48 @@ async fn main() -> eyre::Result<()> {
     Ok(())
 }
 
+async fn get_config_options(args: Cli) -> eyre::Result<MessageHubOptions> {
+    let store_directory = args.device.store_directory.as_deref();
+    let custom_config = args.config.as_deref().or(args.toml.as_deref());
+
+    let mut config = match Config::find_config(custom_config, store_directory).await? {
+        Some(config) => config,
+        None => {
+            let store_directory = args.device.store_directory.as_deref().ok_or_eyre(
+                "no configuration file specified and store directory missing  to start dynamic configuration",
+            )?;
+
+            let http = (
+                args.http.http_host.unwrap_or(DEFAULT_HOST),
+                args.http.http_port.unwrap_or(DEFAULT_HTTP_PORT),
+            )
+                .into();
+
+            let grpc = (
+                args.grpc.host.unwrap_or(DEFAULT_HOST),
+                args.grpc.port.unwrap_or(DEFAULT_HTTP_PORT),
+            )
+                .into();
+
+            Config::listen_dynamic_config(store_directory, http, grpc).await?
+        }
+    };
+
+    args.merge(&mut config);
+
+    if config.device_id.is_none() {
+        // retrieve the device id
+        config.device_id_from_hardware_id().await?;
+    }
+
+    // Read the credentials secret, the store defaults to the current directory
+    config.read_credential_secret().await?;
+
+    Ok(config.try_into()?)
+}
+
 async fn initialize_astarte_device_sdk(
-    msg_hub_opts: &mut MessageHubOptions,
+    msg_hub_opts: &MessageHubOptions,
     interfaces_dir: &Path,
 ) -> eyre::Result<(
     DeviceClient<SqliteStore>,
@@ -173,22 +177,15 @@ async fn initialize_astarte_device_sdk(
             )
         })?;
 
-    // retrieve the device id
-    msg_hub_opts.obtain_device_id().await?;
-
-    // Obtain the credentials secret, the store defaults to the current directory
-    let cred = msg_hub_opts.obtain_credential().await?;
-
     // initialize the device options and mqtt config
     let mut mqtt_config = MqttConfig::new(
         &msg_hub_opts.realm,
-        msg_hub_opts.device_id.as_ref().unwrap(),
-        cred,
+        &msg_hub_opts.device_id,
+        msg_hub_opts.credential.clone(),
         &msg_hub_opts.pairing_url,
     );
 
-    #[allow(deprecated)]
-    if msg_hub_opts.astarte_ignore_ssl || msg_hub_opts.astarte.ignore_ssl {
+    if msg_hub_opts.astarte.ignore_ssl {
         mqtt_config.ignore_ssl_errors();
     }
 
