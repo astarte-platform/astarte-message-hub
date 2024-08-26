@@ -87,14 +87,14 @@ where
 
     async fn attach_node(
         &self,
+        node_id: Uuid,
         req: Request<Node>,
     ) -> Resp<ReceiverStream<Result<MessageHubEvent, Status>>> {
         debug!("Node Attach Request");
         let node = req.into_inner();
 
-        let id = Uuid::parse_str(&node.uuid)?;
         let interfaces_json = InterfacesJson::from_iter(node.interfaces_json);
-        let astarte_node = AstarteNode::from_json(id, &interfaces_json)?;
+        let astarte_node = AstarteNode::from_json(node_id, &interfaces_json)?;
 
         info!("Node attached {:?}", astarte_node);
 
@@ -235,6 +235,9 @@ impl<S> NodeIdInterceptor<S> {
         nodes: &Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
         req: hyper::Request<Body>,
     ) -> Result<hyper::Request<Body>, InterceptorError> {
+        // check if the request is an Attach rpc
+        let is_attach = is_attach(req.uri());
+
         debug!("checking the NodeId in the request metadata");
         // use tonic::Metadata to access the metadata and avoid to manually perform a base64
         // conversion of the uuid.
@@ -250,12 +253,14 @@ impl<S> NodeIdInterceptor<S> {
 
         trace!("NodeId: {node_uuid}");
 
-        if !nodes.read().await.contains_key(&node_uuid) {
+        // check that the Server contains a node with the Node ID present inside the metadata.
+        // this check is performed on all gRPC requests apart from the Attach ones.
+        if !is_attach && !nodes.read().await.contains_key(&node_uuid) {
             debug!("NodeId not found");
             return Err(InterceptorError::IdNotFound);
         }
 
-        debug!("NodeId checked");
+        trace!("NodeId checked");
 
         // reconstruct the http::Request
         parts.headers = metadata.into_headers();
@@ -332,12 +337,6 @@ where
         let mut service = std::mem::replace(self, clone);
 
         Box::pin(async move {
-            // check that the Node ID is present inside the metadata on all gRPC requests apart from the
-            // attach ones
-            if is_attach(req.uri()) {
-                return service.inner.call(req).await;
-            }
-
             let checked_req = match Self::check_node_id(&service.msg_hub_nodes, req).await {
                 Ok(req) => req,
                 // return a response with the status code related to the given error
@@ -382,19 +381,34 @@ where
     /// ```no_run
     /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
     /// use astarte_message_hub_proto::Node;
+    /// use tonic::transport::channel::Endpoint;
+    /// use tonic::metadata::MetadataValue;
     /// use uuid::Uuid;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), tonic::Status> {
-    ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
-    ///
     ///     let uuid = Uuid::new_v4();
+    ///
+    ///     // adding the interceptor layer will include the Node ID inside the metadata
+    ///     let channel = Endpoint::from_static("http://[::1]:50051")
+    ///         .connect()
+    ///         .await
+    ///         .unwrap();
+    ///
+    ///     // adding the interceptor layer will include the Node ID inside the metadata
+    ///     let mut client =
+    ///         MessageHubClient::with_interceptor(channel, move |mut req: tonic::Request<()>| {
+    ///             req.metadata_mut()
+    ///                 .insert_bin("node-id-bin", MetadataValue::from_bytes(uuid.as_ref()));
+    ///             Ok(req)
+    ///         });
+    ///
     ///     let interface = tokio::fs::read_to_string("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json").await
     ///         .unwrap();
     ///
-    ///     let node = Node::from_interfaces(&uuid, [&interface]).unwrap();
+    ///     let node = Node::from_interfaces([&interface]).unwrap();
     ///
-    ///     let mut stream = message_hub_client
+    ///     let mut stream = client
     ///         .attach(tonic::Request::new(node))
     ///         .await?
     ///         .into_inner();
@@ -407,7 +421,13 @@ where
     /// }
     /// ```
     async fn attach(&self, request: Request<Node>) -> Result<Response<Self::AttachStream>, Status> {
-        self.attach_node(request).await.map_err(Status::from)
+        // retrieve the node id from the request metadata
+        let node_id = request.get_node_id()?;
+        debug!("Node {node_id} Send Request");
+
+        self.attach_node(node_id.0, request)
+            .await
+            .map_err(Status::from)
     }
 
     /// Send a message to Astarte for a node attached to the Astarte Message Hub.
@@ -417,19 +437,34 @@ where
     /// use astarte_message_hub_proto::astarte_message::Payload;
     /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
     /// use astarte_message_hub_proto::AstarteMessage;
+    /// use tonic::transport::channel::Endpoint;
+    /// use tonic::metadata::MetadataValue;
     /// use uuid::Uuid;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), tonic::Status> {
-    ///     let mut message_hub_client = MessageHubClient::connect("http://[::1]:10000").await.unwrap();
-    ///
     ///     let uuid = Uuid::new_v4();
+    ///
+    ///     // adding the interceptor layer will include the Node ID inside the metadata
+    ///     let channel = Endpoint::from_static("http://[::1]:50051")
+    ///         .connect()
+    ///         .await
+    ///         .unwrap();
+    ///
+    ///     // adding the interceptor layer will include the Node ID inside the metadata
+    ///     let mut client =
+    ///         MessageHubClient::with_interceptor(channel, move |mut req: tonic::Request<()>| {
+    ///             req.metadata_mut()
+    ///                 .insert_bin("node-id-bin", MetadataValue::from_bytes(uuid.as_ref()));
+    ///             Ok(req)
+    ///         });
+    ///
     ///     let interface = tokio::fs::read_to_string("/tmp/org.astarteplatform.rust.examples.DeviceDatastream.json").await
     ///         .unwrap();
     ///
-    ///     let node = Node::from_interfaces(&uuid, [&interface]).unwrap();
+    ///     let node = Node::from_interfaces([&interface]).unwrap();
     ///
-    ///     let stream = message_hub_client
+    ///     let stream = client
     ///         .attach(tonic::Request::new(node))
     ///         .await?
     ///         .into_inner();
@@ -441,7 +476,7 @@ where
     ///         payload: Some(Payload::AstarteData(100.into()))
     ///     };
     ///
-    ///     let _ = message_hub_client.send(astarte_message).await;
+    ///     let _ = client.send(astarte_message).await;
     ///
     ///     Ok(())
     ///
@@ -542,7 +577,6 @@ mod test {
 
     use astarte_message_hub_proto::astarte_message::Payload;
     use astarte_message_hub_proto::message_hub_server::MessageHub;
-    use astarte_message_hub_proto::Node;
     use astarte_message_hub_proto::{AstarteMessage, InterfacesJson};
     use async_trait::async_trait;
     use hyper::{Body, Response, StatusCode};
@@ -647,14 +681,23 @@ mod test {
         AstarteMessageHub::new(mock_astarte, tmp.path())
     }
 
+    fn add_metadata_node_id<T>(uuid: Uuid, req: &mut Request<T>) {
+        req.metadata_mut()
+            .insert_bin("node-id-bin", MetadataValue::from_bytes(uuid.as_bytes()));
+        req.extensions_mut().insert(NodeId(uuid));
+    }
+
     async fn attach(
-        node_id: &Uuid,
+        node_id: Uuid,
         msg_hub: &AstarteMessageHub<MockAstarteHandler>,
     ) -> Result<tonic::Response<ReceiverStream<Result<MessageHubEvent, Status>>>, Status> {
         let interfaces = vec![SERV_PROPS_IFACE.to_string(), SERV_OBJ_IFACE.to_string()];
-        let node_introspection = Node::new(node_id, interfaces);
+        let node = Node::new(interfaces);
 
-        let req_node = Request::new(node_introspection);
+        let mut req_node = Request::new(node);
+
+        // add the node id into the metadata request
+        add_metadata_node_id(node_id, &mut req_node);
 
         msg_hub.attach(req_node).await
     }
@@ -674,7 +717,7 @@ mod test {
             .returning(MockAstarteHandler::new);
 
         let msg_hub = mock_msg_hub(mock_astarte);
-        let attach_result = attach(&TEST_UUID, &msg_hub).await;
+        let attach_result = attach(TEST_UUID, &msg_hub).await;
 
         assert!(
             attach_result.is_ok(),
@@ -699,7 +742,7 @@ mod test {
             .returning(MockAstarteHandler::new);
 
         let msg_hub = mock_msg_hub(mock_astarte);
-        let attach_result = attach(&TEST_UUID, &msg_hub).await;
+        let attach_result = attach(TEST_UUID, &msg_hub).await;
 
         // send a custom error to the Node
         let msghub_event = MessageHubEvent::from_error(AstarteMessageHubError::Astarte(
@@ -727,17 +770,15 @@ mod test {
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let node = Node {
-            uuid: "a1".to_string(),
-            interfaces_json: vec![],
-        };
+        let node = Node::new(vec![]);
 
+        // avoid inserting the node id
         let req_node = Request::new(node);
         let attach_result = astarte_message.attach(req_node).await;
 
         assert!(attach_result.is_err());
         let err: Status = attach_result.err().unwrap();
-        assert_eq!(err.code(), Code::InvalidArgument)
+        assert_eq!(err.code(), Code::FailedPrecondition)
     }
 
     #[tokio::test]
@@ -758,14 +799,14 @@ mod test {
 
         let interfaces = [SERV_PROPS_IFACE];
 
-        let node = Node::from_interfaces(&TEST_UUID, interfaces).unwrap();
+        let node = Node::from_interfaces(interfaces).unwrap();
 
         let req_node = Request::new(node);
         let attach_result = astarte_message.attach(req_node).await;
 
         assert!(attach_result.is_err());
         let err: Status = attach_result.err().unwrap();
-        assert_eq!(err.code(), Code::InvalidArgument)
+        assert_eq!(err.code(), Code::FailedPrecondition)
     }
 
     #[tokio::test]
@@ -859,16 +900,10 @@ mod test {
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let interfaces = vec![SERV_PROPS_IFACE.to_string()];
-        let node = Node::new(&TEST_UUID, interfaces);
-
-        let mut req_node_attach = Request::new(node.clone());
-        // it is necessary to add the NodeId extensions otherwise sending is not allowed
-        req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
-        assert!(astarte_message.attach(req_node_attach).await.is_ok());
+        assert!(attach(TEST_UUID, &astarte_message).await.is_ok());
 
         let mut req_node_detach = Request::new(Empty {});
-        req_node_detach.extensions_mut().insert(NodeId(TEST_UUID));
+        add_metadata_node_id(TEST_UUID, &mut req_node_detach);
         let detach_result = astarte_message.detach(req_node_detach).await;
 
         assert!(detach_result.is_ok())
@@ -927,9 +962,9 @@ mod test {
         let astarte_message = AstarteMessageHub::new(mock_astarte, tmp.path());
 
         let interfaces = vec![SERV_PROPS_IFACE.to_string()];
-        let node = Node::new(&TEST_UUID, interfaces);
+        let node = Node::new(interfaces);
 
-        let mut req_node_attach = Request::new(node.clone());
+        let mut req_node_attach = Request::new(node);
         req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
         assert!(astarte_message.attach(req_node_attach).await.is_ok());
 
