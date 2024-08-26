@@ -65,7 +65,6 @@ a list of Json Interfaces used by it for exchanging data with Astarte.
 
 ```protobuf
 message Node {
-  string uuid = 1;
   repeated bytes interface_jsons = 2;
 }
 ```

@@ -122,7 +122,7 @@ checksum = "f538837af36e6f6a9be0faa67f9a314f8119e4e4b5867c6ab40ed60360142519"
 [[package]]
 name = "astarte-device-sdk"
 version = "0.8.3"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust?branch=change-msg-api#861f0f9e9ccf673311091d79ae8b518a38f6ece4"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust?branch=refactor/node-id-new-api#50c7bac09882363239f89aa98269e7c4d6888b9d"
 dependencies = [
  "ahash",
  "astarte-device-sdk-derive",
@@ -162,7 +162,7 @@ dependencies = [
 [[package]]
 name = "astarte-device-sdk-derive"
 version = "0.8.3"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust?branch=change-msg-api#861f0f9e9ccf673311091d79ae8b518a38f6ece4"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust?branch=refactor/node-id-new-api#50c7bac09882363239f89aa98269e7c4d6888b9d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -172,7 +172,7 @@ dependencies = [
 [[package]]
 name = "astarte-device-sdk-mock"
 version = "0.8.3"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust?branch=change-msg-api#861f0f9e9ccf673311091d79ae8b518a38f6ece4"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust?branch=refactor/node-id-new-api#50c7bac09882363239f89aa98269e7c4d6888b9d"
 dependencies = [
  "astarte-device-sdk",
  "async-trait",
@@ -220,8 +220,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-message-hub-proto"
-version = "0.6.2"
-source = "git+https://github.com/astarte-platform/astarte-message-hub-proto?rev=908e34d232a23c81419c962f07705a358642a520#908e34d232a23c81419c962f07705a358642a520"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e11715d99fa49328a6216432b8374dbbab38ec2c80d6ddb06cc8003231eb727"
 dependencies = [
  "chrono",
  "pbjson-types",
@@ -1675,7 +1676,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.6",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",

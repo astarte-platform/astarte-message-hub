@@ -28,6 +28,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Default to `127.0.0.1:50051` if no host and port is configured. [#268]
 - Handle the new return type of the Attach rpc, `MessageHubEvent`, which can either be an error or an Astarte
   message [#264](https://github.com/astarte-platform/astarte-message-hub/pull/264)
+- Retrieve the Node ID information from the grpc metadata also for the Attach rpc [#272](https://github.com/astarte-platform/astarte-message-hub/pull/272).
+
 
 
 [#268]: https://github.com/astarte-platform/astarte-message-hub/pull/268
