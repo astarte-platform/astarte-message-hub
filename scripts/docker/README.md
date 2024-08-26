@@ -34,3 +34,16 @@ docker run -p 50051:50051 -v /path/to/your/config.toml:/etc/astarte-message-hub/
 ```
 
 Replace `/path/to/your/config.toml` with the actual path to your configuration file.
+
+### ENV variables
+
+You can configure the Message Hub with environment variables by exporting them (e.g. configuring
+them in the
+[docker-compose.yaml](https://docs.docker.com/compose/environment-variables/set-environment-variables/))
+or via the `--env-file` CLI options:
+
+```sh
+docker run -p 50051:50051 --env-file .env astarte-message-hub:latest
+```
+
+Consult the `--help` for a full list of environment variable names and options.

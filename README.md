@@ -29,7 +29,7 @@ using 1 MQTT connection to Astarte.
 
 The Astarte Message Hub is configured through `message-hub-config.toml` in the current working
 directory, otherwise the system wide `/etc/message-hub/config.toml` can be used. In alternative, you
-can specify the path to the configuration file with the `-t/--toml` cli option.
+can specify the path to the configuration file with the `-c/--config` cli option.
 
 The format for the configuration file is the following:
 
@@ -69,6 +69,12 @@ ignore_ssl = false
 An example configuration file can be found in the
 [examples](https://github.com/astarte-platform/astarte-message-hub/blob/master/examples/message-hub-config.toml)
 direction.
+
+### Override the configuration file
+
+You can override the configuration file options by passing arguments to the command line or
+exporting the corresponding environment variables. Run the massage hub with `--help` to see all the
+options.
 
 ## Example
 

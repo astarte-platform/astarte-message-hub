@@ -114,7 +114,7 @@ async fn main() -> eyre::Result<()> {
         // Crash if one of the tasks returned an error
         res.wrap_err("failed to join task").and_then(identity)?;
 
-        // Abort other wise
+        // Otherwise abort all if one exited
         tasks.abort_all();
     }
 
