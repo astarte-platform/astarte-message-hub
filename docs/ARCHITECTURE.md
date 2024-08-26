@@ -95,6 +95,8 @@ sequenceDiagram
          AstarteMessageHub->>Node1: Unable to attach the node
     end
 
+    AstarteMessageHub->>Node1: Send server props
+
     Astarte->>AstarteMessageHub: Event data for node1
     AstarteMessageHub->>Node1: Event data
     Astarte->AstarteMessageHub: Event data for node1
@@ -105,6 +107,10 @@ To prevent sending messages from an unknown node, all subsequent gRPC messages m
 UUID in their corresponding metadata fields. The metadata will be checked as soon as the Message Hub
 receives a message from a node. If the UUID is neither present nor correctly recognized as belonging
 to an attached node, the related message will be discarded.
+
+When a node is attached, all of the node's subscribed server properties will be sent to it. This
+process ensures the synchronization of properties that may have been lost while the node was
+disconnected.
 
 ## Send Method
 
@@ -210,6 +216,13 @@ sequenceDiagram
          AstarteMessageHub->>Node1: Unable to send message
     end
 ```
+
+> [!IMPORTANT]
+>
+> When the same property (interface and mapping) is sent from multiple nodes, the recipients, other
+> than the sender, will not receive notification of the new property and will miss the state. To
+> address this issue, you should parameterize the mappings shared between devices or employ
+> different strategies using server properties and triggers.
 
 ## Detach Method
 
