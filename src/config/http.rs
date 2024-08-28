@@ -21,6 +21,8 @@
 //! Provides an HTTP API to set The Message Hub configurations
 
 use std::io;
+use std::net::{IpAddr, SocketAddr};
+use std::path::Path;
 use std::sync::Arc;
 
 use axum::extract::State;
@@ -37,9 +39,9 @@ use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::config::MessageHubOptions;
-use crate::error::ConfigValidationError;
+use crate::error::ConfigError;
 
-use super::DeviceSdkOptions;
+use super::{Config, DeviceSdkOptions};
 
 /// HTTP server error
 #[derive(thiserror::Error, Debug, displaydoc::Display)]
@@ -47,7 +49,7 @@ pub enum HttpError {
     /// couldn't bind the address {addr}
     Bind {
         /// address
-        addr: String,
+        addr: SocketAddr,
         /// backtrace error
         #[source]
         backtrace: io::Error,
@@ -62,7 +64,7 @@ pub enum HttpError {
 #[derive(thiserror::Error, Debug, displaydoc::Display)]
 pub enum ErrorResponse {
     /// invalid configuration
-    InvalidConfig(#[from] ConfigValidationError),
+    InvalidConfig(#[from] ConfigError),
     /// failed to serialize config
     Serialize(#[from] toml::ser::Error),
     /// write config file
@@ -122,14 +124,14 @@ impl Default for ConfigResponse {
 #[derive(Debug, Clone)]
 struct ConfigServer {
     configuration_ready_channel: Arc<Notify>,
-    toml_file: Arc<String>,
+    config_file: Arc<Path>,
 }
 
 impl ConfigServer {
-    fn new(configuration_ready_channel: Arc<Notify>, toml_file: &str) -> Self {
+    fn new(configuration_ready_channel: Arc<Notify>, config_file: &Path) -> Self {
         Self {
             configuration_ready_channel,
-            toml_file: Arc::new(toml_file.into()),
+            config_file: config_file.into(),
         }
     }
 }
@@ -141,7 +143,8 @@ struct ConfigPayload {
     credentials_secret: Option<String>,
     pairing_url: String,
     pairing_token: Option<String>,
-    grpc_socket_port: u16,
+    grpc_socket_host: Option<IpAddr>,
+    grpc_socket_port: Option<u16>,
 }
 
 /// Provides an HTTP API to set The Message Hub configurations
@@ -154,11 +157,11 @@ pub struct HttpConfigProvider {
 impl HttpConfigProvider {
     /// Start a new HTTP API Server to allow a third party to feed the Message Hub configurations
     pub async fn serve(
-        address: &str,
+        address: &SocketAddr,
         configuration_ready_channel: Arc<Notify>,
-        toml_file: &str,
+        config_file: &Path,
     ) -> Result<HttpConfigProvider, HttpError> {
-        let cfg_server = ConfigServer::new(configuration_ready_channel, toml_file);
+        let cfg_server = ConfigServer::new(configuration_ready_channel, config_file);
 
         let app = Router::new()
             .route("/", get(root))
@@ -171,7 +174,7 @@ impl HttpConfigProvider {
         let listener = TcpListener::bind(address)
             .await
             .map_err(|e| HttpError::Bind {
-                addr: address.to_string(),
+                addr: *address,
                 backtrace: e,
             })?;
 
@@ -209,16 +212,17 @@ async fn set_config(
     Json(payload): Json<ConfigPayload>,
 ) -> Result<(StatusCode, Json<ConfigResponse>), ErrorResponse> {
     #[allow(deprecated)]
-    let message_hub_options = MessageHubOptions {
-        realm: payload.realm,
+    let message_hub_options = Config {
+        realm: Some(payload.realm),
         device_id: payload.device_id,
         credentials_secret: payload.credentials_secret,
-        pairing_url: payload.pairing_url,
+        pairing_url: Some(payload.pairing_url),
         pairing_token: payload.pairing_token,
         interfaces_directory: None,
         astarte_ignore_ssl: false,
+        grpc_socket_host: payload.grpc_socket_host,
         grpc_socket_port: payload.grpc_socket_port,
-        store_directory: MessageHubOptions::default_store_directory(),
+        store_directory: Some(MessageHubOptions::default_store_directory()),
         astarte: DeviceSdkOptions {
             ignore_ssl: false,
             ..Default::default()
@@ -229,7 +233,7 @@ async fn set_config(
 
     let cfg = toml::to_string(&message_hub_options)?;
 
-    tokio::fs::write(state.toml_file.as_ref(), cfg).await?;
+    tokio::fs::write(state.config_file.as_ref(), cfg).await?;
 
     state.configuration_ready_channel.notify_one();
 
@@ -245,7 +249,7 @@ mod test {
     use serial_test::serial;
     use tempfile::TempDir;
 
-    use crate::config::file::CONFIG_FILE_NAMES;
+    use crate::config::CONFIG_FILE_NAME;
 
     use super::*;
 
@@ -255,15 +259,15 @@ mod test {
         let notify = Arc::new(Notify::new());
 
         let dir = TempDir::new().unwrap();
-        let toml_file = dir
-            .path()
-            .join(CONFIG_FILE_NAMES[0])
-            .to_string_lossy()
-            .to_string();
+        let toml_file = dir.path().join(CONFIG_FILE_NAME);
 
-        let server = HttpConfigProvider::serve("127.0.0.1:8080", Arc::clone(&notify), &toml_file)
-            .await
-            .expect("failed to create server");
+        let server = HttpConfigProvider::serve(
+            &"127.0.0.1:8080".parse().unwrap(),
+            Arc::clone(&notify),
+            &toml_file,
+        )
+        .await
+        .expect("failed to create server");
 
         let mut body = Map::new();
         body.insert("realm".to_string(), Value::String("realm".to_string()));
@@ -309,15 +313,15 @@ mod test {
         let notify = Arc::new(Notify::new());
 
         let dir = TempDir::new().unwrap();
-        let toml_file = dir
-            .path()
-            .join(CONFIG_FILE_NAMES[0])
-            .to_string_lossy()
-            .to_string();
+        let toml_file = dir.path().join(CONFIG_FILE_NAME);
 
-        let server = HttpConfigProvider::serve("127.0.0.1:8081", Arc::clone(&notify), &toml_file)
-            .await
-            .expect("failed to create server");
+        let server = HttpConfigProvider::serve(
+            &"127.0.0.1:8081".parse().unwrap(),
+            Arc::clone(&notify),
+            &toml_file,
+        )
+        .await
+        .expect("failed to create server");
 
         let mut body = HashMap::new();
         body.insert("device_id", "device_id");
@@ -345,15 +349,15 @@ mod test {
         let notify = Arc::new(Notify::new());
 
         let dir = TempDir::new().unwrap();
-        let toml_file = dir
-            .path()
-            .join(CONFIG_FILE_NAMES[0])
-            .to_string_lossy()
-            .to_string();
+        let toml_file = dir.path().join(CONFIG_FILE_NAME);
 
-        let server = HttpConfigProvider::serve("127.0.0.1:8087", Arc::clone(&notify), &toml_file)
-            .await
-            .expect("failed to create server");
+        let server = HttpConfigProvider::serve(
+            &"127.0.0.1:8087".parse().unwrap(),
+            Arc::clone(&notify),
+            &toml_file,
+        )
+        .await
+        .expect("failed to create server");
 
         let mut body = Map::new();
         body.insert("realm".to_string(), Value::String("".to_string()));

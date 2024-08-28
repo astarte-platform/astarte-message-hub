@@ -28,10 +28,10 @@ use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
-use eyre::Context;
+use astarte_message_hub::config::{Config, DEFAULT_HOST, DEFAULT_HTTP_PORT};
+use eyre::{Context, OptionExt};
 use std::convert::identity;
-use std::net::Ipv6Addr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 use tokio::task::JoinSet;
 
@@ -41,20 +41,11 @@ use astarte_message_hub::{
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::Parser;
 use eyre::eyre;
-use log::{debug, info};
+use log::{debug, error, info, warn};
 
-/// A central service that runs on (Linux) devices for collecting and delivering messages from N
-/// apps using 1 MQTT connection to Astarte.
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Cli {
-    /// Path to a valid .toml file containing the message hub configuration.
-    #[clap(short, long, conflicts_with = "store_directory")]
-    toml: Option<String>,
-    /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
-    #[clap(short, long, conflicts_with = "toml")]
-    store_directory: Option<PathBuf>,
-}
+use crate::cli::Cli;
+
+mod cli;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -63,9 +54,13 @@ async fn main() -> eyre::Result<()> {
 
     let args = Cli::parse();
 
-    let store_directory = args.store_directory.as_deref();
+    if args.toml.is_some() {
+        warn!(
+            "DEPRECATED: the '-t/--toml' option is deprecated in favour of the '-c/--config' flag"
+        )
+    }
 
-    let mut options = MessageHubOptions::get(args.toml, store_directory).await?;
+    let options = get_config_options(args).await?;
 
     // Directory to store the Nodes introspection
     let interfaces_dir = options.store_directory.join("interfaces");
@@ -76,7 +71,7 @@ async fn main() -> eyre::Result<()> {
     }
 
     // Initialize an Astarte device
-    let (client, connection) = initialize_astarte_device_sdk(&mut options, &interfaces_dir).await?;
+    let (client, connection) = initialize_astarte_device_sdk(&options, &interfaces_dir).await?;
     info!("Connection to Astarte established.");
 
     let (publisher, mut subscriber) = init_pub_sub(client);
@@ -102,15 +97,20 @@ async fn main() -> eyre::Result<()> {
             .wrap_err("subscriber disconnected")
     });
 
+    let addrs = (options.grpc_socket_host, options.grpc_socket_port).into();
+
     // Handles the Message Hub gRPC server
     tasks.spawn(async move {
         // Run the proto-buff server
-        let addrs = (Ipv6Addr::LOCALHOST, options.grpc_socket_port).into();
+
+        info!("Starting the server on grpc://{addrs}");
+
+        let shutdown = shutdown()?;
 
         tonic::transport::Server::builder()
             .layer(message_hub.make_interceptor_layer())
             .add_service(MessageHubServer::new(message_hub))
-            .serve(addrs)
+            .serve_with_shutdown(addrs, shutdown)
             .await
             .wrap_err("couldn't start the server")
     });
@@ -118,13 +118,56 @@ async fn main() -> eyre::Result<()> {
     while let Some(res) = tasks.join_next().await {
         // Crash if one of the tasks returned an error
         res.wrap_err("failed to join task").and_then(identity)?;
+
+        // Otherwise abort all if one exited
+        tasks.abort_all();
     }
 
     Ok(())
 }
 
+async fn get_config_options(args: Cli) -> eyre::Result<MessageHubOptions> {
+    let store_directory = args.device.store_dir.as_deref();
+    let custom_config = args.config.as_deref().or(args.toml.as_deref());
+
+    let mut config = match Config::find_config(custom_config, store_directory).await? {
+        Some(config) => config,
+        None => {
+            let store_directory = args.device.store_dir.as_deref().ok_or_eyre(
+                "no configuration file specified and store directory missing  to start dynamic configuration",
+            )?;
+
+            let http = (
+                args.http.http_host.unwrap_or(DEFAULT_HOST),
+                args.http.http_port.unwrap_or(DEFAULT_HTTP_PORT),
+            )
+                .into();
+
+            let grpc = (
+                args.grpc.host.unwrap_or(DEFAULT_HOST),
+                args.grpc.port.unwrap_or(DEFAULT_HTTP_PORT),
+            )
+                .into();
+
+            Config::listen_dynamic_config(store_directory, http, grpc).await?
+        }
+    };
+
+    args.merge(&mut config);
+
+    if config.device_id.is_none() {
+        // retrieve the device id
+        config.device_id_from_hardware_id().await?;
+    }
+
+    // Read the credentials secret, the store defaults to the current directory
+    config.read_credential_secret().await?;
+
+    Ok(config.try_into()?)
+}
+
 async fn initialize_astarte_device_sdk(
-    msg_hub_opts: &mut MessageHubOptions,
+    msg_hub_opts: &MessageHubOptions,
     interfaces_dir: &Path,
 ) -> eyre::Result<(
     DeviceClient<SqliteStore>,
@@ -139,22 +182,15 @@ async fn initialize_astarte_device_sdk(
             )
         })?;
 
-    // retrieve the device id
-    msg_hub_opts.obtain_device_id().await?;
-
-    // Obtain the credentials secret, the store defaults to the current directory
-    let cred = msg_hub_opts.obtain_credential().await?;
-
     // initialize the device options and mqtt config
     let mut mqtt_config = MqttConfig::new(
         &msg_hub_opts.realm,
-        msg_hub_opts.device_id.as_ref().unwrap(),
-        cred,
+        &msg_hub_opts.device_id,
+        msg_hub_opts.credential.clone(),
         &msg_hub_opts.pairing_url,
     );
 
-    #[allow(deprecated)]
-    if msg_hub_opts.astarte_ignore_ssl || msg_hub_opts.astarte.ignore_ssl {
+    if msg_hub_opts.astarte.ignore_ssl {
         mqtt_config.ignore_ssl_errors();
     }
 
@@ -188,4 +224,42 @@ async fn initialize_astarte_device_sdk(
     let (client, connection) = builder.store(store).connect(mqtt_config).await?.build();
 
     Ok((client, connection))
+}
+
+#[cfg(unix)]
+fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
+    use futures::FutureExt;
+    use tokio::signal::unix::SignalKind;
+
+    let mut term = tokio::signal::unix::signal(SignalKind::terminate())
+        .wrap_err("couldn't create SIGTERM listener")?;
+
+    let future = async move {
+        let term = std::pin::pin!(async move {
+            if term.recv().await.is_none() {
+                error!("no more signal events can be received")
+            }
+        });
+
+        let ctrl_c = std::pin::pin!(tokio::signal::ctrl_c().map(|res| {
+            if let Err(err) = res {
+                error!("couldn't receive SIGINT {err}");
+            }
+        }));
+
+        futures::future::select(term, ctrl_c).await;
+    };
+
+    Ok(future)
+}
+
+#[cfg(not(unix))]
+fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
+    use futures::FutureExt;
+
+    Ok(tokio::signal::ctrl_c().map(|res| {
+        if let Err(err) = res {
+            error!("couldn't receive SIGINT {err}");
+        }
+    }))
 }

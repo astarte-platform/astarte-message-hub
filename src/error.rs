@@ -21,6 +21,7 @@
 
 //! Errors for the message hub.
 
+use std::io;
 use std::path::PathBuf;
 
 use astarte_device_sdk::interface::error::InterfaceError;
@@ -52,10 +53,6 @@ pub enum AstarteMessageHubError {
     /// Unrecoverable error
     #[error("unrecoverable error ({0})")]
     Fatal(String),
-
-    /// Invalid configuration file
-    #[error("configuration file error")]
-    ConfigFile(#[from] toml::de::Error),
 
     /// Fail while sending or receiving data
     #[error(transparent)]
@@ -100,6 +97,10 @@ pub enum AstarteMessageHubError {
     /// Failed to add interfaces while building an Astarte device
     #[error("failed to add interfaces while building an Astarte device")]
     AddInterface(#[from] AddInterfaceError),
+
+    /// Couldn't read the configuration
+    #[error("coudln't read the configuration")]
+    Config(#[from] ConfigError),
 }
 
 impl From<AstarteMessageHubError> for Status {
@@ -110,7 +111,7 @@ impl From<AstarteMessageHubError> for Status {
             AstarteMessageHubError::Astarte(_)
             | AstarteMessageHubError::Io(_)
             | AstarteMessageHubError::Fatal(_)
-            | AstarteMessageHubError::ConfigFile(_)
+            | AstarteMessageHubError::Config(_)
             | AstarteMessageHubError::Transport(_)
             | AstarteMessageHubError::Zbus(_)
             | AstarteMessageHubError::HttpServer(_)
@@ -131,14 +132,23 @@ impl From<AstarteMessageHubError> for Status {
 
 /// Reason why a configuration is invalid.
 #[derive(thiserror::Error, Debug)]
-pub enum ConfigValidationError {
+pub enum ConfigError {
     /// Missing required field in the configuration file
     #[error("{0} field is missing")]
     MissingField(&'static str),
     /// Missing both the pairing token and the credentials secret
     #[error("either the pairing token or credential secret must be provided")]
-    MissingPairingAndCredentials,
+    Credentials,
     /// The provided interface path is not a directory
     #[error("interface path {0:?} is not a directory")]
     InvalidInterfaceDirectory(Option<PathBuf>),
+    /// Couldn't deserialize the configuration file
+    #[error("coudln't deserialize the configuration file")]
+    Toml(#[from] toml::de::Error),
+    /// Couldn't read configuration file
+    #[error("couldn't read configuration file")]
+    File(#[from] io::Error),
+    /// Couldn't read the dynamic generated file.
+    #[error("coudldn't read dynamic configuration {0}")]
+    Dynamic(PathBuf),
 }

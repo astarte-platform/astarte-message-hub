@@ -34,6 +34,13 @@ use tokio::signal::ctrl_c;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+const DEVICE_DATASTREAM: &str = include_str!(
+    "./interfaces/org.astarte-platform.rust.examples.datastream.DeviceDatastream.json"
+);
+const SERVER_DATASTREAM: &str = include_str!(
+    "./interfaces/org.astarte-platform.rust.examples.datastream.ServerDatastream.json"
+);
+
 /// Create a ProtoBuf client for the Astarte message hub.
 #[derive(Parser, Debug)]
 #[clap(version, about)]
@@ -67,7 +74,8 @@ async fn main() -> Result<(), DynError> {
 
     let (client, connection) = DeviceBuilder::new()
         .store(MemoryStore::new())
-        .interface_directory("examples/client/interfaces")?
+        .interface_str(DEVICE_DATASTREAM)?
+        .interface_str(SERVER_DATASTREAM)?
         .connect(grpc_cfg)
         .await?
         .build();

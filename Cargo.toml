@@ -35,7 +35,7 @@ astarte-message-hub-proto = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
+clap = { workspace = true, features = ["derive", "env"] }
 displaydoc = { workspace = true }
 env_logger = { workspace = true }
 eyre = { workspace = true }
@@ -66,8 +66,8 @@ serial_test = { workspace = true }
 tempfile = { workspace = true }
 
 [workspace.dependencies]
-astarte-device-sdk = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust", rev = "7e4ffb56c0775c08b680a15ba28da4858824a4e3" }
-astarte-device-sdk-mock = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust", rev = "7e4ffb56c0775c08b680a15ba28da4858824a4e3" }
+astarte-device-sdk = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust", rev = "f032ae28435c52623f268a3356439b2e1570caab" }
+astarte-device-sdk-mock = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust", rev = "f032ae28435c52623f268a3356439b2e1570caab" }
 astarte-message-hub-proto = { git = "https://github.com/astarte-platform/astarte-message-hub-proto", rev = "08ff0df376995d56b6c9d823ccf884afaeb7bdc7" }
 async-trait = "0.1.80"
 axum = "0.7.5"
@@ -107,3 +107,7 @@ zbus = { version = "3.15.2", default-features = false }
 [patch.crates-io]
 # Temporary till fix is unstreamed
 displaydoc = { git = "https://github.com/joshuachp/displaydoc" }
+
+# TODO: remove when ported to the SDK
+[patch."https://github.com/astarte-platform/astarte-message-hub-proto"]
+astarte-message-hub-proto = { git = "https://github.com/joshuachp/astarte-message-hub-proto", rev = "ef19042d47213ae0896027024ff36d5faeddc1e9" }
