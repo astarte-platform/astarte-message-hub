@@ -628,7 +628,7 @@ mod test {
         let value: i32 = 5;
 
         let mut client = DeviceClient::<SqliteStore>::default();
-        let mut connection = DeviceConnection::<SqliteStore, Grpc>::default();
+        let mut connection = DeviceConnection::<SqliteStore, Grpc<SqliteStore>>::default();
 
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
@@ -740,7 +740,7 @@ mod test {
         let prop_interface = astarte_device_sdk::Interface::from_str(SERV_PROPS_IFACE).unwrap();
 
         let mut client = DeviceClient::<SqliteStore>::default();
-        let mut connection = DeviceConnection::<SqliteStore, Grpc>::default();
+        let mut connection = DeviceConnection::<SqliteStore, Grpc<SqliteStore>>::default();
 
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
@@ -882,7 +882,7 @@ mod test {
         let prop_interface = astarte_device_sdk::Interface::from_str(SERV_PROPS_IFACE).unwrap();
 
         let mut client = DeviceClient::<SqliteStore>::default();
-        let mut connection = DeviceConnection::<SqliteStore, Grpc>::default();
+        let mut connection = DeviceConnection::<SqliteStore, Grpc<SqliteStore>>::default();
 
         // we define two nodes with the same introspection and test that a RecvError (except for a
         // MappingNotFound one) is broadcast to all the subscribed nodes, even those with a
