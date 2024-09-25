@@ -119,38 +119,54 @@ impl DeviceSubscriber {
     }
 
     async fn on_event(&mut self, event: Result<DeviceEvent, RecvError>) -> Result<(), DeviceError> {
+        let subscribers = self.subscribers.read().await;
+
         // determine if sending a proto message hub error or a correct message to the message hub nodes
-        let (msghub_event, to_notify) = match event {
+        match event {
             Ok(event) => {
                 let iface_name = event.interface.clone();
 
-                let msg = MessageHubEvent::from(AstarteMessage::from(event));
+                let msghub_event = MessageHubEvent::from(AstarteMessage::from(event));
 
-                (msg, NotifySubscribers::Some(iface_name))
+                trace!("message hub event: {msghub_event:?}");
+
+                // filter only the subscribers having iface_name in their introspection
+                let subscribers = subscribers
+                    .values()
+                    .filter(|s| s.introspection.contains(&iface_name));
+
+                self.send_to_subscribers(msghub_event, subscribers).await
+            }
+            Err(RecvError::MappingNotFound { interface, mapping }) => {
+                error!("mapping {mapping} not found");
+
+                let iface_name = Interface::from_str(&interface)?
+                    .interface_name()
+                    .to_string();
+
+                let msghub_event = MessageHubEvent::from_error(&RecvError::MappingNotFound {
+                    interface: interface.clone(),
+                    mapping,
+                });
+
+                trace!("message hub event: {msghub_event:?}");
+
+                // filter only the subscribers having iface_name in their introspection
+                let subscribers = subscribers
+                    .values()
+                    .filter(|s| s.introspection.contains(&iface_name));
+
+                self.send_to_subscribers(msghub_event, subscribers).await
             }
             Err(err) => {
-                let msg = MessageHubEvent::from_error(&err);
+                error!("receive error: {err}");
 
-                if let RecvError::MappingNotFound { interface, mapping } = err {
-                    error!("mapping {mapping} not found");
-                    let iface_name = Interface::from_str(&interface)?
-                        .interface_name()
-                        .to_string();
-                    (msg, NotifySubscribers::Some(iface_name))
-                } else {
-                    (msg, NotifySubscribers::All)
-                }
-            }
-        };
+                let msghub_event = MessageHubEvent::from_error(&err);
 
-        trace!("message hub event: {msghub_event:?}");
+                trace!("message hub event: {msghub_event:?}");
 
-        match to_notify {
-            // TODO: since the error doesn't bring with itself interface information, we send the
-            //      event to all the nodes. This is tracked with SDK Issue #[358]
-            NotifySubscribers::All => self.send_to_subscribers(msghub_event, |_| true).await,
-            NotifySubscribers::Some(iface) => {
-                self.send_to_subscribers(msghub_event, |s| s.introspection.contains(&iface))
+                // send to all subscribers
+                self.send_to_subscribers(msghub_event, subscribers.values())
                     .await
             }
         }
@@ -159,17 +175,12 @@ impl DeviceSubscriber {
     /// Send a message to a subset of subscribers.
     ///
     /// The closure passed in input to the method discriminates which subscribers must receive a message.
-    async fn send_to_subscribers<F>(
-        &self,
+    async fn send_to_subscribers<'a>(
+        &'a self,
         msghub_event: MessageHubEvent,
-        f: F,
-    ) -> Result<(), DeviceError>
-    where
-        F: Fn(&&Subscriber) -> bool,
-    {
-        let subscribers = self.subscribers.read().await;
-
-        for subscriber in subscribers.values().filter(f) {
+        subscribers: impl Iterator<Item = &'a Subscriber>,
+    ) -> Result<(), DeviceError> {
+        for subscriber in subscribers {
             subscriber
                 .sender
                 // This is needed to satisfy the tonic trait
@@ -180,14 +191,6 @@ impl DeviceSubscriber {
 
         Ok(())
     }
-}
-
-/// Enum used to decide which subscribers should receive a message.
-enum NotifySubscribers {
-    /// All subscribers.
-    All,
-    /// All the subscribers containing in their introspection the specified interfaces
-    Some(String),
 }
 
 /// A subscriber for the Astarte handler.

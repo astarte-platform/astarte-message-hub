@@ -21,17 +21,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Retrieve Node information from metadata to detach a node, now the `detach` rpc is called with
-  `Empty` [#251](https://github.com/astarte-platform/astarte-message-hub/pull/251).
+  `Empty` [#251](https://github.com/astarte-platform/astarte-message-hub/pull/251)
 - Print a warning when the `-t/--toml` flag is used, while still accepting it, and require it to be
   a well formed path. [#268]
 - Make the `grpc_socket_port` optional for the HTTP, gRPC and File configurations. [#268]
 - Default to `127.0.0.1:50051` if no host and port is configured. [#268]
-- Handle the new return type of the Attach rpc, `MessageHubEvent`, which can either be an error or an Astarte
-  message [#264](https://github.com/astarte-platform/astarte-message-hub/pull/264)
-- Retrieve the Node ID information from the grpc metadata also for the Attach rpc [#272](https://github.com/astarte-platform/astarte-message-hub/pull/272).
+- Handle the new return type of the Attach rpc, `MessageHubEvent`, which can either be an error or
+  an Astarte message. [#264]
+- Retrieve the Node ID information from the grpc metadata also for the Attach rpc. [#264]
 
-
-
+[#264]: https://github.com/astarte-platform/astarte-message-hub/pull/264
 [#268]: https://github.com/astarte-platform/astarte-message-hub/pull/268
 
 ## [0.6.0] - 2024-05-09
