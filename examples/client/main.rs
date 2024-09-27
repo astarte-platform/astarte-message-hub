@@ -21,17 +21,16 @@
 //! Astarte Message Hub client example, will send the uptime every 3 seconds to Astarte.
 
 use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
+use astarte_device_sdk::client::{ClientDisconnect, RecvError};
 use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::transport::grpc::GrpcConfig;
 use astarte_device_sdk::{Client, EventLoop};
 
-use std::time;
-
 use clap::Parser;
-use log::{debug, error, info, warn};
-use tokio::select;
+use log::{error, info};
+use std::time;
 use tokio::signal::ctrl_c;
-use tokio::task::JoinHandle;
+use tokio::task::JoinSet;
 use uuid::Uuid;
 
 const DEVICE_DATASTREAM: &str = include_str!(
@@ -66,9 +65,11 @@ type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 #[tokio::main]
 async fn main() -> Result<(), DynError> {
-    env_logger::init();
+    stable_eyre::install()?;
+    env_logger::try_init()?;
+
     let args = Cli::parse();
-    let node_id = Uuid::parse_str(&args.uuid).expect("Node id not specified");
+    let node_id = Uuid::parse_str(&args.uuid)?;
 
     let grpc_cfg = GrpcConfig::from_url(node_id, args.endpoint)?;
 
@@ -78,81 +79,93 @@ async fn main() -> Result<(), DynError> {
         .interface_str(SERVER_DATASTREAM)?
         .connect(grpc_cfg)
         .await?
-        .build();
+        .build()
+        .await;
+
+    let mut tasks = JoinSet::<Result<(), DynError>>::new();
 
     let client_cl = client.clone();
-    let receive_handle = tokio::spawn(async move {
+
+    tasks.spawn(async move {
         info!("start receiving messages from the Astarte Message Hub Server");
         loop {
             match client_cl.recv().await {
                 Ok(event) => {
                     info!("received {event:?}");
                 }
-                Err(astarte_device_sdk::Error::Disconnected) => break,
+                Err(RecvError::Disconnected) => break,
                 Err(err) => {
                     error!("error while receiving data from Astarte Message Hub Server: {err:?}")
                 }
             }
         }
+
+        Ok(())
     });
 
     // Create a task to transmit
-    let send_handle = tokio::spawn(async move {
-        let now = time::SystemTime::now();
-        let mut count = 0;
-        // Consistent interval of 3 seconds
-        let mut interval = tokio::time::interval(time::Duration::from_millis(args.time));
+    tasks.spawn({
+        let client = client.clone();
 
-        while args.count.is_none() || Some(count) < args.count {
-            interval.tick().await;
+        async move {
+            let now = time::SystemTime::now();
+            let mut count = 0;
+            // Consistent interval of 3 seconds
+            let mut interval = tokio::time::interval(time::Duration::from_millis(args.time));
 
-            info!("Publishing the uptime through the message hub.");
+            while args.count.is_none() || Some(count) < args.count {
+                interval.tick().await;
 
-            let elapsed = now.elapsed().unwrap().as_secs();
+                info!("Publishing the uptime through the message hub.");
 
-            let elapsed_str = format!("Uptime for node {}: {}", args.uuid, elapsed);
+                let elapsed = now.elapsed()?.as_secs();
 
-            client
-                .send(
-                    "org.astarte-platform.rust.examples.datastream.DeviceDatastream",
-                    "/uptime",
-                    elapsed_str,
-                )
-                .await
-                .expect("failed to send Astarte message");
+                let elapsed_str = format!("Uptime for node {}: {}", args.uuid, elapsed);
 
-            count += 1;
+                client
+                    .send(
+                        "org.astarte-platform.rust.examples.datastream.DeviceDatastream",
+                        "/uptime",
+                        elapsed_str,
+                    )
+                    .await?;
+
+                count += 1;
+            }
+
+            info!("Done sending messages");
+
+            Ok(())
         }
-
-        info!("Done sending messages");
     });
 
-    // wait for CTRL C to terminate the node execution
-    select! {
-        _ = ctrl_c() => {
-            debug!("CTRL C received, stop sending/receiving data from Astarte");
-            send_handle.abort();
-            receive_handle.abort();
-        }
-        res = connection.handle_events() => {
-            warn!("disconnected from Astarte");
-            return res.map_err(Into::into);
-        }
+    tasks.spawn(async move {
+        connection.handle_events().await?;
+
+        Ok(())
+    });
+
+    tasks.spawn(async {
+        // wait for CTRL C to terminate the node execution
+        ctrl_c().await?;
+
+        Ok(())
+    });
+
+    while let Some(res) = tasks.join_next().await {
+        match res {
+            Ok(res) => {
+                res?;
+                tasks.abort_all();
+            }
+            Err(err) if err.is_cancelled() => {}
+            Err(err) => {
+                return Err(err.into());
+            }
+        };
     }
 
-    handle_task(receive_handle).await;
-    handle_task(send_handle).await;
-
-    // TODO: disconnect will be implemented on the client (coming soon)
-    // connection.disconnect().await;
+    client.disconnect().await?;
 
     Ok(())
-}
-
-async fn handle_task(h: JoinHandle<()>) {
-    match h.await {
-        Ok(()) => {}
-        Err(err) if err.is_cancelled() => {}
-        Err(err) => error!("join error: {err:?}"),
-    };
 }

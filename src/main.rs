@@ -171,7 +171,7 @@ async fn initialize_astarte_device_sdk(
     interfaces_dir: &Path,
 ) -> eyre::Result<(
     DeviceClient<SqliteStore>,
-    DeviceConnection<SqliteStore, Mqtt>,
+    DeviceConnection<SqliteStore, Mqtt<SqliteStore>>,
 )> {
     tokio::fs::create_dir_all(&msg_hub_opts.store_directory)
         .await
@@ -215,13 +215,18 @@ async fn initialize_astarte_device_sdk(
     let store_path = msg_hub_opts
         .store_directory
         .to_str()
-        .map(|d| format!("sqlite://{d}/database.db"))
+        .map(|d| format!("{d}/database.db"))
         .ok_or_else(|| eyre!("non UTF-8 store directory option"))?;
 
-    let store = SqliteStore::from_uri(&store_path).await?;
+    let store = SqliteStore::connect_db(&store_path).await?;
 
     // create a device instance
-    let (client, connection) = builder.store(store).connect(mqtt_config).await?.build();
+    let (client, connection) = builder
+        .store(store)
+        .connect(mqtt_config)
+        .await?
+        .build()
+        .await;
 
     Ok((client, connection))
 }

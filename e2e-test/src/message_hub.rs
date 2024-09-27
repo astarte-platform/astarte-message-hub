@@ -71,14 +71,15 @@ pub async fn init_message_hub(
 
     let path = path.to_str().ok_or_eyre("invalid_path")?;
 
-    let uri = format!("sqlite://{path}/store.db");
-    let store = SqliteStore::from_uri(&uri).await?;
+    let db_path = format!("{path}/store.db");
+    let store = SqliteStore::connect_db(&db_path).await?;
 
     let (client, connection) = DeviceBuilder::new()
         .store(store)
         .connect(mqtt_config)
         .await?
-        .build();
+        .build()
+        .await;
 
     let (publisher, mut subscriber) = init_pub_sub(client);
 

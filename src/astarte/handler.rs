@@ -22,19 +22,21 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::str::FromStr;
 use std::sync::Arc;
 
-use astarte_device_sdk::interface::error::InterfaceError;
-use astarte_device_sdk::Value;
 use astarte_device_sdk::{
+    client::RecvError,
+    interface::error::InterfaceError,
     properties::PropAccess,
     store::SqliteStore,
     transport::grpc::convert::{map_values_to_astarte_type, MessageHubProtoError},
     types::AstarteType,
-    DeviceEvent, Error as AstarteError, Interface,
+    DeviceEvent, Error as AstarteError, Interface, Value,
 };
 use astarte_message_hub_proto::{
     astarte_data_type::Data, astarte_message::Payload, AstarteDataTypeIndividual, AstarteMessage,
+    MessageHubEvent,
 };
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
@@ -106,7 +108,7 @@ impl DeviceSubscriber {
     pub async fn forward_events(&mut self) -> Result<(), DeviceError> {
         loop {
             match self.client.recv().await {
-                Err(AstarteError::Disconnected) => return Err(DeviceError::Disconnected),
+                Err(RecvError::Disconnected) => return Err(DeviceError::Disconnected),
                 event => {
                     if let Err(err) = self.on_event(event).await {
                         error!("error on event receive: {err}");
@@ -116,26 +118,73 @@ impl DeviceSubscriber {
         }
     }
 
-    async fn on_event(
-        &mut self,
-        event: Result<DeviceEvent, AstarteError>,
+    async fn on_event(&mut self, event: Result<DeviceEvent, RecvError>) -> Result<(), DeviceError> {
+        let subscribers = self.subscribers.read().await;
+
+        // determine if sending a proto message hub error or a correct message to the message hub nodes
+        match event {
+            Ok(event) => {
+                let iface_name = event.interface.clone();
+
+                let msghub_event = MessageHubEvent::from(AstarteMessage::from(event));
+
+                trace!("message hub event: {msghub_event:?}");
+
+                // filter only the subscribers having iface_name in their introspection
+                let subscribers = subscribers
+                    .values()
+                    .filter(|s| s.introspection.contains(&iface_name));
+
+                self.send_to_subscribers(msghub_event, subscribers).await
+            }
+            Err(RecvError::MappingNotFound { interface, mapping }) => {
+                error!("mapping {mapping} not found");
+
+                let iface_name = Interface::from_str(&interface)?
+                    .interface_name()
+                    .to_string();
+
+                let msghub_event = MessageHubEvent::from_error(&RecvError::MappingNotFound {
+                    interface: interface.clone(),
+                    mapping,
+                });
+
+                trace!("message hub event: {msghub_event:?}");
+
+                // filter only the subscribers having iface_name in their introspection
+                let subscribers = subscribers
+                    .values()
+                    .filter(|s| s.introspection.contains(&iface_name));
+
+                self.send_to_subscribers(msghub_event, subscribers).await
+            }
+            Err(err) => {
+                error!("receive error: {err}");
+
+                let msghub_event = MessageHubEvent::from_error(&err);
+
+                trace!("message hub event: {msghub_event:?}");
+
+                // send to all subscribers
+                self.send_to_subscribers(msghub_event, subscribers.values())
+                    .await
+            }
+        }
+    }
+
+    /// Send a message to a subset of subscribers.
+    ///
+    /// The closure passed in input to the method discriminates which subscribers must receive a message.
+    async fn send_to_subscribers<'a>(
+        &'a self,
+        msghub_event: MessageHubEvent,
+        subscribers: impl Iterator<Item = &'a Subscriber>,
     ) -> Result<(), DeviceError> {
-        let event = event.map_err(DeviceError::Astarte)?;
-
-        let itf_name = event.interface.clone();
-
-        let msg = AstarteMessage::from(event);
-
-        let sub = self.subscribers.read().await;
-        let subscribers = sub
-            .values()
-            .filter(|subscriber| subscriber.introspection.contains(&itf_name));
-
         for subscriber in subscribers {
             subscriber
                 .sender
                 // This is needed to satisfy the tonic trait
-                .send(Ok(msg.clone()))
+                .send(Ok(msghub_event.clone()))
                 .await
                 .map_err(|_| DeviceError::Disconnected)?;
         }
@@ -148,7 +197,7 @@ impl DeviceSubscriber {
 #[derive(Debug, Clone)]
 pub struct Subscriber {
     introspection: HashSet<String>,
-    sender: Sender<Result<AstarteMessage, Status>>,
+    sender: Sender<Result<MessageHubEvent, Status>>,
 }
 
 /// An Astarte Device SDK based implementation of an Astarte handler.
@@ -224,7 +273,7 @@ impl DevicePublisher {
     async fn send_server_props(
         &self,
         node: &AstarteNode,
-        sender: &Sender<Result<AstarteMessage, Status>>,
+        sender: &Sender<Result<MessageHubEvent, Status>>,
     ) -> Result<(), AstarteMessageHubError> {
         debug!("sending properties");
 
@@ -241,7 +290,7 @@ impl DevicePublisher {
                         data: Value::Individual(prop.value),
                     };
 
-                    AstarteMessage::from(event)
+                    MessageHubEvent::from(AstarteMessage::from(event))
                 })
             });
 
@@ -470,7 +519,7 @@ mod test {
     use astarte_device_sdk::Value;
     use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
     use astarte_message_hub_proto::astarte_data_type_individual::IndividualData;
-    use astarte_message_hub_proto::{AstarteUnset, InterfacesJson};
+    use astarte_message_hub_proto::{AstarteUnset, InterfacesJson, MessageHubError};
     use chrono::Utc;
     use pbjson_types::Timestamp;
 
@@ -582,7 +631,7 @@ mod test {
         let value: i32 = 5;
 
         let mut client = DeviceClient::<SqliteStore>::default();
-        let mut connection = DeviceConnection::<SqliteStore, Grpc>::default();
+        let mut connection = DeviceConnection::<SqliteStore, Grpc<SqliteStore>>::default();
 
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
@@ -639,7 +688,7 @@ mod test {
             .expect_recv()
             .once()
             .in_sequence(&mut seq)
-            .returning(|| Err(AstarteError::Disconnected));
+            .returning(|| Err(RecvError::Disconnected));
 
         let (publisher, mut subscriber) = init_pub_sub(client);
 
@@ -650,7 +699,14 @@ mod test {
 
         let mut subscription = subscribe_result.unwrap();
 
-        let astarte_message = subscription.receiver.recv().await.unwrap().unwrap();
+        let astarte_message = subscription
+            .receiver
+            .recv()
+            .await
+            .unwrap()
+            .unwrap()
+            .take_message()
+            .unwrap();
 
         assert_eq!(expected_interface_name, astarte_message.interface_name);
         assert_eq!(path, astarte_message.path);
@@ -667,6 +723,269 @@ mod test {
         let err = handle.await.unwrap().unwrap_err();
 
         assert!(matches!(err, DeviceError::Disconnected));
+    }
+
+    async fn recv_proto_error(sub: &mut Subscription) -> Option<MessageHubError> {
+        let res =
+            tokio::time::timeout(tokio::time::Duration::from_secs(1), sub.receiver.recv()).await;
+
+        match res {
+            Ok(e) => e.unwrap().unwrap().take_error(),
+            Err(elapsed) => {
+                debug!("timeout occurred: {elapsed}");
+                None
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn poll_failed_with_proto_error() {
+        let prop_interface = astarte_device_sdk::Interface::from_str(SERV_PROPS_IFACE).unwrap();
+
+        let mut client = DeviceClient::<SqliteStore>::default();
+        let mut connection = DeviceConnection::<SqliteStore, Grpc<SqliteStore>>::default();
+
+        let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
+
+        // we define two nodes with the same introspection
+        let astarte_node_1 = AstarteNode::from_json(
+            "550e8400-e29b-41d4-a716-446655440001".parse().unwrap(),
+            &interfaces,
+        )
+        .unwrap();
+
+        let astarte_node_2 = AstarteNode::from_json(
+            "550e8400-e29b-41d4-a716-446655440002".parse().unwrap(),
+            &interfaces,
+        )
+        .unwrap();
+
+        // we define a third node with a different introspection compared to the others
+        let empty_interfaces = InterfacesJson::from_iter(vec![]);
+
+        let astarte_node_3 = AstarteNode::from_json(
+            "550e8400-e29b-41d4-a716-446655440003".parse().unwrap(),
+            &empty_interfaces,
+        )
+        .unwrap();
+
+        connection.expect_handle_events().returning(|| Ok(()));
+
+        let mut seq = mockall::Sequence::new();
+
+        let i_cl = prop_interface.clone();
+        let v = vec![i_cl.clone()];
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::default();
+
+                let name = i_cl.interface_name().to_string();
+                let name_cl1 = name.clone();
+                let name_cl2 = name.clone();
+
+                // subscription of the two nodes
+                client
+                    .expect_extend_interfaces_vec()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .with(mockall::predicate::eq(v.clone()))
+                    .returning(move |_| Ok(vec![name_cl1.clone()]));
+
+                client
+                    .expect_server_props()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|| Ok(vec![]));
+
+                client
+                    .expect_extend_interfaces_vec()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .with(mockall::predicate::eq(v.clone()))
+                    .returning(move |_| Ok(vec![name_cl2.clone()]));
+
+                client
+                    .expect_server_props()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|| Ok(vec![]));
+
+                // subscription of the third node
+                client
+                    .expect_extend_interfaces_vec()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .with(mockall::predicate::eq(vec![]))
+                    .returning(move |_| Ok(vec![]));
+
+                client
+                    .expect_server_props()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|| Ok(vec![]));
+
+                client
+            });
+
+        let mut seq = mockall::Sequence::new();
+
+        // we must check that the RecvError is received by all the nodes having SERV_PROPS_IFACE in
+        // their introspection
+        client
+            .expect_recv()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                Err(RecvError::MappingNotFound {
+                    interface: SERV_PROPS_IFACE.to_string(),
+                    mapping: "test".to_string(),
+                })
+            });
+
+        let (publisher, mut subscriber) = init_pub_sub(client);
+
+        tokio::spawn(async move { subscriber.forward_events().await });
+
+        let subscribe_1_result = publisher.subscribe(&astarte_node_1).await;
+        let subscribe_2_result = publisher.subscribe(&astarte_node_2).await;
+        let subscribe_3_result = publisher.subscribe(&astarte_node_3).await;
+        assert!(subscribe_1_result.is_ok());
+        assert!(subscribe_2_result.is_ok());
+        assert!(subscribe_3_result.is_ok());
+
+        let mut subscription_1 = subscribe_1_result.unwrap();
+        let mut subscription_2 = subscribe_2_result.unwrap();
+        let mut subscription_3 = subscribe_3_result.unwrap();
+
+        let message_hub_err = recv_proto_error(&mut subscription_1).await.unwrap();
+
+        assert!(message_hub_err
+            .description
+            .contains("couldn't find mapping test in interface"));
+
+        // check that also the second node received this message
+        let message_hub_err = recv_proto_error(&mut subscription_2).await.unwrap();
+
+        assert!(message_hub_err
+            .description
+            .contains("couldn't find mapping test in interface"));
+
+        // the third node should not receive the error since it has different interfaces in its
+        // introspection
+        let message_hub_err = recv_proto_error(&mut subscription_3).await;
+
+        assert!(message_hub_err.is_none());
+    }
+
+    #[tokio::test]
+    async fn poll_failed_with_proto_error_broadcast() {
+        let prop_interface = astarte_device_sdk::Interface::from_str(SERV_PROPS_IFACE).unwrap();
+
+        let mut client = DeviceClient::<SqliteStore>::default();
+        let mut connection = DeviceConnection::<SqliteStore, Grpc<SqliteStore>>::default();
+
+        // we define two nodes with the same introspection and test that a RecvError (except for a
+        // MappingNotFound one) is broadcast to all the subscribed nodes, even those with a
+        // different introspection
+        let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
+        let astarte_node_1 = AstarteNode::from_json(
+            "550e8400-e29b-41d4-a716-446655440001".parse().unwrap(),
+            &interfaces,
+        )
+        .unwrap();
+
+        let empty_interfaces = InterfacesJson::from_iter(vec![]);
+        let astarte_node_2 = AstarteNode::from_json(
+            "550e8400-e29b-41d4-a716-446655440002".parse().unwrap(),
+            &empty_interfaces,
+        )
+        .unwrap();
+
+        connection.expect_handle_events().returning(|| Ok(()));
+
+        let mut seq = mockall::Sequence::new();
+
+        let i_cl = prop_interface.clone();
+        let v = vec![i_cl.clone()];
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                let mut client = DeviceClient::<SqliteStore>::default();
+
+                let name = i_cl.interface_name().to_string();
+
+                // subscribe the first node
+                client
+                    .expect_extend_interfaces_vec()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .with(mockall::predicate::eq(v.clone()))
+                    .returning(move |_| Ok(vec![name.clone()]));
+
+                client
+                    .expect_server_props()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|| Ok(vec![]));
+
+                // subscription of the second node
+                client
+                    .expect_extend_interfaces_vec()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .with(mockall::predicate::eq(vec![]))
+                    .returning(move |_| Ok(vec![]));
+
+                client
+                    .expect_server_props()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|| Ok(vec![]));
+
+                client
+            });
+
+        let mut seq = mockall::Sequence::new();
+
+        // we must check that the RecvError is received by all the nodes having SERV_PROPS_IFACE in
+        // their introspection
+        client
+            .expect_recv()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(move || {
+                Err(RecvError::InterfaceNotFound {
+                    name: "wrong interface name".to_string(),
+                })
+            });
+
+        let (publisher, mut subscriber) = init_pub_sub(client);
+
+        tokio::spawn(async move { subscriber.forward_events().await });
+
+        let subscribe_1_result = publisher.subscribe(&astarte_node_1).await;
+        let subscribe_2_result = publisher.subscribe(&astarte_node_2).await;
+        assert!(subscribe_1_result.is_ok());
+        assert!(subscribe_2_result.is_ok());
+
+        let mut subscription_1 = subscribe_1_result.unwrap();
+        let mut subscription_2 = subscribe_2_result.unwrap();
+
+        // check that all the nodes received the error message
+        let message_hub_err = recv_proto_error(&mut subscription_1).await.unwrap();
+        assert!(message_hub_err
+            .description
+            .contains("couldn't find interface"));
+
+        let message_hub_err = recv_proto_error(&mut subscription_2).await.unwrap();
+        assert!(message_hub_err
+            .description
+            .contains("couldn't find interface"));
     }
 
     #[tokio::test]
@@ -686,7 +1005,7 @@ mod test {
             .expect_recv()
             .once()
             .in_sequence(&mut seq)
-            .returning(|| Err(AstarteError::Disconnected));
+            .returning(|| Err(RecvError::Disconnected));
 
         let (_publisher, mut subscriber) = init_pub_sub(client);
 

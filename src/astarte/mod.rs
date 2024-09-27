@@ -22,7 +22,7 @@
 //! This module contains all the required traits for such an handler.
 
 use astarte_device_sdk::Interface;
-use astarte_message_hub_proto::AstarteMessage;
+use astarte_message_hub_proto::{AstarteMessage, MessageHubEvent};
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::Receiver;
@@ -82,5 +82,5 @@ pub struct Subscription {
     /// Interface that where added from the Astarte node introspection.
     pub added_interfaces: Vec<Interface>,
     /// The node receiver end.
-    pub receiver: Receiver<Result<AstarteMessage, Status>>,
+    pub receiver: Receiver<Result<MessageHubEvent, Status>>,
 }

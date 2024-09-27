@@ -65,7 +65,6 @@ a list of Json Interfaces used by it for exchanging data with Astarte.
 
 ```protobuf
 message Node {
-  string uuid = 1;
   repeated bytes interface_jsons = 2;
 }
 ```
@@ -78,7 +77,7 @@ events received from Astarte (based on the declared Introspection) will be redir
 
 ```protobuf
 service MessageHub {
-  rpc Attach(Node) returns (stream AstarteMessage) {}
+  rpc Attach(Node) returns (stream MessageHubEvent) {}
   ....
 }
 ```
