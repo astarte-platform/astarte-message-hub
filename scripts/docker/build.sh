@@ -20,7 +20,7 @@
 
 set -exEuo pipefail
 
-repo=$(git root)
+repo=$(git rev-parse --show-toplevel)
 
 cd "$repo"
 

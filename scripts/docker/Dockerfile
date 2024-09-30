@@ -19,7 +19,9 @@
 FROM rust:1.80-alpine3.20 AS build
 
 RUN mkdir /msg-hub && \
-    apk add --no-cache alpine-sdk musl-dev pkgconfig openssl-dev openssl-libs-static
+    apk add --no-cache alpine-sdk musl-dev pkgconfig \
+    openssl-dev openssl-libs-static \
+    sqlite-static sqlite-dev
 
 COPY . /msg-hub
 
