@@ -29,8 +29,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Handle the new return type of the Attach rpc, `MessageHubEvent`, which can either be an error or
   an Astarte message. [#264]
 - Retrieve the Node ID information from the grpc metadata also for the Attach rpc. [#264]
+- Update Astarte Device Sdk to 0.9.2 release.
 
 [#264]: https://github.com/astarte-platform/astarte-message-hub/pull/264
+
 [#268]: https://github.com/astarte-platform/astarte-message-hub/pull/268
 
 ## [0.6.1] - 2024-06-04
