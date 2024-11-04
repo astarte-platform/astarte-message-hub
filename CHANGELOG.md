@@ -33,6 +33,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 [#264]: https://github.com/astarte-platform/astarte-message-hub/pull/264
 [#268]: https://github.com/astarte-platform/astarte-message-hub/pull/268
 
+## [0.6.1] - 2024-06-04
+
+## [0.5.4] - 2024-05-24
+
+### Fixed
+
+- Update sdk dependency to fix a purge property bug
+  [#341](https://github.com/astarte-platform/astarte-device-sdk-rust/issues/341)
+
 ## [0.6.0] - 2024-05-09
 
 ### Changed
