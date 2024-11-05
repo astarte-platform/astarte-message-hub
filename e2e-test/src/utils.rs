@@ -70,7 +70,7 @@ pub mod blob {
 
     struct BlobVisitor;
 
-    impl<'de> Visitor<'de> for BlobVisitor {
+    impl Visitor<'_> for BlobVisitor {
         type Value = Vec<u8>;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -154,7 +154,7 @@ pub mod long_integer {
 
     struct LongintegerVisitor;
 
-    impl<'de> Visitor<'de> for LongintegerVisitor {
+    impl Visitor<'_> for LongintegerVisitor {
         type Value = i64;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
