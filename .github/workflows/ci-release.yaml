@@ -16,14 +16,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-name: ci
+name: Release ci
 on:
-  workflow_dispatch:
-  pull_request:
-  push:
-    branches:
-      - master
-      - release-*
+  release:
+    types: [published]
 permissions:
   contents: read
 # Spend CI time only on latest ref
@@ -31,13 +27,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 jobs:
-  dco:
-    uses: ./.github/workflows/dco.yaml
-    permissions:
-      actions: read
-      pull-requests: read
-    with:
-      pr: ${{ github.event.pull_request.number }}
   reuse:
     uses: ./.github/workflows/reuse-lint.yaml
   check:
@@ -50,13 +39,11 @@ jobs:
   e2e-test:
     uses: ./.github/workflows/e2e-test.yaml
     needs: [dco, reuse]
-  publish-snapshot:
+  publish-release:
     secrets: inherit
-    uses: ./.github/workflows/dockerhub-publish-snapshot.yaml
-    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release-')
+    uses: ./.github/workflows/dockerhub-publish-release.yaml
     needs: [check, test, e2e-test]
     permissions:
-      actions: write
       packages: write
       contents: read
       attestations: write
