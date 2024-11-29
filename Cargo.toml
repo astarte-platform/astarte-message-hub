@@ -13,7 +13,7 @@ edition = "2021"
 homepage = "https://astarte.cloud/"
 license = "Apache-2.0"
 repository = "https://github.com/astarte-platform/astarte-message-hub"
-rust-version = "1.72.0"
+rust-version = "1.78.0"
 
 [package]
 name = "astarte-message-hub"
@@ -66,16 +66,16 @@ serial_test = { workspace = true }
 tempfile = { workspace = true }
 
 [workspace.dependencies]
-astarte-device-sdk = "0.9.2"
-astarte-device-sdk-mock = "0.9.2"
-astarte-message-hub-proto = "0.7.0"
+astarte-device-sdk = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust", rev = "e8469c09100be2ad5446a7eb3bee359ee8314182" }
+astarte-device-sdk-mock = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust", rev = "e8469c09100be2ad5446a7eb3bee359ee8314182" }
+astarte-message-hub-proto = { git = "https://github.com/astarte-platform/astarte-message-hub-proto.git", rev = "5ff0672d8fdc8cba5a2ff023895ae505d75c3d1a" }
 async-trait = "0.1.80"
 axum = "0.7.5"
 base64 = "0.22.0"
 chrono = "0.4.38"
-clap = "<4.5.0"
+clap = "4.5.0"
 color-eyre = "0.6.3"
-displaydoc = "0.2.4"
+displaydoc = "0.2.5"
 env_logger = "0.11.3"
 eyre = "0.6.12"
 futures = "0.3.30"
@@ -103,7 +103,3 @@ tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 uuid = "1.8.0"
 zbus = { version = "3.15.2", default-features = false }
-
-[patch.crates-io]
-# Temporary till fix is unstreamed
-displaydoc = { git = "https://github.com/joshuachp/displaydoc" }
