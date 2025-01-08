@@ -489,6 +489,7 @@ where
 
         if let Err(err) = self.astarte_handler.publish(&astarte_message).await {
             let err_msg = format!("Unable to publish astarte message, err: {:?}", err);
+            error!("{err_msg}");
             Err(Status::internal(err_msg))
         } else {
             Ok(Response::new(Empty {}))
