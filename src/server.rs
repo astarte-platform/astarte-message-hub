@@ -181,6 +181,34 @@ where
 
         Ok(Response::new(Empty {}))
     }
+
+    async fn send_err<I>(
+        &self,
+        node_id: I,
+        err: AstarteMessageHubError,
+    ) -> Result<Response<Empty>, Status>
+    where
+        I: AsRef<Uuid> + Display,
+    {
+        let err_msg = format!("Unable to perform operation, err: {:?}", err);
+        error!("{err_msg}");
+
+        let status = Status::internal(err_msg);
+
+        let nodes_error_sender = self.nodes_error_sender.read().await;
+
+        let Some(err_sender) = nodes_error_sender.get(node_id.as_ref()) else {
+            debug!("Node {node_id} does not exist, couldn't send error to node");
+            return Err(status);
+        };
+
+        debug!("send MessageHubEvent error to node");
+        if let Err(err) = err_sender.send_err(err).await {
+            error!("Error while sending MessageHubEvent error to node, {err}");
+        }
+
+        Err(status)
+    }
 }
 
 /// Errors related to the interception of the NodeId into gRPC request
@@ -304,6 +332,12 @@ impl Display for NodeId {
 
 impl Borrow<Uuid> for NodeId {
     fn borrow(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl AsRef<Uuid> for NodeId {
+    fn as_ref(&self) -> &Uuid {
         &self.0
     }
 }
@@ -510,24 +544,7 @@ where
         let astarte_message = request.into_inner();
 
         if let Err(err) = self.astarte_handler.publish(&astarte_message).await {
-            let err_msg = format!("Unable to publish astarte message, err: {:?}", err);
-            error!("{err_msg}");
-
-            let status = Status::internal(err_msg);
-
-            let nodes_error_sender = self.nodes_error_sender.read().await;
-
-            let Some(err_sender) = nodes_error_sender.get(node_id_cl.as_ref()) else {
-                debug!("Node {node_id_cl} does not exist, couldn't send error to node");
-                return Err(status);
-            };
-
-            debug!("send MessageHubEvent error to node");
-            if let Err(err) = err_sender.send_err(err).await {
-                error!("Error while sending MessageHubEvent error to node, {err}");
-            }
-
-            Err(status)
+            self.send_err(node_id_cl, err).await
         } else {
             Ok(Response::new(Empty {}))
         }
@@ -551,9 +568,11 @@ where
 
         let interfaces = request.get_ref();
 
-        self.add_interfaces_node(node_id.as_ref(), interfaces)
-            .await
-            .map_err(Status::from)
+        if let Err(err) = self.add_interfaces_node(node_id.as_ref(), interfaces).await {
+            self.send_err(node_id, err).await
+        } else {
+            Ok(Response::new(Empty {}))
+        }
     }
 
     async fn remove_interfaces(
@@ -566,9 +585,14 @@ where
         info!("Node {node_id} Remove Interfaces Request");
         let interfaces = request.into_inner();
 
-        self.remove_interfaces_node(node_id.as_ref(), interfaces)
+        if let Err(err) = self
+            .remove_interfaces_node(node_id.as_ref(), interfaces)
             .await
-            .map_err(Status::from)
+        {
+            self.send_err(node_id, err).await
+        } else {
+            Ok(Response::new(Empty {}))
+        }
     }
 }
 
