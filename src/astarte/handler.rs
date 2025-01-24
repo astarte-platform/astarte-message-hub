@@ -48,7 +48,7 @@ use tonic::{Code, Status};
 use uuid::Uuid;
 
 use super::sdk::{Client, DeviceClient, DynamicIntrospection};
-use super::{AstartePublisher, AstarteSubscriber, Subscription};
+use super::{AstartePublisher, AstarteSubscriber, EventSender, Subscription};
 use crate::error::AstarteMessageHubError;
 use crate::server::AstarteNode;
 
@@ -310,8 +310,7 @@ impl AstarteSubscriber for DevicePublisher {
     async fn subscribe(
         &self,
         node: &AstarteNode,
-    ) -> Result<(Subscription, Sender<Result<MessageHubEvent, Status>>), AstarteMessageHubError>
-    {
+    ) -> Result<(Subscription, EventSender), AstarteMessageHubError> {
         let introspection = node
             .introspection
             .values()

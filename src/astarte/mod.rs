@@ -46,6 +46,9 @@ pub trait AstartePublisher: Send + Sync {
         -> Result<(), AstarteMessageHubError>;
 }
 
+/// Sender end of Astarte [MessageHubEvent]s.
+pub(crate) type EventSender = Sender<Result<MessageHubEvent, Status>>;
+
 /// A **trait** required for all Astarte handlers that want to subscribe and unsubscribe a
 /// node to Astarte.
 #[async_trait]
@@ -54,7 +57,7 @@ pub trait AstarteSubscriber {
     async fn subscribe(
         &self,
         astarte_node: &AstarteNode,
-    ) -> Result<(Subscription, Sender<Result<MessageHubEvent, Status>>), AstarteMessageHubError>;
+    ) -> Result<(Subscription, EventSender), AstarteMessageHubError>;
 
     /// Unsubscribe a previously subscribed node to Astarte.
     ///
