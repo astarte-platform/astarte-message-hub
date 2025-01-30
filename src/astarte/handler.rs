@@ -48,7 +48,7 @@ use tonic::{Code, Status};
 use uuid::Uuid;
 
 use super::sdk::{Client, DeviceClient, DynamicIntrospection};
-use super::{AstartePublisher, AstarteSubscriber, Subscription};
+use super::{AstartePublisher, AstarteSubscriber, EventSender, Subscription};
 use crate::error::AstarteMessageHubError;
 use crate::server::AstarteNode;
 
@@ -307,7 +307,10 @@ impl DevicePublisher {
 
 #[async_trait]
 impl AstarteSubscriber for DevicePublisher {
-    async fn subscribe(&self, node: &AstarteNode) -> Result<Subscription, AstarteMessageHubError> {
+    async fn subscribe(
+        &self,
+        node: &AstarteNode,
+    ) -> Result<(Subscription, EventSender), AstarteMessageHubError> {
         let introspection = node
             .introspection
             .values()
@@ -332,14 +335,17 @@ impl AstarteSubscriber for DevicePublisher {
             node.id,
             Subscriber {
                 introspection,
-                sender,
+                sender: sender.clone(),
             },
         );
 
-        Ok(Subscription {
-            added_interfaces,
-            receiver,
-        })
+        Ok((
+            Subscription {
+                added_interfaces,
+                receiver,
+            },
+            sender,
+        ))
     }
 
     /// Unsubscribe an existing Node and its introspection from Astarte Message Hub.
@@ -697,7 +703,7 @@ mod test {
         let subscribe_result = publisher.subscribe(&astarte_node).await;
         assert!(subscribe_result.is_ok());
 
-        let mut subscription = subscribe_result.unwrap();
+        let (mut subscription, _) = subscribe_result.unwrap();
 
         let astarte_message = subscription
             .receiver
@@ -856,9 +862,9 @@ mod test {
         assert!(subscribe_2_result.is_ok());
         assert!(subscribe_3_result.is_ok());
 
-        let mut subscription_1 = subscribe_1_result.unwrap();
-        let mut subscription_2 = subscribe_2_result.unwrap();
-        let mut subscription_3 = subscribe_3_result.unwrap();
+        let (mut subscription_1, _) = subscribe_1_result.unwrap();
+        let (mut subscription_2, _) = subscribe_2_result.unwrap();
+        let (mut subscription_3, _) = subscribe_3_result.unwrap();
 
         let message_hub_err = recv_proto_error(&mut subscription_1).await.unwrap();
 
@@ -973,8 +979,8 @@ mod test {
         assert!(subscribe_1_result.is_ok());
         assert!(subscribe_2_result.is_ok());
 
-        let mut subscription_1 = subscribe_1_result.unwrap();
-        let mut subscription_2 = subscribe_2_result.unwrap();
+        let (mut subscription_1, _) = subscribe_1_result.unwrap();
+        let (mut subscription_2, _) = subscribe_2_result.unwrap();
 
         // check that all the nodes received the error message
         let message_hub_err = recv_proto_error(&mut subscription_1).await.unwrap();
