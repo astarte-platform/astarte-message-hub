@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - Unreleased
+
+### Changed
+
+- Bump Astarte Device SDK to 0.9.6 release.
+  [#320](https://github.com/astarte-platform/astarte-message-hub/pull/320)
+
 ## [0.7.1] - 2025-02-28
 
 ### Changed
@@ -44,7 +51,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Update Astarte Device Sdk to 0.9.2 release.
 
 [#264]: https://github.com/astarte-platform/astarte-message-hub/pull/264
-
 [#268]: https://github.com/astarte-platform/astarte-message-hub/pull/268
 
 ## [0.6.1] - 2024-06-04
