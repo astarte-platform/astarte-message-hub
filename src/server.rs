@@ -37,6 +37,8 @@ use hyper::{http, Body, Uri};
 use itertools::Itertools;
 use log::{debug, error, info, trace};
 use pbjson_types::Empty;
+use tokio::sync::mpsc::error::SendError;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::body::BoxBody;
@@ -53,10 +55,22 @@ use crate::error::AstarteMessageHubError;
 
 type Resp<T> = Result<Response<T>, AstarteMessageHubError>;
 
+#[derive(Debug, Clone)]
+struct ErrorSender(Sender<Result<MessageHubEvent, Status>>);
+
+impl ErrorSender {
+    async fn send_err<E>(&self, err: E) -> Result<(), SendError<Result<MessageHubEvent, Status>>>
+    where
+        E: std::error::Error,
+    {
+        self.0.send(Ok(MessageHubEvent::from_error(err))).await
+    }
+}
+
 /// Main struct for the Astarte message hub.
 pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber> {
     /// The nodes connected to the message hub.
-    nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
+    nodes: Arc<RwLock<HashMap<Uuid, (AstarteNode, ErrorSender)>>>,
     /// The Astarte handler used to communicate with Astarte.
     astarte_handler: T,
     introspection: Introspection,
@@ -98,12 +112,12 @@ where
 
         info!("Node attached {:?}", astarte_node);
 
-        let sub = self.astarte_handler.subscribe(&astarte_node).await?;
+        let (sub, node_sender) = self.astarte_handler.subscribe(&astarte_node).await?;
 
         self.introspection.store_many(&sub.added_interfaces).await;
 
         let mut nodes = self.nodes.write().await;
-        nodes.insert(astarte_node.id, astarte_node);
+        nodes.insert(node_id, (astarte_node, ErrorSender(node_sender)));
 
         Ok(Response::new(ReceiverStream::new(sub.receiver)))
     }
@@ -160,6 +174,33 @@ where
 
         Ok(Response::new(Empty {}))
     }
+
+    async fn send_err<I>(
+        &self,
+        node_id: I,
+        err: AstarteMessageHubError,
+    ) -> Result<Response<Empty>, Status>
+    where
+        I: AsRef<Uuid> + Display,
+    {
+        let err_msg = format!("Unable to perform operation, err: {:?}", err);
+        error!("{err_msg}");
+
+        let status = Status::internal(err_msg);
+
+        let nodes_error_sender = self.nodes.read().await;
+
+        let Some((_, err_sender)) = nodes_error_sender.get(node_id.as_ref()) else {
+            debug!("Node {node_id} does not exist, couldn't send error to node");
+            return Err(status);
+        };
+
+        if let Err(err) = err_sender.send_err(err).await {
+            error!("Error while sending MessageHubEvent error to node, {err}");
+        }
+
+        Err(status)
+    }
 }
 
 /// Errors related to the interception of the NodeId into gRPC request
@@ -198,11 +239,13 @@ pub(crate) fn is_attach(uri: &Uri) -> bool {
 
 #[derive(Clone, Default)]
 pub struct NodeIdInterceptorLayer {
-    msg_hub_nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
+    msg_hub_nodes: Arc<RwLock<HashMap<Uuid, (AstarteNode, ErrorSender)>>>,
 }
 
 impl NodeIdInterceptorLayer {
-    fn new(msg_hub_nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>) -> NodeIdInterceptorLayer {
+    fn new(
+        msg_hub_nodes: Arc<RwLock<HashMap<Uuid, (AstarteNode, ErrorSender)>>>,
+    ) -> NodeIdInterceptorLayer {
         Self { msg_hub_nodes }
     }
 }
@@ -221,7 +264,7 @@ impl<S> Layer<S> for NodeIdInterceptorLayer {
 #[derive(Clone)]
 pub struct NodeIdInterceptor<S> {
     inner: S,
-    msg_hub_nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
+    msg_hub_nodes: Arc<RwLock<HashMap<Uuid, (AstarteNode, ErrorSender)>>>,
 }
 
 impl<S> NodeIdInterceptor<S> {
@@ -232,7 +275,7 @@ impl<S> NodeIdInterceptor<S> {
     /// problem, we pass a reference to the message hub nodes in the input to perform the necessary
     /// checks.
     async fn check_node_id(
-        nodes: &Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
+        nodes: &Arc<RwLock<HashMap<Uuid, (AstarteNode, ErrorSender)>>>,
         req: hyper::Request<Body>,
     ) -> Result<hyper::Request<Body>, InterceptorError> {
         // check if the request is an Attach rpc
@@ -283,6 +326,12 @@ impl Display for NodeId {
 
 impl Borrow<Uuid> for NodeId {
     fn borrow(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl AsRef<Uuid> for NodeId {
+    fn as_ref(&self) -> &Uuid {
         &self.0
     }
 }
@@ -485,11 +534,11 @@ where
         let node_id = request.get_node_id()?;
         debug!("Node {node_id} Send Request");
 
+        let node_id_cl = *node_id;
         let astarte_message = request.into_inner();
 
         if let Err(err) = self.astarte_handler.publish(&astarte_message).await {
-            let err_msg = format!("Unable to publish astarte message, err: {:?}", err);
-            Err(Status::internal(err_msg))
+            self.send_err(node_id_cl, err).await
         } else {
             Ok(Response::new(Empty {}))
         }
@@ -513,9 +562,11 @@ where
 
         let interfaces = request.get_ref();
 
-        self.add_interfaces_node(node_id.as_ref(), interfaces)
-            .await
-            .map_err(Status::from)
+        if let Err(err) = self.add_interfaces_node(node_id.as_ref(), interfaces).await {
+            self.send_err(node_id, err).await
+        } else {
+            Ok(Response::new(Empty {}))
+        }
     }
 
     async fn remove_interfaces(
@@ -528,9 +579,14 @@ where
         info!("Node {node_id} Remove Interfaces Request");
         let interfaces = request.into_inner();
 
-        self.remove_interfaces_node(node_id.as_ref(), interfaces)
+        if let Err(err) = self
+            .remove_interfaces_node(node_id.as_ref(), interfaces)
             .await
-            .map_err(Status::from)
+        {
+            self.send_err(node_id, err).await
+        } else {
+            Ok(Response::new(Empty {}))
+        }
     }
 }
 
@@ -590,7 +646,7 @@ mod test {
     use uuid::Uuid;
 
     use crate::astarte::Subscription;
-    use crate::astarte::{AstartePublisher, AstarteSubscriber};
+    use crate::astarte::{AstartePublisher, AstarteSubscriber, EventSender};
     use crate::error::AstarteMessageHubError;
     use crate::server::{
         node_id_from_ascii, node_id_from_bin, AstarteNode, InterceptorError, NodeId,
@@ -621,7 +677,7 @@ mod test {
             async fn subscribe(
                 &self,
                 astarte_node: &AstarteNode,
-            ) -> Result<Subscription, AstarteMessageHubError>;
+            ) -> Result<(Subscription, EventSender), AstarteMessageHubError>;
 
             async fn unsubscribe(&self, id: &Uuid) -> Result<Vec<String>, AstarteMessageHubError>;
 
@@ -706,11 +762,14 @@ mod test {
     async fn attach_success_node() {
         let mut mock_astarte = MockAstarteHandler::new();
         mock_astarte.expect_subscribe().returning(|node| {
-            let (_, rx) = mpsc::channel(2);
-            Ok(Subscription {
-                added_interfaces: node.introspection.values().cloned().collect(),
-                receiver: rx,
-            })
+            let (tx, rx) = mpsc::channel(2);
+            Ok((
+                Subscription {
+                    added_interfaces: node.introspection.values().cloned().collect(),
+                    receiver: rx,
+                },
+                tx,
+            ))
         });
         mock_astarte
             .expect_clone()
@@ -729,13 +788,17 @@ mod test {
     #[tokio::test]
     async fn send_message_hub_event() {
         let (tx, rx) = mpsc::channel(2);
+        let tx_cl = tx.clone();
 
         let mut mock_astarte = MockAstarteHandler::new();
         mock_astarte.expect_subscribe().return_once(|node| {
-            Ok(Subscription {
-                added_interfaces: node.introspection.values().cloned().collect(),
-                receiver: rx,
-            })
+            Ok((
+                Subscription {
+                    added_interfaces: node.introspection.values().cloned().collect(),
+                    receiver: rx,
+                },
+                tx_cl,
+            ))
         });
         mock_astarte
             .expect_clone()
@@ -887,11 +950,14 @@ mod test {
             .returning(MockAstarteHandler::new);
 
         mock_astarte.expect_subscribe().returning(|node| {
-            let (_, rx) = mpsc::channel(2);
-            Ok(Subscription {
-                added_interfaces: node.introspection.values().cloned().collect(),
-                receiver: rx,
-            })
+            let (tx, rx) = mpsc::channel(2);
+            Ok((
+                Subscription {
+                    added_interfaces: node.introspection.values().cloned().collect(),
+                    receiver: rx,
+                },
+                tx,
+            ))
         });
         mock_astarte
             .expect_unsubscribe()
@@ -946,11 +1012,14 @@ mod test {
             .returning(MockAstarteHandler::new);
 
         mock_astarte.expect_subscribe().returning(|node| {
-            let (_, rx) = mpsc::channel(2);
-            Ok(Subscription {
-                added_interfaces: node.introspection.values().cloned().collect(),
-                receiver: rx,
-            })
+            let (tx, rx) = mpsc::channel(2);
+            Ok((
+                Subscription {
+                    added_interfaces: node.introspection.values().cloned().collect(),
+                    receiver: rx,
+                },
+                tx,
+            ))
         });
         mock_astarte.expect_unsubscribe().returning(|_| {
             Err(AstarteMessageHubError::AstarteInvalidData(
@@ -1064,7 +1133,7 @@ mod test {
     }
 
     fn create_node_interceptor_service(
-        hm: HashMap<Uuid, AstarteNode>,
+        hm: HashMap<Uuid, (AstarteNode, ErrorSender)>,
     ) -> impl Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>, Error = InterceptorError>
     {
         let msg_hub_nodes = Arc::new(RwLock::new(hm));
@@ -1125,8 +1194,15 @@ mod test {
         // CASE: node-id-bin present but not inserted in the Message Hub Node lists
         let req = create_http_req_with_metadata_node_id("http://localhost:50051/");
 
-        let msg_hub_nodes =
-            HashMap::from([(TEST_UUID, AstarteNode::new(TEST_UUID, HashMap::default()))]);
+        let (tx, _rx) = mpsc::channel(2);
+
+        let msg_hub_nodes = HashMap::from([(
+            TEST_UUID,
+            (
+                AstarteNode::new(TEST_UUID, HashMap::default()),
+                ErrorSender(tx),
+            ),
+        )]);
 
         let mut service = create_node_interceptor_service(msg_hub_nodes);
 

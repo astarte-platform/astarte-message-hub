@@ -25,7 +25,7 @@ use astarte_device_sdk::Interface;
 use astarte_message_hub_proto::{AstarteMessage, MessageHubEvent};
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tonic::Status;
 use uuid::Uuid;
 
@@ -46,6 +46,9 @@ pub trait AstartePublisher: Send + Sync {
         -> Result<(), AstarteMessageHubError>;
 }
 
+/// Sender end of Astarte [MessageHubEvent]s.
+pub(crate) type EventSender = Sender<Result<MessageHubEvent, Status>>;
+
 /// A **trait** required for all Astarte handlers that want to subscribe and unsubscribe a
 /// node to Astarte.
 #[async_trait]
@@ -54,7 +57,7 @@ pub trait AstarteSubscriber {
     async fn subscribe(
         &self,
         astarte_node: &AstarteNode,
-    ) -> Result<Subscription, AstarteMessageHubError>;
+    ) -> Result<(Subscription, EventSender), AstarteMessageHubError>;
 
     /// Unsubscribe a previously subscribed node to Astarte.
     ///
