@@ -11,6 +11,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Bump MSRV to 1.78.0.
 
+## [0.7.2] - 2025-03-07
+
+### Changed
+
+- Bump Astarte Device SDK to 0.9.6 release.
+  [#320](https://github.com/astarte-platform/astarte-message-hub/pull/320)
+
+## [0.7.1] - 2025-02-28
+
+### Changed
+
+- Bump Astarte Device SDK to 0.9.4 release.
+
+## [0.6.2] - 2025-02-27
+
+### Changed
+
+- Bump Astarte Device SDK to 0.8.5 release.
+
 ## [0.7.0] - 2024-11-04
 
 ### Added
@@ -38,7 +57,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Update Astarte Device Sdk to 0.9.2 release.
 
 [#264]: https://github.com/astarte-platform/astarte-message-hub/pull/264
-
 [#268]: https://github.com/astarte-platform/astarte-message-hub/pull/268
 
 ## [0.6.1] - 2024-06-04

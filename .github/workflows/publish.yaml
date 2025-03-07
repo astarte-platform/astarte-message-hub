@@ -35,8 +35,20 @@ concurrency:
   # It's not safe to cancel the publish
   cancel-in-progress: false
 jobs:
+  # Check that the create can be compiled with only the packaged files
+  for-publish:
+    name: stable / for-publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.7
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
+      - run: ./scripts/check-for-publish.sh
   publish:
     name: stable / publish
+    needs: [for-publish]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -46,4 +58,5 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         # Publish the crates in order of dependency
-        run: cargo publish -p astarte-message-hub
+        run: |
+          cargo publish --locked -p astarte-message-hub
