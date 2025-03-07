@@ -8,7 +8,7 @@
 members = ["e2e-test"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.7.2"
 edition = "2021"
 homepage = "https://astarte.cloud/"
 license = "Apache-2.0"
@@ -58,6 +58,9 @@ tower = { workspace = true }
 uuid = { workspace = true }
 zbus = { workspace = true, default-features = false, features = ["tokio"] }
 
+# Transitive dependencies
+native-tls = { workspace = true }
+
 [dev-dependencies]
 astarte-device-sdk-mock = { workspace = true }
 mockall = { workspace = true }
@@ -103,3 +106,6 @@ tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 uuid = "1.8.0"
 zbus = { version = "3.15.2", default-features = false }
+
+# Transitive dependencies
+native-tls = "=0.2.13"
