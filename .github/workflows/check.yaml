@@ -55,7 +55,7 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: clippy
       - name: Install sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.4
+        uses: mozilla-actions/sccache-action@v0.0.8
       - name: cargo clippy
         run: cargo clippy --all-targets --all-features --workspace -- -D warnings
   doc:
@@ -68,7 +68,7 @@ jobs:
       - name: Install nightly
         uses: dtolnay/rust-toolchain@nightly
       - name: Install sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.4
+        uses: mozilla-actions/sccache-action@v0.0.8
       - name: cargo doc
         run: cargo doc --no-deps --all-features --workspace
         env:
@@ -83,7 +83,7 @@ jobs:
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
       - name: Install sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.4
+        uses: mozilla-actions/sccache-action@v0.0.8
       - name: cargo install cargo-hack
         uses: taiki-e/install-action@cargo-hack
       - name: cargo hack
@@ -103,6 +103,6 @@ jobs:
         with:
           toolchain: ${{ matrix.msrv }}
       - name: Install sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.4
+        uses: mozilla-actions/sccache-action@v0.0.8
       - name: cargo +${{ matrix.msrv }} check
         run: cargo check --all-features --workspace
