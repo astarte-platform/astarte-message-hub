@@ -28,6 +28,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use astarte_device_sdk::properties::PropAccess;
+use astarte_device_sdk::transport::grpc::convert::map_stored_properties_to_proto;
 use astarte_device_sdk::Interface;
 use astarte_message_hub_proto::message_hub_server::MessageHub;
 use astarte_message_hub_proto::{
@@ -55,7 +57,7 @@ use crate::error::AstarteMessageHubError;
 type Resp<T> = Result<Response<T>, AstarteMessageHubError>;
 
 /// Main struct for the Astarte message hub.
-pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber> {
+pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber + PropAccess> {
     /// The nodes connected to the message hub.
     nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
     /// The Astarte handler used to communicate with Astarte.
@@ -65,7 +67,7 @@ pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber> {
 
 impl<T> AstarteMessageHub<T>
 where
-    T: 'static + Clone + AstartePublisher + AstarteSubscriber,
+    T: 'static + Clone + AstartePublisher + AstarteSubscriber + PropAccess,
 {
     /// Instantiate a new Astarte message hub.
     ///
@@ -160,6 +162,58 @@ where
         self.introspection.remove_many(&removed).await;
 
         Ok(Response::new(Empty {}))
+    }
+
+    async fn get_node_properties(&self, ifaces_name: InterfacesName) -> Resp<StoredProperties> {
+        let mut props = vec![];
+
+        for iface in ifaces_name.names {
+            let iface_props = self.astarte_handler.interface_props(&iface).await?;
+            props.extend_from_slice(&iface_props);
+        }
+
+        let props = map_stored_properties_to_proto(props);
+
+        Ok(Response::new(props))
+    }
+
+    async fn get_node_all_properties(
+        &self,
+        filter: StoredPropertiesFilter,
+    ) -> Resp<StoredProperties> {
+        let props = match filter.ownership {
+            // device-owned properties
+            Some(0) => self.astarte_handler.device_props().await?,
+            // server-owned properties
+            Some(1) => self.astarte_handler.server_props().await?,
+            // all props
+            None => self.astarte_handler.all_props().await?,
+            Some(n) => unreachable!("{n} is not a valid ownership value"),
+        };
+
+        let props = map_stored_properties_to_proto(props);
+
+        Ok(Response::new(props))
+    }
+
+    async fn get_node_property(&self, prop_req: PropertyIdentifier) -> Resp<Property> {
+        let PropertyIdentifier {
+            interface_name,
+            path,
+        } = prop_req;
+
+        // retrieve the property value
+        let prop = self
+            .astarte_handler
+            .property(&interface_name, &path)
+            .await?
+            .map(|v| Property {
+                path: path.clone(),
+                data: Some(v.into()),
+            })
+            .unwrap_or(Property { path, data: None });
+
+        Ok(Response::new(prop))
     }
 }
 
@@ -374,7 +428,7 @@ impl<R> RequestExt for Request<R> {
 #[tonic::async_trait]
 impl<T> MessageHub for AstarteMessageHub<T>
 where
-    T: Clone + AstartePublisher + AstarteSubscriber + 'static,
+    T: Clone + AstartePublisher + AstarteSubscriber + PropAccess + 'static,
 {
     type AttachStream = ReceiverStream<Result<MessageHubEvent, Status>>;
 
@@ -540,23 +594,45 @@ where
 
     async fn get_properties(
         &self,
-        _request: Request<InterfacesName>,
+        request: Request<InterfacesName>,
     ) -> Result<Response<StoredProperties>, Status> {
-        todo!()
+        // retrieve the node id
+        let node_id = *request.get_node_id()?;
+
+        info!("Node {node_id} Get Properties Request");
+        let prop_req = request.into_inner();
+
+        self.get_node_properties(prop_req)
+            .await
+            .map_err(Status::from)
     }
 
     async fn get_all_properties(
         &self,
-        _request: Request<StoredPropertiesFilter>,
+        request: Request<StoredPropertiesFilter>,
     ) -> Result<Response<StoredProperties>, Status> {
-        todo!()
+        // retrieve the node id
+        let node_id = *request.get_node_id()?;
+
+        info!("Node {node_id} Get All Properties Request");
+        let filter = request.into_inner();
+
+        self.get_node_all_properties(filter)
+            .await
+            .map_err(Status::from)
     }
 
     async fn get_property(
         &self,
-        _request: Request<PropertyIdentifier>,
+        request: Request<PropertyIdentifier>,
     ) -> Result<Response<Property>, Status> {
-        todo!()
+        // retrieve the node id
+        let node_id = *request.get_node_id()?;
+
+        info!("Node {node_id} Get Property Request");
+        let prop_req = request.into_inner();
+
+        self.get_node_property(prop_req).await.map_err(Status::from)
     }
 }
 
@@ -595,16 +671,18 @@ impl AstarteNode {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-    use std::io;
-    use std::io::ErrorKind;
-    use std::ops::Deref;
-    use std::sync::Arc;
-
+    use astarte_device_sdk::store::StoredProp;
+    use astarte_device_sdk::{AstarteType, Error};
     use astarte_message_hub_proto::astarte_message::Payload;
     use async_trait::async_trait;
     use hyper::{Response, StatusCode};
     use mockall::mock;
+    use std::collections::HashMap;
+    use std::future::Future;
+    use std::io;
+    use std::io::ErrorKind;
+    use std::ops::Deref;
+    use std::sync::Arc;
     use tokio::sync::mpsc;
     use tokio::sync::RwLock;
     use tonic::body::BoxBody;
@@ -652,6 +730,18 @@ mod test {
             async fn extend_interfaces(&self, node_id: &Uuid, to_add: HashMap<String, Interface>) -> Result<Vec<Interface>, AstarteMessageHubError>;
 
             async fn remove_interfaces(&self, node_id: &Uuid, to_remove: HashSet<String>) -> Result<Vec<String>, AstarteMessageHubError>;
+        }
+
+        impl PropAccess for AstarteHandler {
+            fn property(&self, interface: &str, path: &str) -> impl Future<Output=Result<Option<AstarteType>, Error>> + Send;
+
+            fn interface_props(&self, interface: &str) -> impl Future<Output=Result<Vec<StoredProp>, Error>> + Send;
+
+            fn all_props(&self) -> impl Future<Output=Result<Vec<StoredProp>, Error>> + Send;
+
+            fn device_props(&self) -> impl Future<Output=Result<Vec<StoredProp>, Error>> + Send;
+
+            fn server_props(&self) -> impl Future<Output=Result<Vec<StoredProp>, Error>> + Send;
         }
     }
 
@@ -997,6 +1087,290 @@ mod test {
         assert!(detach_result.is_err());
         let err: Status = detach_result.err().unwrap();
         assert_eq!(err.code(), Code::InvalidArgument)
+    }
+
+    #[tokio::test]
+    async fn test_get_property() {
+        let mut mock_astarte = MockAstarteHandler::new();
+        mock_astarte
+            .expect_clone()
+            .returning(MockAstarteHandler::new);
+
+        // expect property not found
+        mock_astarte
+            .expect_property()
+            .once()
+            .returning(|_, _| Box::pin(async { Ok(None) }));
+
+        // expect property
+        mock_astarte
+            .expect_property()
+            .once()
+            .returning(|_, _| Box::pin(async { Ok(Some(AstarteType::Boolean(true))) }));
+
+        // expect all properties when no prop value is available
+        mock_astarte
+            .expect_all_props()
+            .once()
+            .returning(|| Box::pin(async { Ok(vec![]) }));
+
+        let p1_dev = StoredProp {
+            interface: "io.demo.Values1".to_string(),
+            path: "/1/test1".to_string(),
+            value: AstarteType::Integer(1),
+            interface_major: 0,
+            ownership: astarte_device_sdk::interface::def::Ownership::Device,
+        };
+        let p2_dev = StoredProp {
+            interface: "io.demo.Values1".to_string(),
+            path: "/1/test2".to_string(),
+            value: AstarteType::Boolean(true),
+            interface_major: 0,
+            ownership: astarte_device_sdk::interface::def::Ownership::Device,
+        };
+        let p1_serv = StoredProp {
+            interface: "io.demo.Values2".to_string(),
+            path: "/2/test1".to_string(),
+            value: AstarteType::Boolean(true),
+            interface_major: 0,
+            ownership: astarte_device_sdk::interface::def::Ownership::Server,
+        };
+
+        let all_props = vec![p1_dev.clone(), p2_dev.clone(), p1_serv.clone()];
+        let dev_props = vec![p1_dev, p2_dev];
+        let serv_props = vec![p1_serv];
+
+        // expect all properties
+        mock_astarte
+            .expect_all_props()
+            .once()
+            .return_once(|| Box::pin(async move { Ok(all_props) }));
+
+        // expect all device properties
+        let dev_props_cl = dev_props.clone();
+        mock_astarte
+            .expect_device_props()
+            .once()
+            .return_once(|| Box::pin(async move { Ok(dev_props_cl) }));
+
+        // expect all server properties
+        let serv_props_cl = serv_props.clone();
+        mock_astarte
+            .expect_server_props()
+            .once()
+            .return_once(|| Box::pin(async move { Ok(serv_props_cl) }));
+
+        // expect Internal status code when get_properties is called with an unknown interface
+        mock_astarte
+            .expect_interface_props()
+            .once()
+            .return_once(|_| {
+                Box::pin(async move {
+                    Err(Error::InterfaceNotFound {
+                        name: "io.demo.Values3".to_string(),
+                    })
+                })
+            });
+
+        // expect get_properties
+        mock_astarte
+            .expect_interface_props()
+            .once()
+            .return_once(|_| Box::pin(async move { Ok(dev_props) }));
+        mock_astarte
+            .expect_interface_props()
+            .once()
+            .return_once(|_| Box::pin(async move { Ok(serv_props) }));
+
+        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
+            AstarteMessageHub::new(mock_astarte, "");
+
+        let interface_name = "io.demo.Values".to_owned();
+
+        let prop_identifier = PropertyIdentifier {
+            interface_name,
+            path: "/1/test".to_string(),
+        };
+
+        // get an unset property
+        let mut req_astarte_message = Request::new(prop_identifier.clone());
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub.get_property(req_astarte_message).await;
+        assert!(res.is_ok());
+
+        let prop_res = res.unwrap().into_inner();
+        assert_eq!(&prop_res.path, "/1/test");
+        assert!(matches!(
+            prop_res,
+            Property {
+                path: _,
+                data: None
+            }
+        ));
+
+        // get a property value
+        let mut req_astarte_message = Request::new(prop_identifier);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub.get_property(req_astarte_message).await;
+        let prop_value_res = res.unwrap().into_inner().data.unwrap();
+        let exp = astarte_message_hub_proto::AstarteData {
+            astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::Boolean(true)),
+        };
+        assert_eq!(prop_value_res, exp);
+
+        // get all properties when no values are available
+        let prop_filter = StoredPropertiesFilter { ownership: None };
+
+        let mut req_astarte_message = Request::new(prop_filter.clone());
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_all_properties(req_astarte_message)
+            .await;
+        let prop_res = res.unwrap().into_inner().interface_properties;
+        assert!(prop_res.is_empty());
+
+        // get all properties when values are available
+        let mut req_astarte_message = Request::new(prop_filter);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_all_properties(req_astarte_message)
+            .await;
+
+        res.unwrap()
+            .into_inner()
+            .interface_properties
+            .iter()
+            .for_each(|(iface, props)| {
+                if iface == "io.demo.Values1" {
+                    assert_eq!(props.properties.len(), 2);
+                } else if iface == "io.demo.Values2" {
+                    assert_eq!(props.properties.len(), 1);
+                } else {
+                    panic!("unexpected interface: {}", iface);
+                }
+            });
+
+        // get all device properties
+        let prop_filter = StoredPropertiesFilter {
+            ownership: Some(astarte_device_sdk::interface::def::Ownership::Device as i32),
+        };
+
+        let mut req_astarte_message = Request::new(prop_filter);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_all_properties(req_astarte_message)
+            .await;
+
+        res.unwrap()
+            .into_inner()
+            .interface_properties
+            .iter()
+            .for_each(|(iface, props)| {
+                if iface == "io.demo.Values1" {
+                    assert_eq!(props.properties.len(), 2);
+                } else {
+                    panic!("unexpected interface: {}", iface);
+                }
+            });
+
+        // get all server properties
+        let prop_filter = StoredPropertiesFilter {
+            ownership: Some(astarte_device_sdk::interface::def::Ownership::Server as i32),
+        };
+
+        let mut req_astarte_message = Request::new(prop_filter);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_all_properties(req_astarte_message)
+            .await;
+
+        res.unwrap()
+            .into_inner()
+            .interface_properties
+            .iter()
+            .for_each(|(iface, props)| {
+                if iface == "io.demo.Values2" {
+                    assert_eq!(props.properties.len(), 1);
+                } else {
+                    panic!("unexpected interface: {}", iface);
+                }
+            });
+
+        // get_properties with empty list
+        let ifaces_names = InterfacesName { names: vec![] };
+
+        let mut req_astarte_message = Request::new(ifaces_names);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_properties(req_astarte_message)
+            .await;
+
+        assert!(res.unwrap().into_inner().interface_properties.is_empty());
+
+        // get_properties with unknown interface
+        let ifaces_names = InterfacesName {
+            names: vec!["unknown".to_string()],
+        };
+
+        let mut req_astarte_message = Request::new(ifaces_names);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_properties(req_astarte_message)
+            .await;
+
+        assert_eq!(res.err().unwrap().code(), Code::Internal);
+
+        // get properties
+        let ifaces_names = InterfacesName {
+            names: vec!["io.demo.Values1".to_string(), "io.demo.Values2".to_string()],
+        };
+
+        let mut req_astarte_message = Request::new(ifaces_names);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_properties(req_astarte_message)
+            .await;
+
+        let props = res.unwrap().into_inner().interface_properties;
+
+        assert_eq!(props.get("io.demo.Values1").unwrap().properties.len(), 2);
+        assert_eq!(props.get("io.demo.Values2").unwrap().properties.len(), 1);
     }
 
     #[test]

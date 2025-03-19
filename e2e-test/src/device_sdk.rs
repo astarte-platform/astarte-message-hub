@@ -61,7 +61,7 @@ pub async fn init_node(
     barrier: &Arc<Barrier>,
     tasks: &mut JoinSet<eyre::Result<()>>,
 ) -> eyre::Result<Node> {
-    let grpc = GrpcConfig::from_url(UUID, format!("http://localhost:{GRPC_PORT}"))?;
+    let grpc = GrpcConfig::from_url(UUID, format!("http://[::1]:{GRPC_PORT}"))?;
 
     let mut builder = DeviceBuilder::new().store(MemoryStore::new());
 
