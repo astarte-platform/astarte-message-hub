@@ -24,7 +24,7 @@
 
 #![warn(missing_docs)]
 
-use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
+use astarte_device_sdk::builder::DeviceBuilder;
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
@@ -221,12 +221,7 @@ async fn initialize_astarte_device_sdk(
     let store = SqliteStore::connect_db(&store_path).await?;
 
     // create a device instance
-    let (client, connection) = builder
-        .store(store)
-        .connect(mqtt_config)
-        .await?
-        .build()
-        .await;
+    let (client, connection) = builder.store(store).connection(mqtt_config).build().await?;
 
     Ok((client, connection))
 }

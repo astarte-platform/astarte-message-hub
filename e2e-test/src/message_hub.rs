@@ -76,10 +76,9 @@ pub async fn init_message_hub(
 
     let (client, connection) = DeviceBuilder::new()
         .store(store)
-        .connect(mqtt_config)
-        .await?
+        .connection(mqtt_config)
         .build()
-        .await;
+        .await?;
 
     let (publisher, mut subscriber) = init_pub_sub(client);
 

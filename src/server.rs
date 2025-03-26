@@ -31,9 +31,10 @@ use std::task::{Context, Poll};
 use astarte_device_sdk::Interface;
 use astarte_message_hub_proto::message_hub_server::MessageHub;
 use astarte_message_hub_proto::{
-    AstarteMessage, InterfacesJson, InterfacesName, MessageHubEvent, Node,
+    AstarteMessage, InterfacesJson, InterfacesName, MessageHubEvent, Node, Property,
+    PropertyIdentifier, StoredProperties, StoredPropertiesFilter,
 };
-use hyper::{http, Body, Uri};
+use hyper::{http, Uri};
 use itertools::Itertools;
 use log::{debug, error, info, trace};
 use pbjson_types::Empty;
@@ -233,8 +234,8 @@ impl<S> NodeIdInterceptor<S> {
     /// checks.
     async fn check_node_id(
         nodes: &Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
-        req: hyper::Request<Body>,
-    ) -> Result<hyper::Request<Body>, InterceptorError> {
+        req: hyper::Request<BoxBody>,
+    ) -> Result<hyper::Request<BoxBody>, InterceptorError> {
         // check if the request is an Attach rpc
         let is_attach = is_attach(req.uri());
 
@@ -319,9 +320,12 @@ fn node_id_from_ascii(metadata: &MetadataMap) -> Result<Option<Uuid>, Intercepto
         .map_err(InterceptorError::Uuid)
 }
 
-impl<S> Service<hyper::Request<Body>> for NodeIdInterceptor<S>
+impl<S> Service<hyper::Request<BoxBody>> for NodeIdInterceptor<S>
 where
-    S: Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>> + Clone + Send + 'static,
+    S: Service<hyper::Request<BoxBody>, Response = hyper::Response<BoxBody>>
+        + Clone
+        + Send
+        + 'static,
     S::Future: Send + 'static,
 {
     type Response = S::Response;
@@ -332,7 +336,7 @@ where
         self.inner.poll_ready(cx).map_err(S::Error::into)
     }
 
-    fn call(&mut self, req: hyper::Request<Body>) -> Self::Future {
+    fn call(&mut self, req: hyper::Request<BoxBody>) -> Self::Future {
         let clone = self.clone();
         let mut service = std::mem::replace(self, clone);
 
@@ -341,7 +345,7 @@ where
                 Ok(req) => req,
                 // return a response with the status code related to the given error
                 Err(err) => {
-                    return Ok(Status::from(err).to_http());
+                    return Ok(Status::from(err).into_http());
                 }
             };
 
@@ -533,6 +537,27 @@ where
             .await
             .map_err(Status::from)
     }
+
+    async fn get_properties(
+        &self,
+        _request: Request<InterfacesName>,
+    ) -> Result<Response<StoredProperties>, Status> {
+        todo!()
+    }
+
+    async fn get_all_properties(
+        &self,
+        _request: Request<StoredPropertiesFilter>,
+    ) -> Result<Response<StoredProperties>, Status> {
+        todo!()
+    }
+
+    async fn get_property(
+        &self,
+        _request: Request<PropertyIdentifier>,
+    ) -> Result<Response<Property>, Status> {
+        todo!()
+    }
 }
 
 /// A single node that can be connected to the Astarte message hub.
@@ -580,7 +605,7 @@ mod test {
     use astarte_message_hub_proto::message_hub_server::MessageHub;
     use astarte_message_hub_proto::{AstarteMessage, InterfacesJson};
     use async_trait::async_trait;
-    use hyper::{Body, Response, StatusCode};
+    use hyper::{Response, StatusCode};
     use mockall::mock;
     use tokio::sync::mpsc;
     use tokio::sync::RwLock;
@@ -826,7 +851,7 @@ mod test {
         let astarte_message = AstarteMessage {
             interface_name,
             path: "/test".to_string(),
-            payload: Some(Payload::AstarteData(5.into())),
+            payload: Some(Payload::DatastreamIndividual(5.into())),
             timestamp: None,
         };
 
@@ -859,12 +884,10 @@ mod test {
 
         let interface_name = "io.demo.Values".to_owned();
 
-        let value: i32 = 5;
-
         let astarte_message = AstarteMessage {
             interface_name,
             path: "/test".to_string(),
-            payload: Some(Payload::AstarteData(value.into())),
+            payload: Some(Payload::DatastreamIndividual(5.into())),
             timestamp: None,
         };
 
@@ -1042,17 +1065,17 @@ mod test {
         assert!(res.is_some());
     }
 
-    fn create_http_req(uri: &str) -> hyper::Request<Body> {
+    fn create_http_req(uri: &str) -> hyper::Request<BoxBody> {
         hyper::Request::builder()
             .uri(uri)
-            .body(Body::default())
+            .body(BoxBody::default())
             .expect("failed to create http req")
     }
 
-    fn create_http_req_with_metadata_node_id(uri: &str) -> hyper::Request<Body> {
+    fn create_http_req_with_metadata_node_id(uri: &str) -> hyper::Request<BoxBody> {
         let req = hyper::Request::builder()
             .uri(uri)
-            .body(Body::default())
+            .body(BoxBody::default())
             .expect("failed to create http req");
 
         let (mut parts, body) = req.into_parts();
@@ -1066,13 +1089,16 @@ mod test {
 
     fn create_node_interceptor_service(
         hm: HashMap<Uuid, AstarteNode>,
-    ) -> impl Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>, Error = InterceptorError>
-    {
+    ) -> impl Service<
+        hyper::Request<BoxBody>,
+        Response = hyper::Response<BoxBody>,
+        Error = InterceptorError,
+    > {
         let msg_hub_nodes = Arc::new(RwLock::new(hm));
 
         ServiceBuilder::new()
             .layer(NodeIdInterceptorLayer::new(msg_hub_nodes))
-            .service_fn(|_req: hyper::Request<Body>| {
+            .service_fn(|_req: hyper::Request<BoxBody>| {
                 futures::future::ready(
                     Response::builder()
                         .status(StatusCode::OK)

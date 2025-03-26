@@ -19,7 +19,10 @@
 use std::{sync::Arc, time::Duration};
 
 use astarte_device_sdk::{
-    builder::DeviceBuilder, prelude::*, store::memory::MemoryStore, transport::grpc::GrpcConfig,
+    builder::DeviceBuilder,
+    prelude::*,
+    store::memory::MemoryStore,
+    transport::grpc::{store::GrpcStore, GrpcConfig},
     DeviceClient, DeviceEvent,
 };
 use eyre::Context;
@@ -34,7 +37,7 @@ use crate::{interfaces::INTERFACES, GRPC_PORT, UUID};
 
 pub struct Node {
     handle: AbortHandle,
-    pub client: DeviceClient<MemoryStore>,
+    pub client: DeviceClient<GrpcStore>,
 }
 
 impl Node {
@@ -67,11 +70,14 @@ pub async fn init_node(
     }
 
     debug!("Start connecting to the msghub");
-    let handle = tokio::spawn(async move { builder.connect(grpc).await });
+    let handle = tokio::spawn(async move {
+        let builder = builder.connection(grpc);
+        builder.build().await
+    });
     barrier.wait().await;
     info!("Connected to the message hub");
 
-    let (client, connection) = handle.await??.build().await;
+    let (client, connection) = handle.await??;
 
     let handle = tasks.spawn(async move { connection.handle_events().await.map_err(Into::into) });
 

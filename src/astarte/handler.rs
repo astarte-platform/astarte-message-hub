@@ -31,12 +31,11 @@ use astarte_device_sdk::{
     properties::PropAccess,
     store::SqliteStore,
     transport::grpc::convert::{map_values_to_astarte_type, MessageHubProtoError},
-    types::AstarteType,
     DeviceEvent, Error as AstarteError, Interface, Value,
 };
+use astarte_message_hub_proto::{astarte_message::Payload, AstarteMessage, MessageHubEvent};
 use astarte_message_hub_proto::{
-    astarte_data_type::Data, astarte_message::Payload, AstarteDataTypeIndividual, AstarteMessage,
-    MessageHubEvent,
+    AstarteDatastreamInidividual, AstarteDatastreamObject, AstartePropertyIndividual,
 };
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
@@ -218,38 +217,35 @@ impl DevicePublisher {
         }
     }
 
-    /// Publish an [`AstarteDataTypeIndividual`] on specific interface and path.
-    async fn publish_astarte_individual(
+    /// Publish an [`AstarteDatastreamInidividual`] on specific interface and path.
+    async fn publish_individual(
         &self,
-        data: AstarteDataTypeIndividual,
+        data: AstarteDatastreamInidividual,
         interface_name: &str,
         path: &str,
         timestamp: Option<pbjson_types::Timestamp>,
     ) -> Result<(), AstarteMessageHubError> {
-        let astarte_type: AstarteType = data
-            .individual_data
-            .ok_or_else(|| {
-                AstarteMessageHubError::AstarteInvalidData("Invalid individual data".to_string())
-            })?
-            .try_into()?;
+        let astarte_data = data.data.ok_or_else(|| {
+            AstarteMessageHubError::AstarteInvalidData("Invalid individual data".to_string())
+        })?;
 
         if let Some(timestamp) = timestamp {
             let timestamp = timestamp
                 .try_into()
                 .map_err(AstarteMessageHubError::Timestamp)?;
             self.client
-                .send_with_timestamp(interface_name, path, astarte_type, timestamp)
+                .send_with_timestamp(interface_name, path, astarte_data, timestamp)
                 .await
         } else {
-            self.client.send(interface_name, path, astarte_type).await
+            self.client.send(interface_name, path, astarte_data).await
         }
         .map_err(AstarteMessageHubError::Astarte)
     }
 
-    /// Publish an [`AstarteDataTypeObject`](astarte_message_hub_proto::AstarteDataTypeObject) on specific interface and path.
-    async fn publish_astarte_object(
+    /// Publish an [`AstarteDatastreamObject`] on specific interface and path.
+    async fn publish_object(
         &self,
-        object_data: astarte_message_hub_proto::AstarteDataTypeObject,
+        object_data: AstarteDatastreamObject,
         interface_name: &str,
         path: &str,
         timestamp: Option<pbjson_types::Timestamp>,
@@ -267,6 +263,30 @@ impl DevicePublisher {
             self.client.send_object(interface_name, path, aggr).await
         }
         .map_err(AstarteMessageHubError::Astarte)
+    }
+
+    /// Publish an [`AstartePropertyIndividual`] on specific interface and path.
+    async fn publish_property(
+        &self,
+        data: AstartePropertyIndividual,
+        interface_name: &str,
+        path: &str,
+    ) -> Result<(), AstarteMessageHubError> {
+        // check if the property must be unset
+        let Some(data) = data.data else {
+            let _ = self
+                .client
+                .unset(interface_name, path)
+                .await
+                .map_err(AstarteMessageHubError::Astarte);
+
+            return Ok(());
+        };
+
+        self.client
+            .send(interface_name, path, data)
+            .await
+            .map_err(AstarteMessageHubError::Astarte)
     }
 
     /// Send all the properties in the attached node introspection.
@@ -470,38 +490,27 @@ impl AstartePublisher for DevicePublisher {
         })?;
 
         match astarte_message_payload {
-            Payload::AstarteUnset(_) => self
-                .client
-                .unset(&astarte_message.interface_name, &astarte_message.path)
+            Payload::DatastreamIndividual(data) => {
+                self.publish_individual(
+                    data,
+                    &astarte_message.interface_name,
+                    &astarte_message.path,
+                    astarte_message.timestamp.clone(),
+                )
                 .await
-                .map_err(AstarteMessageHubError::Astarte),
-            Payload::AstarteData(astarte_data) => {
-                let astarte_data = astarte_data.data.ok_or_else(|| {
-                    AstarteMessageHubError::AstarteInvalidData(
-                        "Invalid Astarte data type".to_string(),
-                    )
-                })?;
-
-                match astarte_data {
-                    Data::AstarteIndividual(data) => {
-                        self.publish_astarte_individual(
-                            data,
-                            &astarte_message.interface_name,
-                            &astarte_message.path,
-                            astarte_message.timestamp.clone(),
-                        )
-                        .await
-                    }
-                    Data::AstarteObject(object_data) => {
-                        self.publish_astarte_object(
-                            object_data,
-                            &astarte_message.interface_name,
-                            &astarte_message.path,
-                            astarte_message.timestamp.clone(),
-                        )
-                        .await
-                    }
-                }
+            }
+            Payload::DatastreamObject(data) => {
+                self.publish_object(
+                    data,
+                    &astarte_message.interface_name,
+                    &astarte_message.path,
+                    astarte_message.timestamp.clone(),
+                )
+                .await
+            }
+            Payload::PropertyIndividual(data) => {
+                self.publish_property(data, &astarte_message.interface_name, &astarte_message.path)
+                    .await
             }
         }
     }
@@ -514,12 +523,11 @@ mod test {
     use std::error::Error;
     use std::str::FromStr;
 
-    use astarte_device_sdk::error::Error as AstarteSdkError;
     use astarte_device_sdk::transport::grpc::Grpc;
     use astarte_device_sdk::Value;
+    use astarte_device_sdk::{error::Error as AstarteSdkError, AstarteType};
     use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
-    use astarte_message_hub_proto::astarte_data_type_individual::IndividualData;
-    use astarte_message_hub_proto::{AstarteUnset, InterfacesJson, MessageHubError};
+    use astarte_message_hub_proto::{AstarteData, InterfacesJson, MessageHubError};
     use chrono::Utc;
     use pbjson_types::Timestamp;
 
@@ -711,14 +719,22 @@ mod test {
         assert_eq!(expected_interface_name, astarte_message.interface_name);
         assert_eq!(path, astarte_message.path);
 
-        let individual_data = astarte_message
-            .take_data()
-            .and_then(|data| data.take_individual())
-            .and_then(|data| data.individual_data)
-            .and_then(|data| data.into())
-            .unwrap();
+        match astarte_message.payload.unwrap() {
+            Payload::DatastreamIndividual(astarte_datastream_inidividual) => {
+                let data = astarte_datastream_inidividual
+                    .data
+                    .unwrap()
+                    .astarte_data
+                    .unwrap();
 
-        assert_eq!(IndividualData::AstarteInteger(value), individual_data);
+                let exp_data = astarte_message_hub_proto::astarte_data::AstarteData::Integer(value);
+
+                assert_eq!(data, exp_data);
+            }
+            Payload::DatastreamObject(_) | Payload::PropertyIndividual(_) => {
+                panic!("wrong payload, expected indiidivual datastream")
+            }
+        }
 
         let err = handle.await.unwrap().unwrap_err();
 
@@ -1077,7 +1093,7 @@ mod test {
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::AstarteData(5.into())),
+            Some(Payload::DatastreamIndividual(5.into())),
             None,
         );
 
@@ -1112,7 +1128,7 @@ mod test {
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::AstarteData(5.into())),
+            Some(Payload::DatastreamIndividual(5.into())),
             Some(Utc::now().into()),
         );
 
@@ -1157,7 +1173,7 @@ mod test {
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::AstarteData(5.into())),
+            Some(Payload::DatastreamIndividual(5.into())),
             None,
         );
 
@@ -1211,7 +1227,7 @@ mod test {
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::AstarteData(5.into())),
+            Some(Payload::DatastreamIndividual(5.into())),
             Some(Utc::now().into()),
         );
 
@@ -1271,14 +1287,28 @@ mod test {
 
         let expected_i32 = 5;
         let expected_f64 = 5.12;
-        let mut map_val: HashMap<String, AstarteDataTypeIndividual> = HashMap::new();
-        map_val.insert("i32".to_owned(), expected_i32.into());
-        map_val.insert("f64".to_owned(), expected_f64.into());
+        let mut map_val: HashMap<String, AstarteData> = HashMap::new();
+        map_val.insert(
+            "i32".to_owned(),
+            AstarteData {
+                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
+                    expected_i32,
+                )),
+            },
+        );
+        map_val.insert(
+            "f64".to_owned(),
+            AstarteData {
+                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
+                    expected_f64,
+                )),
+            },
+        );
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::AstarteData(map_val.into())),
+            Some(Payload::DatastreamObject(map_val.into())),
             None,
         );
 
@@ -1319,14 +1349,28 @@ mod test {
 
         let expected_i32 = 5;
         let expected_f64 = 5.12;
-        let mut map_val: HashMap<String, AstarteDataTypeIndividual> = HashMap::new();
-        map_val.insert("i32".to_owned(), expected_i32.into());
-        map_val.insert("f64".to_owned(), expected_f64.into());
+        let mut map_val: HashMap<String, AstarteData> = HashMap::new();
+        map_val.insert(
+            "i32".to_owned(),
+            AstarteData {
+                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
+                    expected_i32,
+                )),
+            },
+        );
+        map_val.insert(
+            "f64".to_owned(),
+            AstarteData {
+                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
+                    expected_f64,
+                )),
+            },
+        );
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::AstarteData(map_val.into())),
+            Some(Payload::DatastreamObject(map_val.into())),
             Some(Utc::now().into()),
         );
 
@@ -1375,14 +1419,28 @@ mod test {
 
         let expected_i32 = 5;
         let expected_f64 = 5.12;
-        let mut map_val: HashMap<String, AstarteDataTypeIndividual> = HashMap::new();
-        map_val.insert("i32".to_owned(), expected_i32.into());
-        map_val.insert("f64".to_owned(), expected_f64.into());
+        let mut map_val: HashMap<String, AstarteData> = HashMap::new();
+        map_val.insert(
+            "i32".to_owned(),
+            AstarteData {
+                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
+                    expected_i32,
+                )),
+            },
+        );
+        map_val.insert(
+            "f64".to_owned(),
+            AstarteData {
+                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
+                    expected_f64,
+                )),
+            },
+        );
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::AstarteData(map_val.into())),
+            Some(Payload::DatastreamObject(map_val.into())),
             None,
         );
 
@@ -1437,14 +1495,28 @@ mod test {
 
         let expected_i32 = 5;
         let expected_f64 = 5.12;
-        let mut map_val: HashMap<String, AstarteDataTypeIndividual> = HashMap::new();
-        map_val.insert("i32".to_owned(), expected_i32.into());
-        map_val.insert("f64".to_owned(), expected_f64.into());
+        let mut map_val: HashMap<String, AstarteData> = HashMap::new();
+        map_val.insert(
+            "i32".to_owned(),
+            AstarteData {
+                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
+                    expected_i32,
+                )),
+            },
+        );
+        map_val.insert(
+            "f64".to_owned(),
+            AstarteData {
+                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
+                    expected_f64,
+                )),
+            },
+        );
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::AstarteData(map_val.into())),
+            Some(Payload::DatastreamObject(map_val.into())),
             Some(Utc::now().into()),
         );
 
@@ -1508,7 +1580,9 @@ mod test {
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::AstarteUnset(AstarteUnset {})),
+            Some(Payload::PropertyIndividual(AstartePropertyIndividual {
+                data: None,
+            })),
             None,
         );
 
@@ -1547,7 +1621,9 @@ mod test {
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::AstarteUnset(AstarteUnset {})),
+            Some(Payload::PropertyIndividual(AstartePropertyIndividual {
+                data: None,
+            })),
             None,
         );
 
