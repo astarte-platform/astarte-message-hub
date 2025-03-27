@@ -33,9 +33,9 @@ use astarte_device_sdk::{
     transport::grpc::convert::{map_values_to_astarte_type, MessageHubProtoError},
     DeviceEvent, Error as AstarteError, Interface, Value,
 };
-use astarte_message_hub_proto::{astarte_message::Payload, AstarteMessage, MessageHubEvent};
 use astarte_message_hub_proto::{
-    AstarteDatastreamInidividual, AstarteDatastreamObject, AstartePropertyIndividual,
+    astarte_message::Payload, AstarteDatastreamIndividual, AstarteDatastreamObject, AstarteMessage,
+    AstartePropertyIndividual, MessageHubEvent,
 };
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
@@ -217,10 +217,10 @@ impl DevicePublisher {
         }
     }
 
-    /// Publish an [`AstarteDatastreamInidividual`] on specific interface and path.
+    /// Publish an [`AstarteDatastreamIndividual`] on specific interface and path.
     async fn publish_individual(
         &self,
-        data: AstarteDatastreamInidividual,
+        data: AstarteDatastreamIndividual,
         interface_name: &str,
         path: &str,
         timestamp: Option<pbjson_types::Timestamp>,
@@ -272,21 +272,19 @@ impl DevicePublisher {
         interface_name: &str,
         path: &str,
     ) -> Result<(), AstarteMessageHubError> {
-        // check if the property must be unset
-        let Some(data) = data.data else {
-            let _ = self
+        match data.data {
+            Some(data) => self
+                .client
+                .send(interface_name, path, data)
+                .await
+                .map_err(AstarteMessageHubError::Astarte),
+            // unset the property
+            None => self
                 .client
                 .unset(interface_name, path)
                 .await
-                .map_err(AstarteMessageHubError::Astarte);
-
-            return Ok(());
-        };
-
-        self.client
-            .send(interface_name, path, data)
-            .await
-            .map_err(AstarteMessageHubError::Astarte)
+                .map_err(AstarteMessageHubError::Astarte),
+        }
     }
 
     /// Send all the properties in the attached node introspection.
@@ -529,6 +527,7 @@ mod test {
     use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
     use astarte_message_hub_proto::{AstarteData, InterfacesJson, MessageHubError};
     use chrono::Utc;
+    use mockall::predicate;
     use pbjson_types::Timestamp;
 
     const SERV_PROPS_IFACE: &str = r#"
@@ -720,8 +719,8 @@ mod test {
         assert_eq!(path, astarte_message.path);
 
         match astarte_message.payload.unwrap() {
-            Payload::DatastreamIndividual(astarte_datastream_inidividual) => {
-                let data = astarte_datastream_inidividual
+            Payload::DatastreamIndividual(astarte_datastream_individual) => {
+                let data = astarte_datastream_individual
                     .data
                     .unwrap()
                     .astarte_data
@@ -1089,10 +1088,11 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         let expected_interface_name = "io.demo.Properties";
+        let expected_path = "/test";
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
-            "/test",
+            expected_path,
             Some(Payload::DatastreamIndividual(5.into())),
             None,
         );
@@ -1108,10 +1108,16 @@ mod test {
                     .expect_send()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(move |interface_name: &str, _: &str, _: &AstarteType| {
-                        interface_name == expected_interface_name
-                    })
-                    .returning(|_: &str, _: &str, _: AstarteType| Ok(()));
+                    .with(
+                        predicate::eq(expected_interface_name),
+                        predicate::eq(expected_path),
+                        predicate::eq(AstarteData {
+                            astarte_data: Some(
+                                astarte_message_hub_proto::astarte_data::AstarteData::Integer(5),
+                            ),
+                        }),
+                    )
+                    .returning(|_, _, _| Ok(()));
                 client
             });
 
@@ -1124,12 +1130,14 @@ mod test {
     #[tokio::test]
     async fn publish_individual_with_timestamp_success() {
         let expected_interface_name = "io.demo.Properties";
+        let expected_path = "/test";
+        let expected_timestamp = Utc::now().into();
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
-            "/test",
+            expected_path,
             Some(Payload::DatastreamIndividual(5.into())),
-            Some(Utc::now().into()),
+            Some(expected_timestamp),
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();
@@ -1147,15 +1155,19 @@ mod test {
                     .expect_send_with_timestamp()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(
-                        move |interface_name: &str,
-                              _: &str,
-                              _: &AstarteType,
-                              _: &chrono::DateTime<Utc>| {
-                            interface_name == expected_interface_name
-                        },
+                    .with(
+                        predicate::eq(expected_interface_name),
+                        predicate::eq(expected_path),
+                        predicate::eq(AstarteData {
+                            astarte_data: Some(
+                                astarte_message_hub_proto::astarte_data::AstarteData::Integer(5),
+                            ),
+                        }),
+                        predicate::eq::<chrono::DateTime<Utc>>(
+                            expected_timestamp.try_into().unwrap(),
+                        ),
                     )
-                    .returning(|_: &str, _: &str, _: AstarteType, _: chrono::DateTime<Utc>| Ok(()));
+                    .returning(|_, _, _, _| Ok(()));
 
                 client
             });
@@ -1169,11 +1181,12 @@ mod test {
     #[tokio::test]
     async fn publish_individual_failed() {
         let expected_interface_name = "io.demo.Properties";
+        let expected_path = "/test";
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
-            "/test",
-            Some(Payload::DatastreamIndividual(5.into())),
+            expected_path,
+            Some(Payload::DatastreamIndividual(5i32.into())),
             None,
         );
 
@@ -1192,10 +1205,16 @@ mod test {
                     .expect_send()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(move |interface_name: &str, _: &str, _: &AstarteType| {
-                        interface_name == expected_interface_name
-                    })
-                    .returning(|_: &str, _: &str, _: AstarteType| {
+                    .with(
+                        predicate::eq(expected_interface_name),
+                        predicate::eq(expected_path),
+                        predicate::eq(AstarteData {
+                            astarte_data: Some(
+                                astarte_message_hub_proto::astarte_data::AstarteData::Integer(5),
+                            ),
+                        }),
+                    )
+                    .returning(|_, _, _| {
                         Err(AstarteSdkError::MappingNotFound {
                             interface: expected_interface_name.to_string(),
                             mapping: String::new(),
@@ -1223,12 +1242,14 @@ mod test {
     #[tokio::test]
     async fn publish_individual_with_timestamp_failed() {
         let expected_interface_name = "io.demo.Properties";
+        let expected_path = "/test";
+        let expected_timestamp = Utc::now().into();
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
-            "/test",
+            expected_path,
             Some(Payload::DatastreamIndividual(5.into())),
-            Some(Utc::now().into()),
+            Some(expected_timestamp),
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();
@@ -1246,22 +1267,24 @@ mod test {
                     .expect_send_with_timestamp()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(
-                        move |interface_name: &str,
-                              _: &str,
-                              _: &AstarteType,
-                              _: &chrono::DateTime<Utc>| {
-                            interface_name == expected_interface_name
-                        },
+                    .with(
+                        predicate::eq(expected_interface_name),
+                        predicate::eq(expected_path),
+                        predicate::eq(AstarteData {
+                            astarte_data: Some(
+                                astarte_message_hub_proto::astarte_data::AstarteData::Integer(5),
+                            ),
+                        }),
+                        predicate::eq::<chrono::DateTime<Utc>>(
+                            expected_timestamp.try_into().unwrap(),
+                        ),
                     )
-                    .returning(
-                        |_: &str, _: &str, _: AstarteType, _: chrono::DateTime<Utc>| {
-                            Err(AstarteSdkError::MappingNotFound {
-                                interface: expected_interface_name.to_string(),
-                                mapping: String::new(),
-                            })
-                        },
-                    );
+                    .returning(|_, _, _, _| {
+                        Err(AstarteSdkError::MappingNotFound {
+                            interface: expected_interface_name.to_string(),
+                            mapping: String::new(),
+                        })
+                    });
 
                 client
             });
@@ -1616,11 +1639,12 @@ mod test {
 
     #[tokio::test]
     async fn publish_unset_failed() {
-        let expected_interface_name = "io.demo.Object";
+        let expected_interface_name = "io.demo.Properties";
+        let expected_path = "/test";
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
-            "/test",
+            expected_path,
             Some(Payload::PropertyIndividual(AstartePropertyIndividual {
                 data: None,
             })),
@@ -1640,12 +1664,13 @@ mod test {
 
                 client
                     .expect_unset()
-                    .withf(move |interface_name: &str, _: &str| {
-                        interface_name == expected_interface_name
-                    })
+                    .with(
+                        predicate::eq(expected_interface_name),
+                        predicate::eq(expected_path),
+                    )
                     .once()
                     .in_sequence(&mut seq)
-                    .returning(|_: &str, _: &str| {
+                    .returning(|_, _| {
                         Err(AstarteSdkError::MappingNotFound {
                             interface: expected_interface_name.to_string(),
                             mapping: String::new(),

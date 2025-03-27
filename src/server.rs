@@ -602,8 +602,6 @@ mod test {
     use std::sync::Arc;
 
     use astarte_message_hub_proto::astarte_message::Payload;
-    use astarte_message_hub_proto::message_hub_server::MessageHub;
-    use astarte_message_hub_proto::{AstarteMessage, InterfacesJson};
     use async_trait::async_trait;
     use hyper::{Response, StatusCode};
     use mockall::mock;
