@@ -519,9 +519,9 @@ mod test {
     use std::error::Error;
     use std::str::FromStr;
 
-    use astarte_device_sdk::error::Error as AstarteSdkError;
     use astarte_device_sdk::transport::grpc::Grpc;
     use astarte_device_sdk::Value;
+    use astarte_device_sdk::{error::Error as AstarteSdkError, AstarteType};
     use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
     use astarte_message_hub_proto::{AstarteData, InterfacesJson, MessageHubError};
     use chrono::Utc;
@@ -600,7 +600,7 @@ mod test {
             .expect_extend_interfaces_vec()
             .once()
             .in_sequence(&mut seq)
-            .withf(move |i| *i == interfaces)
+            .with(predicate::eq(interfaces))
             .returning(move |_| Ok(vec![interface.interface_name().to_string()]));
 
         client
@@ -1326,6 +1326,13 @@ mod test {
             },
         );
 
+        let exp_object = AstarteObject::from_iter(
+            map_val
+                .clone()
+                .into_iter()
+                .map(|(k, v)| (k, AstarteType::try_from(v).unwrap())),
+        );
+
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
@@ -1341,17 +1348,19 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
+            .return_once(move || {
                 let mut client = DeviceClient::<SqliteStore>::new();
 
                 client
                     .expect_send_object()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(move |interface_name: &str, _: &str, _: &AstarteObject| {
-                        interface_name == expected_interface_name
-                    })
-                    .returning(|_: &str, _: &str, _: AstarteObject| Ok(()));
+                    .with(
+                        predicate::eq(expected_interface_name),
+                        predicate::eq("/test"),
+                        predicate::eq(exp_object),
+                    )
+                    .returning(|_, _, _| Ok(()));
 
                 client
             });
@@ -1386,11 +1395,20 @@ mod test {
             },
         );
 
+        let exp_object = AstarteObject::from_iter(
+            map_val
+                .clone()
+                .into_iter()
+                .map(|(k, v)| (k, AstarteType::try_from(v).unwrap())),
+        );
+
+        let expected_timestamp = Utc::now().into();
+
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
             Some(Payload::DatastreamObject(map_val.into())),
-            Some(Utc::now().into()),
+            Some(expected_timestamp),
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();
@@ -1401,24 +1419,22 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
+            .return_once(move || {
                 let mut client = DeviceClient::<SqliteStore>::default();
 
                 client
                     .expect_send_object_with_timestamp()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(
-                        move |interface_name: &str,
-                              _: &str,
-                              _: &AstarteObject,
-                              _: &chrono::DateTime<Utc>| {
-                            interface_name == expected_interface_name
-                        },
+                    .with(
+                        predicate::eq(expected_interface_name),
+                        predicate::eq("/test"),
+                        predicate::eq(exp_object),
+                        predicate::eq::<chrono::DateTime<Utc>>(
+                            expected_timestamp.try_into().unwrap(),
+                        ),
                     )
-                    .returning(
-                        |_: &str, _: &str, _: AstarteObject, _: chrono::DateTime<Utc>| Ok(()),
-                    );
+                    .returning(|_, _, _, _| Ok(()));
 
                 client
             });
@@ -1453,6 +1469,13 @@ mod test {
             },
         );
 
+        let exp_object = AstarteObject::from_iter(
+            map_val
+                .clone()
+                .into_iter()
+                .map(|(k, v)| (k, AstarteType::try_from(v).unwrap())),
+        );
+
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
@@ -1468,17 +1491,19 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
+            .return_once(move || {
                 let mut client = DeviceClient::<SqliteStore>::new();
 
                 client
                     .expect_send_object()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(move |interface_name: &str, _: &str, _: &AstarteObject| {
-                        interface_name == expected_interface_name
-                    })
-                    .returning(|_: &str, _: &str, _: AstarteObject| {
+                    .with(
+                        predicate::eq(expected_interface_name),
+                        predicate::eq("/test"),
+                        predicate::eq(exp_object),
+                    )
+                    .returning(|_, _, _| {
                         Err(AstarteSdkError::MappingNotFound {
                             interface: expected_interface_name.to_string(),
                             mapping: String::new(),
@@ -1527,11 +1552,19 @@ mod test {
             },
         );
 
+        let exp_object = AstarteObject::from_iter(
+            map_val
+                .clone()
+                .into_iter()
+                .map(|(k, v)| (k, AstarteType::try_from(v).unwrap())),
+        );
+        let expected_timestamp = Utc::now().into();
+
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
             Some(Payload::DatastreamObject(map_val.into())),
-            Some(Utc::now().into()),
+            Some(expected_timestamp),
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();
@@ -1542,29 +1575,27 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
+            .return_once(move || {
                 let mut client = DeviceClient::<SqliteStore>::default();
 
                 client
                     .expect_send_object_with_timestamp()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(
-                        move |interface_name: &str,
-                              _: &str,
-                              _: &AstarteObject,
-                              _: &chrono::DateTime<Utc>| {
-                            interface_name == expected_interface_name
-                        },
+                    .with(
+                        predicate::eq(expected_interface_name),
+                        predicate::eq("/test"),
+                        predicate::eq(exp_object),
+                        predicate::eq::<chrono::DateTime<Utc>>(
+                            expected_timestamp.try_into().unwrap(),
+                        ),
                     )
-                    .returning(
-                        |_: &str, _: &str, _: AstarteObject, _: chrono::DateTime<Utc>| {
-                            Err(AstarteSdkError::MappingNotFound {
-                                interface: expected_interface_name.to_string(),
-                                mapping: String::new(),
-                            })
-                        },
-                    );
+                    .returning(|_, _, _, _| {
+                        Err(AstarteSdkError::MappingNotFound {
+                            interface: expected_interface_name.to_string(),
+                            mapping: String::new(),
+                        })
+                    });
 
                 client
             });
@@ -1612,9 +1643,10 @@ mod test {
                     .expect_unset()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(move |interface_name: &str, _: &str| {
-                        interface_name == expected_interface_name
-                    })
+                    .with(
+                        predicate::eq(expected_interface_name),
+                        predicate::eq("/test"),
+                    )
                     .returning(|_: &str, _: &str| Ok(()));
 
                 client
