@@ -477,7 +477,7 @@ where
     ///         interface_name: "org.astarteplatform.esp32.examples.DeviceDatastream".to_string(),
     ///         path: "uptimeSeconds".to_string(),
     ///         timestamp: None,
-    ///         payload: Some(Payload::AstarteData(100.into()))
+    ///         payload: Some(Payload::DatastreamIndividual(100.into()))
     ///     };
     ///
     ///     let _ = client.send(astarte_message).await;

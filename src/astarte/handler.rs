@@ -25,13 +25,11 @@ use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use astarte_device_sdk::aggregate::AstarteObject;
 use astarte_device_sdk::{
-    client::RecvError,
-    interface::error::InterfaceError,
-    properties::PropAccess,
-    store::SqliteStore,
-    transport::grpc::convert::{map_values_to_astarte_type, MessageHubProtoError},
-    DeviceEvent, Error as AstarteError, Interface, Value,
+    client::RecvError, interface::error::InterfaceError, properties::PropAccess,
+    store::SqliteStore, transport::grpc::convert::MessageHubProtoError, DeviceEvent,
+    Error as AstarteError, Interface, Value,
 };
 use astarte_message_hub_proto::{
     astarte_message::Payload, AstarteDatastreamIndividual, AstarteDatastreamObject, AstarteMessage,
@@ -250,7 +248,7 @@ impl DevicePublisher {
         path: &str,
         timestamp: Option<pbjson_types::Timestamp>,
     ) -> Result<(), AstarteMessageHubError> {
-        let aggr = map_values_to_astarte_type(object_data)?;
+        let aggr = AstarteObject::try_from(object_data)?;
 
         if let Some(timestamp) = timestamp {
             let timestamp = timestamp
@@ -493,7 +491,7 @@ impl AstartePublisher for DevicePublisher {
                     data,
                     &astarte_message.interface_name,
                     &astarte_message.path,
-                    astarte_message.timestamp.clone(),
+                    astarte_message.timestamp,
                 )
                 .await
             }
@@ -502,7 +500,7 @@ impl AstartePublisher for DevicePublisher {
                     data,
                     &astarte_message.interface_name,
                     &astarte_message.path,
-                    astarte_message.timestamp.clone(),
+                    astarte_message.timestamp,
                 )
                 .await
             }
@@ -521,9 +519,9 @@ mod test {
     use std::error::Error;
     use std::str::FromStr;
 
+    use astarte_device_sdk::error::Error as AstarteSdkError;
     use astarte_device_sdk::transport::grpc::Grpc;
     use astarte_device_sdk::Value;
-    use astarte_device_sdk::{error::Error as AstarteSdkError, AstarteType};
     use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
     use astarte_message_hub_proto::{AstarteData, InterfacesJson, MessageHubError};
     use chrono::Utc;
@@ -1350,12 +1348,10 @@ mod test {
                     .expect_send_object()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(
-                        move |interface_name: &str, _: &str, _: &HashMap<String, AstarteType>| {
-                            interface_name == expected_interface_name
-                        },
-                    )
-                    .returning(|_: &str, _: &str, _: HashMap<String, AstarteType>| Ok(()));
+                    .withf(move |interface_name: &str, _: &str, _: &AstarteObject| {
+                        interface_name == expected_interface_name
+                    })
+                    .returning(|_: &str, _: &str, _: AstarteObject| Ok(()));
 
                 client
             });
@@ -1415,16 +1411,13 @@ mod test {
                     .withf(
                         move |interface_name: &str,
                               _: &str,
-                              _: &HashMap<String, AstarteType>,
+                              _: &AstarteObject,
                               _: &chrono::DateTime<Utc>| {
                             interface_name == expected_interface_name
                         },
                     )
                     .returning(
-                        |_: &str,
-                         _: &str,
-                         _: HashMap<String, AstarteType>,
-                         _: chrono::DateTime<Utc>| Ok(()),
+                        |_: &str, _: &str, _: AstarteObject, _: chrono::DateTime<Utc>| Ok(()),
                     );
 
                 client
@@ -1482,12 +1475,10 @@ mod test {
                     .expect_send_object()
                     .once()
                     .in_sequence(&mut seq)
-                    .withf(
-                        move |interface_name: &str, _: &str, _: &HashMap<String, AstarteType>| {
-                            interface_name == expected_interface_name
-                        },
-                    )
-                    .returning(|_: &str, _: &str, _: HashMap<String, AstarteType>| {
+                    .withf(move |interface_name: &str, _: &str, _: &AstarteObject| {
+                        interface_name == expected_interface_name
+                    })
+                    .returning(|_: &str, _: &str, _: AstarteObject| {
                         Err(AstarteSdkError::MappingNotFound {
                             interface: expected_interface_name.to_string(),
                             mapping: String::new(),
@@ -1561,16 +1552,13 @@ mod test {
                     .withf(
                         move |interface_name: &str,
                               _: &str,
-                              _: &HashMap<String, AstarteType>,
+                              _: &AstarteObject,
                               _: &chrono::DateTime<Utc>| {
                             interface_name == expected_interface_name
                         },
                     )
                     .returning(
-                        |_: &str,
-                         _: &str,
-                         _: HashMap<String, AstarteType>,
-                         _: chrono::DateTime<Utc>| {
+                        |_: &str, _: &str, _: AstarteObject, _: chrono::DateTime<Utc>| {
                             Err(AstarteSdkError::MappingNotFound {
                                 interface: expected_interface_name.to_string(),
                                 mapping: String::new(),

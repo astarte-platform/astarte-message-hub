@@ -18,7 +18,7 @@
 
 use std::{collections::HashMap, fmt::Debug, str::FromStr};
 
-use astarte_device_sdk::types::AstarteType;
+use astarte_device_sdk::{aggregate::AstarteObject, types::AstarteType};
 use color_eyre::{owo_colors::OwoColorize, Section, SectionExt};
 use eyre::{ensure, eyre};
 use reqwest::{Response, Url};
@@ -213,11 +213,11 @@ impl Api {
     pub async fn check_individual(
         &self,
         interface: &str,
-        expected: &HashMap<String, AstarteType>,
+        expected: &AstarteObject,
     ) -> eyre::Result<()> {
         let payload = self.property(interface).await?;
 
-        for (k, exp) in expected {
+        for (k, exp) in expected.iter() {
             trace!("checking {k}");
 
             let v = payload

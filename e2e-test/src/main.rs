@@ -19,6 +19,7 @@
 use std::str::FromStr;
 use std::{env::VarError, future::Future, sync::Arc};
 
+use astarte_device_sdk::aggregate::AstarteObject;
 use astarte_device_sdk::{prelude::*, Value};
 use eyre::{bail, ensure, eyre, Context, OptionExt};
 use interfaces::ServerAggregate;
@@ -176,7 +177,7 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
         .send_object(
             DeviceAggregate::name(),
             DeviceAggregate::path(),
-            DeviceAggregate::default(),
+            AstarteObject::default(),
         )
         .await?;
 
@@ -196,7 +197,7 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
     .await?;
 
     debug!("sending DeviceDatastream");
-    let mut data = DeviceDatastream::default().astarte_aggregate()?;
+    let mut data = DeviceDatastream::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
 
@@ -222,7 +223,7 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
     .await?;
 
     debug!("sending DeviceProperty");
-    let mut data = DeviceProperty::default().astarte_aggregate()?;
+    let mut data = DeviceProperty::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
 
@@ -246,9 +247,9 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
     .await?;
 
     debug!("unsetting DeviceProperty");
-    let data = DeviceProperty::default().astarte_aggregate()?;
+    let data = DeviceProperty::default().into_object()?;
     for &endpoint in ENDPOINTS {
-        ensure!(data.contains_key(endpoint), "endpoint not found");
+        ensure!(data.get(endpoint).is_some(), "endpoint not found");
 
         node.client
             .unset(DeviceProperty::name(), &format!("/{endpoint}"))
@@ -284,13 +285,12 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
     assert_eq!(event.path, ServerAggregate::path());
 
     let data = event.data.as_object().ok_or_eyre("not an object")?;
-    assert_eq!(*data, ServerAggregate::default().astarte_aggregate()?);
+    assert_eq!(*data, ServerAggregate::default().into_object()?);
 
     debug!("checking ServerDatastream");
-    let data = ServerDatastream::default().astarte_aggregate()?;
-    for (k, v) in data {
-        api.send_individual(ServerDatastream::name(), &k, &v)
-            .await?;
+    let data = ServerDatastream::default().into_object()?;
+    for (k, v) in data.iter() {
+        api.send_individual(ServerDatastream::name(), k, v).await?;
 
         let event = node.recv().await?;
 
@@ -298,13 +298,13 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
         assert_eq!(event.path, format!("/{k}"));
 
         let data = event.data.as_individual().ok_or_eyre("not an object")?;
-        assert_eq!(*data, v);
+        assert_eq!(data, v);
     }
 
     debug!("checking ServerProperty");
-    let data = ServerProperty::default().astarte_aggregate()?;
-    for (k, v) in data {
-        api.send_individual(ServerProperty::name(), &k, &v).await?;
+    let data = ServerProperty::default().into_object()?;
+    for (k, v) in data.iter() {
+        api.send_individual(ServerProperty::name(), k, v).await?;
 
         let event = node.recv().await?;
 
@@ -312,12 +312,12 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
         assert_eq!(event.path, format!("/{k}"));
 
         let data = event.data.as_individual().ok_or_eyre("not an object")?;
-        assert_eq!(*data, v);
+        assert_eq!(data, v);
     }
 
     debug!("checking unset for ServerProperty");
-    let data = ServerProperty::default().astarte_aggregate()?;
-    for k in data.keys() {
+    let data = ServerProperty::default().into_object()?;
+    for (k, _) in data.iter() {
         api.unset(ServerProperty::name(), k).await?;
 
         let event = node.recv().await?;
@@ -384,7 +384,7 @@ async fn extend_node_interfaces(
     .await?;
 
     debug!("sending AdditionalDeviceDatastream");
-    let mut data = AdditionalDeviceDatastream::default().astarte_aggregate()?;
+    let mut data = AdditionalDeviceDatastream::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
 
