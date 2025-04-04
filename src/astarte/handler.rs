@@ -224,13 +224,12 @@ impl DevicePublisher {
         data: AstarteDatastreamIndividual,
         interface_name: &str,
         path: &str,
-        timestamp: Option<pbjson_types::Timestamp>,
     ) -> Result<(), AstarteMessageHubError> {
         let astarte_data = data.data.ok_or_else(|| {
             AstarteMessageHubError::AstarteInvalidData("Invalid individual data".to_string())
         })?;
 
-        if let Some(timestamp) = timestamp {
+        if let Some(timestamp) = data.timestamp {
             let timestamp = timestamp
                 .try_into()
                 .map_err(AstarteMessageHubError::Timestamp)?;
@@ -249,8 +248,8 @@ impl DevicePublisher {
         object_data: AstarteDatastreamObject,
         interface_name: &str,
         path: &str,
-        timestamp: Option<pbjson_types::Timestamp>,
     ) -> Result<(), AstarteMessageHubError> {
+        let timestamp = object_data.timestamp;
         let aggr = AstarteObject::try_from(object_data)?;
 
         if let Some(timestamp) = timestamp {
@@ -494,18 +493,12 @@ impl AstartePublisher for DevicePublisher {
                     data,
                     &astarte_message.interface_name,
                     &astarte_message.path,
-                    astarte_message.timestamp,
                 )
                 .await
             }
             Payload::DatastreamObject(data) => {
-                self.publish_object(
-                    data,
-                    &astarte_message.interface_name,
-                    &astarte_message.path,
-                    astarte_message.timestamp,
-                )
-                .await
+                self.publish_object(data, &astarte_message.interface_name, &astarte_message.path)
+                    .await
             }
             Payload::PropertyIndividual(data) => {
                 self.publish_property(data, &astarte_message.interface_name, &astarte_message.path)
@@ -555,10 +548,10 @@ mod test {
     use astarte_device_sdk::Value;
     use astarte_device_sdk::{error::Error as AstarteSdkError, AstarteType};
     use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
+    use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::{AstarteData, InterfacesJson, MessageHubError};
     use chrono::Utc;
     use mockall::predicate;
-    use pbjson_types::Timestamp;
 
     const SERV_PROPS_IFACE: &str = r#"
         {
@@ -609,13 +602,11 @@ mod test {
         iname: impl Into<String>,
         path: impl Into<String>,
         payload: Option<Payload>,
-        timestamp: Option<Timestamp>,
     ) -> AstarteMessage {
         AstarteMessage {
             interface_name: iname.into(),
             path: path.into(),
             payload,
-            timestamp,
         }
     }
 
@@ -1064,7 +1055,7 @@ mod test {
 
         let expected_interface_name = "io.demo.Properties";
 
-        let astarte_message = create_astarte_message(expected_interface_name, "/test", None, None);
+        let astarte_message = create_astarte_message(expected_interface_name, "/test", None);
 
         let mut seq = mockall::Sequence::new();
 
@@ -1098,7 +1089,7 @@ mod test {
             .in_sequence(&mut seq)
             .returning(DeviceClient::<SqliteStore>::default);
 
-        let astarte_message = create_astarte_message("io.demo.Properties", "/test", None, None);
+        let astarte_message = create_astarte_message("io.demo.Properties", "/test", None);
 
         let (publisher, _) = init_pub_sub(client);
 
@@ -1119,19 +1110,25 @@ mod test {
 
         let expected_interface_name = "io.demo.Properties";
         let expected_path = "/test";
+        let expected_data = AstarteData {
+            astarte_data: Some(ProtoData::Integer(5)),
+        };
+        let expected_payload = Payload::DatastreamIndividual(AstarteDatastreamIndividual {
+            data: Some(expected_data.clone()),
+            timestamp: None,
+        });
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             expected_path,
-            Some(Payload::DatastreamIndividual(5.into())),
-            None,
+            Some(expected_payload),
         );
 
         client
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
+            .return_once(move || {
                 let mut client = DeviceClient::<SqliteStore>::default();
 
                 client
@@ -1141,11 +1138,7 @@ mod test {
                     .with(
                         predicate::eq(expected_interface_name),
                         predicate::eq(expected_path),
-                        predicate::eq(AstarteData {
-                            astarte_data: Some(
-                                astarte_message_hub_proto::astarte_data::AstarteData::Integer(5),
-                            ),
-                        }),
+                        predicate::eq(expected_data),
                     )
                     .returning(|_, _, _| Ok(()));
                 client
@@ -1162,12 +1155,18 @@ mod test {
         let expected_interface_name = "io.demo.Properties";
         let expected_path = "/test";
         let expected_timestamp = Utc::now().into();
+        let expected_data = AstarteData {
+            astarte_data: Some(ProtoData::Integer(5)),
+        };
+        let expected_payload = Payload::DatastreamIndividual(AstarteDatastreamIndividual {
+            data: Some(expected_data.clone()),
+            timestamp: Some(expected_timestamp),
+        });
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             expected_path,
-            Some(Payload::DatastreamIndividual(5.into())),
-            Some(expected_timestamp),
+            Some(expected_payload),
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();
@@ -1178,7 +1177,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
+            .return_once(move || {
                 let mut client = DeviceClient::<SqliteStore>::default();
 
                 client
@@ -1188,11 +1187,7 @@ mod test {
                     .with(
                         predicate::eq(expected_interface_name),
                         predicate::eq(expected_path),
-                        predicate::eq(AstarteData {
-                            astarte_data: Some(
-                                astarte_message_hub_proto::astarte_data::AstarteData::Integer(5),
-                            ),
-                        }),
+                        predicate::eq(expected_data),
                         predicate::eq::<chrono::DateTime<Utc>>(
                             expected_timestamp.try_into().unwrap(),
                         ),
@@ -1212,12 +1207,18 @@ mod test {
     async fn publish_individual_failed() {
         let expected_interface_name = "io.demo.Properties";
         let expected_path = "/test";
+        let expected_data = AstarteData {
+            astarte_data: Some(ProtoData::Integer(5)),
+        };
+        let expected_payload = Payload::DatastreamIndividual(AstarteDatastreamIndividual {
+            data: Some(expected_data.clone()),
+            timestamp: None,
+        });
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             expected_path,
-            Some(Payload::DatastreamIndividual(5i32.into())),
-            None,
+            Some(expected_payload),
         );
 
         let mut client = DeviceClient::<SqliteStore>::new();
@@ -1228,7 +1229,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
+            .return_once(move || {
                 let mut client = DeviceClient::<SqliteStore>::new();
 
                 client
@@ -1238,11 +1239,7 @@ mod test {
                     .with(
                         predicate::eq(expected_interface_name),
                         predicate::eq(expected_path),
-                        predicate::eq(AstarteData {
-                            astarte_data: Some(
-                                astarte_message_hub_proto::astarte_data::AstarteData::Integer(5),
-                            ),
-                        }),
+                        predicate::eq(expected_data),
                     )
                     .returning(|_, _, _| {
                         Err(AstarteSdkError::MappingNotFound {
@@ -1274,12 +1271,18 @@ mod test {
         let expected_interface_name = "io.demo.Properties";
         let expected_path = "/test";
         let expected_timestamp = Utc::now().into();
+        let expected_data = AstarteData {
+            astarte_data: Some(ProtoData::Integer(5)),
+        };
+        let expected_payload = Payload::DatastreamIndividual(AstarteDatastreamIndividual {
+            data: Some(expected_data.clone()),
+            timestamp: Some(expected_timestamp),
+        });
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             expected_path,
-            Some(Payload::DatastreamIndividual(5.into())),
-            Some(expected_timestamp),
+            Some(expected_payload),
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();
@@ -1290,7 +1293,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
+            .return_once(move || {
                 let mut client = DeviceClient::<SqliteStore>::default();
 
                 client
@@ -1300,11 +1303,7 @@ mod test {
                     .with(
                         predicate::eq(expected_interface_name),
                         predicate::eq(expected_path),
-                        predicate::eq(AstarteData {
-                            astarte_data: Some(
-                                astarte_message_hub_proto::astarte_data::AstarteData::Integer(5),
-                            ),
-                        }),
+                        predicate::eq(expected_data),
                         predicate::eq::<chrono::DateTime<Utc>>(
                             expected_timestamp.try_into().unwrap(),
                         ),
@@ -1340,27 +1339,22 @@ mod test {
 
         let expected_i32 = 5;
         let expected_f64 = 5.12;
-        let mut map_val: HashMap<String, AstarteData> = HashMap::new();
-        map_val.insert(
+        let mut data: HashMap<String, AstarteData> = HashMap::new();
+        data.insert(
             "i32".to_owned(),
             AstarteData {
-                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
-                    expected_i32,
-                )),
+                astarte_data: Some(ProtoData::Integer(expected_i32)),
             },
         );
-        map_val.insert(
+        data.insert(
             "f64".to_owned(),
             AstarteData {
-                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
-                    expected_f64,
-                )),
+                astarte_data: Some(ProtoData::Double(expected_f64)),
             },
         );
 
         let exp_object = AstarteObject::from_iter(
-            map_val
-                .clone()
+            data.clone()
                 .into_iter()
                 .map(|(k, v)| (k, AstarteType::try_from(v).unwrap())),
         );
@@ -1368,8 +1362,10 @@ mod test {
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::DatastreamObject(map_val.into())),
-            None,
+            Some(Payload::DatastreamObject(AstarteDatastreamObject {
+                data,
+                timestamp: None,
+            })),
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();
@@ -1409,27 +1405,22 @@ mod test {
 
         let expected_i32 = 5;
         let expected_f64 = 5.12;
-        let mut map_val: HashMap<String, AstarteData> = HashMap::new();
-        map_val.insert(
+        let mut data: HashMap<String, AstarteData> = HashMap::new();
+        data.insert(
             "i32".to_owned(),
             AstarteData {
-                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
-                    expected_i32,
-                )),
+                astarte_data: Some(ProtoData::Integer(expected_i32)),
             },
         );
-        map_val.insert(
+        data.insert(
             "f64".to_owned(),
             AstarteData {
-                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
-                    expected_f64,
-                )),
+                astarte_data: Some(ProtoData::Double(expected_f64)),
             },
         );
 
         let exp_object = AstarteObject::from_iter(
-            map_val
-                .clone()
+            data.clone()
                 .into_iter()
                 .map(|(k, v)| (k, AstarteType::try_from(v).unwrap())),
         );
@@ -1439,8 +1430,10 @@ mod test {
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::DatastreamObject(map_val.into())),
-            Some(expected_timestamp),
+            Some(Payload::DatastreamObject(AstarteDatastreamObject {
+                data,
+                timestamp: Some(expected_timestamp),
+            })),
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();
@@ -1483,27 +1476,22 @@ mod test {
 
         let expected_i32 = 5;
         let expected_f64 = 5.12;
-        let mut map_val: HashMap<String, AstarteData> = HashMap::new();
-        map_val.insert(
+        let mut data: HashMap<String, AstarteData> = HashMap::new();
+        data.insert(
             "i32".to_owned(),
             AstarteData {
-                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
-                    expected_i32,
-                )),
+                astarte_data: Some(ProtoData::Integer(expected_i32)),
             },
         );
-        map_val.insert(
+        data.insert(
             "f64".to_owned(),
             AstarteData {
-                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
-                    expected_f64,
-                )),
+                astarte_data: Some(ProtoData::Double(expected_f64)),
             },
         );
 
         let exp_object = AstarteObject::from_iter(
-            map_val
-                .clone()
+            data.clone()
                 .into_iter()
                 .map(|(k, v)| (k, AstarteType::try_from(v).unwrap())),
         );
@@ -1511,8 +1499,10 @@ mod test {
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::DatastreamObject(map_val.into())),
-            None,
+            Some(Payload::DatastreamObject(AstarteDatastreamObject {
+                data,
+                timestamp: None,
+            })),
         );
 
         let mut client = DeviceClient::<SqliteStore>::new();
@@ -1566,37 +1556,35 @@ mod test {
 
         let expected_i32 = 5;
         let expected_f64 = 5.12;
-        let mut map_val: HashMap<String, AstarteData> = HashMap::new();
-        map_val.insert(
+        let mut data: HashMap<String, AstarteData> = HashMap::new();
+        data.insert(
             "i32".to_owned(),
             AstarteData {
-                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
-                    expected_i32,
-                )),
+                astarte_data: Some(ProtoData::Integer(expected_i32)),
             },
         );
-        map_val.insert(
+        data.insert(
             "f64".to_owned(),
             AstarteData {
-                astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::from(
-                    expected_f64,
-                )),
+                astarte_data: Some(ProtoData::Double(expected_f64)),
             },
         );
 
         let exp_object = AstarteObject::from_iter(
-            map_val
-                .clone()
+            data.clone()
                 .into_iter()
                 .map(|(k, v)| (k, AstarteType::try_from(v).unwrap())),
         );
+
         let expected_timestamp = Utc::now().into();
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
-            Some(Payload::DatastreamObject(map_val.into())),
-            Some(expected_timestamp),
+            Some(Payload::DatastreamObject(AstarteDatastreamObject {
+                data,
+                timestamp: Some(expected_timestamp),
+            })),
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();
@@ -1657,7 +1645,6 @@ mod test {
             Some(Payload::PropertyIndividual(AstartePropertyIndividual {
                 data: None,
             })),
-            None,
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();
@@ -1700,7 +1687,6 @@ mod test {
             Some(Payload::PropertyIndividual(AstartePropertyIndividual {
                 data: None,
             })),
-            None,
         );
 
         let mut client = DeviceClient::<SqliteStore>::default();

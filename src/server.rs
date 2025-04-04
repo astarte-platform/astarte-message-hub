@@ -438,6 +438,8 @@ where
     ///
     /// ```no_run
     /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
+    /// use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
+    /// use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     /// use astarte_message_hub_proto::Node;
     /// use tonic::transport::channel::Endpoint;
     /// use tonic::metadata::MetadataValue;
@@ -494,6 +496,8 @@ where
     /// use astarte_message_hub_proto::Node;
     /// use astarte_message_hub_proto::astarte_message::Payload;
     /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
+    /// use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
+    /// use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     /// use astarte_message_hub_proto::AstarteMessage;
     /// use tonic::transport::channel::Endpoint;
     /// use tonic::metadata::MetadataValue;
@@ -530,8 +534,10 @@ where
     ///     let astarte_message = AstarteMessage {
     ///         interface_name: "org.astarteplatform.esp32.examples.DeviceDatastream".to_string(),
     ///         path: "uptimeSeconds".to_string(),
-    ///         timestamp: None,
-    ///         payload: Some(Payload::DatastreamIndividual(100.into()))
+    ///         payload: Some(Payload::DatastreamIndividual(AstarteDatastreamIndividual {
+    ///             data: Some(AstarteData { astarte_data: Some(ProtoData::Integer(5) )}),
+    ///             timestamp: Some(chrono::Utc::now().into()),
+    ///         }))
     ///     };
     ///
     ///     let _ = client.send(astarte_message).await;
@@ -673,7 +679,9 @@ impl AstarteNode {
 mod test {
     use astarte_device_sdk::store::StoredProp;
     use astarte_device_sdk::{AstarteType, Error};
+    use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::astarte_message::Payload;
+    use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
     use async_trait::async_trait;
     use hyper::{Response, StatusCode};
     use mockall::mock;
@@ -935,12 +943,18 @@ mod test {
             AstarteMessageHub::new(mock_astarte, "");
 
         let interface_name = "io.demo.Values".to_owned();
+        let astarte_data = AstarteData {
+            astarte_data: Some(ProtoData::Integer(5)),
+        };
+        let payload = Payload::DatastreamIndividual(AstarteDatastreamIndividual {
+            data: Some(astarte_data.clone()),
+            timestamp: None,
+        });
 
         let astarte_message = AstarteMessage {
             interface_name,
             path: "/test".to_string(),
-            payload: Some(Payload::DatastreamIndividual(5.into())),
-            timestamp: None,
+            payload: Some(payload),
         };
 
         let mut req_astarte_message = Request::new(astarte_message);
@@ -971,12 +985,18 @@ mod test {
             AstarteMessageHub::new(mock_astarte, "");
 
         let interface_name = "io.demo.Values".to_owned();
+        let astarte_data = AstarteData {
+            astarte_data: Some(ProtoData::Integer(5)),
+        };
+        let payload = Payload::DatastreamIndividual(AstarteDatastreamIndividual {
+            data: Some(astarte_data.clone()),
+            timestamp: None,
+        });
 
         let astarte_message = AstarteMessage {
             interface_name,
             path: "/test".to_string(),
-            payload: Some(Payload::DatastreamIndividual(5.into())),
-            timestamp: None,
+            payload: Some(payload),
         };
 
         let mut req_astarte_message = Request::new(astarte_message);

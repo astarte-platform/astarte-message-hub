@@ -130,13 +130,14 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 [[package]]
 name = "astarte-device-sdk"
 version = "0.9.6"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#2f3072710d565fd3c7ad655756b72e30edbd337e"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#1bad2a0bed1eb538f91162fdfa8d6251d07802f9"
 dependencies = [
  "astarte-device-sdk-derive",
  "astarte-message-hub-proto",
  "base64 0.22.1",
  "bson",
  "bytes",
+ "cfg-if",
  "chrono",
  "flate2",
  "flume",
@@ -165,7 +166,7 @@ dependencies = [
 [[package]]
 name = "astarte-device-sdk-derive"
 version = "0.9.6"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#2f3072710d565fd3c7ad655756b72e30edbd337e"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#1bad2a0bed1eb538f91162fdfa8d6251d07802f9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -175,7 +176,7 @@ dependencies = [
 [[package]]
 name = "astarte-device-sdk-mock"
 version = "0.9.6"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#2f3072710d565fd3c7ad655756b72e30edbd337e"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#1bad2a0bed1eb538f91162fdfa8d6251d07802f9"
 dependencies = [
  "astarte-device-sdk",
  "chrono",
@@ -224,7 +225,7 @@ dependencies = [
 [[package]]
 name = "astarte-message-hub-proto"
 version = "0.7.0"
-source = "git+https://github.com/rgallor/astarte-message-hub-proto.git?branch=feat/property-conversion#fedc1cfa128dc997aa17bccf7255a5f78e4106d7"
+source = "git+https://github.com/astarte-platform/astarte-message-hub-proto.git?rev=8e8198de9589c606e63ada8ec104bace81ae9cfa#8e8198de9589c606e63ada8ec104bace81ae9cfa"
 dependencies = [
  "chrono",
  "pbjson-types",
@@ -1841,7 +1842,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -2445,7 +2446,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "log",
  "multimap",
  "once_cell",
@@ -2478,7 +2479,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.100",
