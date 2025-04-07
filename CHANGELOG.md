@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - Unreleased
+
+### Added
+
+- Add the `pairing_url` configuration option to the cmdline `--pairing-url` and environment variable
+  `MSGHUB_PAIRING_URL`. [#334](https://github.com/astarte-platform/astarte-message-hub/pull/334)
+
 ## [0.7.2] - 2025-03-07
 
 ### Changed
