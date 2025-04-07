@@ -102,6 +102,9 @@ pub struct DeviceOptions {
     /// A unique ID for the device.
     #[arg(long, env = "MSGHUB_DEVICE_ID")]
     pub device_id: Option<String>,
+    /// Pairing URL of the Astarte instance.
+    #[arg(long, env = "MSGHUB_PAIRING_URL")]
+    pub pairing_url: Option<String>,
     /// The credentials secret used to authenticate with Astarte.
     #[arg(
         long,
@@ -128,6 +131,7 @@ impl DeviceOptions {
     pub fn merge(self, config: &mut Config) {
         config.realm.merge(self.realm);
         config.device_id.merge(self.device_id);
+        config.pairing_url.merge(self.pairing_url);
         config.credentials_secret.merge(self.credentials_secret);
         config.pairing_token.merge(self.pairing_token);
         config.interfaces_directory.merge(self.interfaces_dir);
