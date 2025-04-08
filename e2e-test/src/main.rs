@@ -19,7 +19,6 @@
 use std::str::FromStr;
 use std::{env::VarError, future::Future, sync::Arc};
 
-use astarte_device_sdk::aggregate::AstarteObject;
 use astarte_device_sdk::transport::grpc::store::GrpcStore;
 use astarte_device_sdk::{prelude::*, DeviceClient, Value};
 use eyre::{bail, ensure, eyre, Context, OptionExt};
@@ -151,7 +150,7 @@ async fn e2e_test(
     send_device_data(&node, &api, &barrier).await?;
 
     // Receive the server data
-    receive_server_data(&mut node, &api).await?;
+    receive_server_data(&mut node, &api, &barrier).await?;
 
     // Extend the node interfaces
     let additional_interfaces = additional_interfaces()?;
@@ -163,9 +162,6 @@ async fn e2e_test(
         .map(|i| i.to_string())
         .collect_vec();
     remove_node_interfaces(&mut node, &api, &barrier, to_remove).await?;
-
-    // test storing and retrieving properties
-    get_props(&mut node, &api, &barrier).await?;
 
     // Disconnect the message hub and cleanup
     node.close().await?;
@@ -197,7 +193,7 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
         .send_object(
             DeviceAggregate::name(),
             DeviceAggregate::path(),
-            AstarteObject::default(),
+            DeviceAggregate::default().into_object()?,
         )
         .await?;
 
@@ -269,6 +265,51 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
     })
     .await?;
 
+    debug!("retrieving property values given the property name and the specific endpoint");
+    let mut data = DeviceProperty::default().into_object()?;
+    for &endpoint in ENDPOINTS {
+        let client = node.client.clone();
+        let handle = tokio::spawn(async move {
+            client
+                .property(DeviceProperty::name(), &format!("/{endpoint}"))
+                .await?
+                .ok_or_eyre(format!("property endpoint {endpoint} not stored"))
+        });
+        barrier.wait().await;
+        let stored_prop = handle.await??;
+
+        let exp_value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
+
+        assert_eq!(exp_value, stored_prop);
+    }
+
+    debug!("retrieving property values associated to all endpoints given the property name");
+    let mut data = DeviceProperty::default().into_object()?;
+    let client = node.client.clone();
+    let handle = tokio::spawn(async move { client.interface_props(DeviceProperty::name()).await });
+    barrier.wait().await;
+    let stored_prop = handle.await??;
+    for prop in stored_prop {
+        let exp_value = data
+            .remove(prop.path.trim_start_matches('/'))
+            .ok_or_eyre(format!("endpoint not found for prop {:#?}", prop))?;
+        assert_eq!(exp_value, prop.value);
+    }
+
+    debug!("retrieving all device property values");
+    let mut data = DeviceProperty::default().into_object()?;
+    let client = node.client.clone();
+    let handle = tokio::spawn(async move { client.device_props().await });
+    barrier.wait().await;
+    let stored_prop = handle.await??;
+    for prop in stored_prop {
+        let exp_value = data
+            .remove(prop.path.trim_start_matches('/'))
+            .ok_or_eyre("endpoint not found")?
+            .clone();
+        assert_eq!(exp_value, prop.value);
+    }
+
     debug!("unsetting DeviceProperty");
     let data = DeviceProperty::default().into_object()?;
     for &endpoint in ENDPOINTS {
@@ -293,120 +334,7 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
 }
 
 #[instrument(skip_all)]
-async fn get_props(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre::Result<()> {
-    debug!("sending DeviceProperty and receive ServerProperty");
-    let data_dp = DeviceProperty::default().into_object()?;
-    let data_sp = ServerProperty::default().into_object()?;
-
-    // send device-owned properties
-    for &endpoint in ENDPOINTS {
-        let value = data_dp
-            .get(endpoint)
-            .ok_or_eyre("endpoint not found")?
-            .clone();
-
-        send_prop(node, barrier, |client| async move {
-            client
-                .send(DeviceProperty::name(), &format!("/{endpoint}"), value)
-                .await?;
-
-            Ok(())
-        })
-        .await?;
-    }
-
-    // receive server-owned properties
-    for (k, v) in data_sp.iter() {
-        api.send_individual(ServerProperty::name(), &k, &v).await?;
-
-        let event = node.recv().await?;
-
-        assert_eq!(event.interface, ServerProperty::name());
-        assert_eq!(event.path, format!("/{k}"));
-
-        let data = event.data.as_individual().ok_or_eyre("not an object")?;
-        assert_eq!(data, v);
-    }
-
-    debug!("retrieving property values given the property name and the specific endpoint");
-    for &endpoint in ENDPOINTS {
-        let client = node.client.clone();
-        let handle = tokio::spawn(async move {
-            client
-                .property(DeviceProperty::name(), &format!("/{endpoint}"))
-                .await?
-                .ok_or_eyre(format!("property endpoint {endpoint} not stored"))
-        });
-        barrier.wait().await;
-        let stored_prop = handle.await??;
-
-        let exp_value = data_dp
-            .get(endpoint)
-            .ok_or_eyre("endpoint not found")?
-            .clone();
-
-        assert_eq!(exp_value, stored_prop);
-    }
-
-    debug!("retrieving property values associated to all endpoints given the property name");
-    let client = node.client.clone();
-    let handle = tokio::spawn(async move { client.interface_props(DeviceProperty::name()).await });
-    barrier.wait().await;
-    let stored_prop = handle.await??;
-    // TODO: fix here - it seems the stored_prop below contain all info of data_dp
-    debug!("stored_prop: {stored_prop:?}");
-    debug!("data_dp: {data_dp:?}");
-    assert_eq!(stored_prop.len(), data_dp.len());
-    for prop in stored_prop {
-        let exp_value = data_dp
-            .get(&prop.path)
-            .ok_or_eyre("endpoint not found")?
-            .clone();
-        assert_eq!(exp_value, prop.value);
-    }
-
-    // TODO: spawn task as above
-    debug!("retrieving all device property values");
-    let stored_prop = node.client.device_props().await?;
-    assert_eq!(stored_prop.len(), data_dp.len());
-    for prop in stored_prop {
-        let exp_value = data_dp
-            .get(&prop.path)
-            .ok_or_eyre("endpoint not found")?
-            .clone();
-        assert_eq!(exp_value, prop.value);
-    }
-
-    // TODO: distinguish when retrieving all Device owned props, server owned or both types
-
-    debug!("unsetting DeviceProperty");
-    let data = DeviceProperty::default().into_object()?;
-    for &endpoint in ENDPOINTS {
-        ensure!(data.get(endpoint).is_some(), "endpoint not found");
-
-        send_prop(node, barrier, |client| async move {
-            client
-                .unset(DeviceProperty::name(), &format!("/{endpoint}"))
-                .await?;
-
-            Ok(())
-        })
-        .await?;
-    }
-
-    retry(10, || async move {
-        let data = api.property(DeviceProperty::name()).await?;
-        ensure!(data.is_empty(), "property not unsetted {data:?}");
-
-        Ok(())
-    })
-    .await?;
-
-    Ok(())
-}
-
-#[instrument(skip_all)]
-async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
+async fn receive_server_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre::Result<()> {
     debug!("checking ServerAggregate");
     api.send_interface(
         ServerAggregate::name(),
@@ -449,6 +377,20 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
 
         let data = event.data.as_individual().ok_or_eyre("not an object")?;
         assert_eq!(data, v);
+    }
+
+    debug!("retrieving all server property values");
+    let mut data = ServerProperty::default().into_object()?;
+    let client = node.client.clone();
+    let handle = tokio::spawn(async move { client.server_props().await });
+    barrier.wait().await;
+    let stored_prop = handle.await??;
+    for prop in stored_prop {
+        let exp_value = data
+            .remove(prop.path.trim_start_matches('/'))
+            .ok_or_eyre("endpoint not found")?
+            .clone();
+        assert_eq!(exp_value, prop.value);
     }
 
     debug!("checking unset for ServerProperty");

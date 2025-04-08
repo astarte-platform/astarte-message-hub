@@ -1249,7 +1249,7 @@ mod test {
         // get all properties when no values are available
         let prop_filter = StoredPropertiesFilter { ownership: None };
 
-        let mut req_astarte_message = Request::new(prop_filter.clone());
+        let mut req_astarte_message = Request::new(prop_filter);
         // it is necessary to add the NodeId extensions otherwise sending is not allowed
         req_astarte_message
             .extensions_mut()

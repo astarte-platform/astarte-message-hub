@@ -87,6 +87,10 @@ impl DeviceAggregate {
     pub const fn path() -> &'static str {
         "/sendor_1"
     }
+
+    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+        self.0.try_into()
+    }
 }
 
 pub const DEVICE_DATASTREAM: &str =
@@ -241,7 +245,7 @@ impl AdditionalServerDatastream {
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, IntoAstarteObject)]
-#[astarte_object(rename_all = "camelCase")]
+#[astarte_object(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub struct Data {
     double_endpoint: f64,

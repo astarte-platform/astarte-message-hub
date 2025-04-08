@@ -130,7 +130,7 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 [[package]]
 name = "astarte-device-sdk"
 version = "0.9.6"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#1bad2a0bed1eb538f91162fdfa8d6251d07802f9"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#3dc0a358217aec6dd8db5482976fcd15b1be0a20"
 dependencies = [
  "astarte-device-sdk-derive",
  "astarte-message-hub-proto",
@@ -166,7 +166,7 @@ dependencies = [
 [[package]]
 name = "astarte-device-sdk-derive"
 version = "0.9.6"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#1bad2a0bed1eb538f91162fdfa8d6251d07802f9"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#3dc0a358217aec6dd8db5482976fcd15b1be0a20"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -176,7 +176,7 @@ dependencies = [
 [[package]]
 name = "astarte-device-sdk-mock"
 version = "0.9.6"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#1bad2a0bed1eb538f91162fdfa8d6251d07802f9"
+source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=feat/get-properties#3dc0a358217aec6dd8db5482976fcd15b1be0a20"
 dependencies = [
  "astarte-device-sdk",
  "chrono",
