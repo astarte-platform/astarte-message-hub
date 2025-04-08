@@ -410,6 +410,7 @@ where
 
 /// Retrieve information from a [`Request`]
 pub trait RequestExt {
+    #[allow(clippy::result_large_err)]
     fn get_node_id(&self) -> Result<&NodeId, Status>;
 }
 
