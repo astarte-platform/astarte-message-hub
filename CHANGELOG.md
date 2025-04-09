@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Implement methods to retrieve Astarte properties
+  [#329](https://github.com/astarte-platform/astarte-message-hub/pull/329)
+
 ### Changed
 
 - Bump MSRV to 1.78.0.
