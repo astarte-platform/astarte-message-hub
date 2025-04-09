@@ -106,6 +106,19 @@ pub enum AstarteMessageHubError {
     /// Received an invalid ownership enumeration field
     #[error("received an invalid ownership enumeration field, {0}")]
     InvalidProtoOwnership(#[source] UnknownEnumValue),
+
+    /// Interface not present in the node introspection
+    #[error(
+        "nterface {} not present in the introspection of node {}",
+        interface,
+        node_id
+    )]
+    MissingInterface {
+        /// The interface name
+        interface: String,
+        /// The node ID
+        node_id: Uuid,
+    },
 }
 
 impl From<AstarteMessageHubError> for Status {
@@ -129,7 +142,11 @@ impl From<AstarteMessageHubError> for Status {
             | AstarteMessageHubError::Proto(_)
             | AstarteMessageHubError::Uuid(_)
             | AstarteMessageHubError::NodeId(_)
-            | AstarteMessageHubError::InvalidProtoOwnership(_) => Code::InvalidArgument,
+            | AstarteMessageHubError::InvalidProtoOwnership(_)
+            | AstarteMessageHubError::MissingInterface {
+                interface: _,
+                node_id: _,
+            } => Code::InvalidArgument,
         };
 
         Status::new(code, value.to_string())
