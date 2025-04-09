@@ -27,6 +27,7 @@ use std::path::PathBuf;
 use astarte_device_sdk::interface::error::InterfaceError;
 use astarte_device_sdk::introspection::AddInterfaceError;
 use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
+use astarte_message_hub_proto::prost::UnknownEnumValue;
 use log::{debug, error};
 use tonic::{Code, Status};
 use uuid::Uuid;
@@ -101,6 +102,10 @@ pub enum AstarteMessageHubError {
     /// Couldn't read the configuration
     #[error("coudln't read the configuration")]
     Config(#[from] ConfigError),
+
+    /// Received an invalid ownership enumeration field
+    #[error("received an invalid ownership enumeration field, {0}")]
+    InvalidProtoOwnership(#[source] UnknownEnumValue),
 }
 
 impl From<AstarteMessageHubError> for Status {
@@ -123,7 +128,8 @@ impl From<AstarteMessageHubError> for Status {
             | AstarteMessageHubError::Timestamp(_)
             | AstarteMessageHubError::Proto(_)
             | AstarteMessageHubError::Uuid(_)
-            | AstarteMessageHubError::NodeId(_) => Code::InvalidArgument,
+            | AstarteMessageHubError::NodeId(_)
+            | AstarteMessageHubError::InvalidProtoOwnership(_) => Code::InvalidArgument,
         };
 
         Status::new(code, value.to_string())

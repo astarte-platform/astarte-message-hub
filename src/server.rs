@@ -28,12 +28,13 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use astarte_device_sdk::interface::def::Ownership;
 use astarte_device_sdk::properties::PropAccess;
-use astarte_device_sdk::transport::grpc::convert::map_stored_properties_to_proto;
+use astarte_device_sdk::store::StoredProp;
 use astarte_device_sdk::Interface;
 use astarte_message_hub_proto::message_hub_server::MessageHub;
 use astarte_message_hub_proto::{
-    AstarteMessage, InterfacesJson, InterfacesName, MessageHubEvent, Node, Property,
+    AstarteData, AstarteMessage, InterfacesJson, InterfacesName, MessageHubEvent, Node, Property,
     PropertyIdentifier, StoredProperties, StoredPropertiesFilter,
 };
 use hyper::{http, Uri};
@@ -181,14 +182,28 @@ where
         &self,
         filter: StoredPropertiesFilter,
     ) -> Resp<StoredProperties> {
-        let props = match filter.ownership {
-            // device-owned properties
-            Some(0) => self.astarte_handler.device_props().await?,
-            // server-owned properties
-            Some(1) => self.astarte_handler.server_props().await?,
-            // all props
-            None => self.astarte_handler.all_props().await?,
-            Some(n) => unreachable!("{n} is not a valid ownership value"),
+        // retrieve all props if no filter is specified
+        let Some(owenrship) = filter.ownership else {
+            debug!("get all properties");
+            let props = self.astarte_handler.all_props().await?;
+            let props = map_stored_properties_to_proto(props);
+
+            return Ok(Response::new(props));
+        };
+
+        let props = match owenrship.try_into() {
+            Ok(astarte_message_hub_proto::Ownership::Device) => {
+                debug!("get device properties");
+                self.astarte_handler.device_props().await?
+            }
+            Ok(astarte_message_hub_proto::Ownership::Server) => {
+                debug!("get server properties");
+                self.astarte_handler.server_props().await?
+            }
+            Err(err) => {
+                error!("Invalid ownership enum value: {err}");
+                return Err(AstarteMessageHubError::InvalidProtoOwnership(err));
+            }
         };
 
         let props = map_stored_properties_to_proto(props);
@@ -203,17 +218,55 @@ where
         } = prop_req;
 
         // retrieve the property value
-        let prop = self
+        let data = self
             .astarte_handler
             .property(&interface_name, &path)
             .await?
-            .map(|v| Property {
-                path: path.clone(),
-                data: Some(v.into()),
-            })
-            .unwrap_or(Property { path, data: None });
+            .map(AstarteData::from);
+
+        let prop = Property { path, data };
 
         Ok(Response::new(prop))
+    }
+}
+
+/// Map a list of stored properties to the respective protobuf version
+///
+/// Unset values will result in a conversion error.
+fn map_stored_properties_to_proto(
+    props: Vec<StoredProp>,
+) -> astarte_message_hub_proto::StoredProperties {
+    let interface_properties =
+        props
+            .into_iter()
+            .fold(HashMap::new(), |mut interface_properties, prop| {
+                let entry_prop = interface_properties
+                    .entry(prop.interface)
+                    .or_insert_with(|| {
+                        let ownership = match prop.ownership {
+                            Ownership::Device => astarte_message_hub_proto::Ownership::Device,
+                            Ownership::Server => astarte_message_hub_proto::Ownership::Server,
+                        };
+
+                        astarte_message_hub_proto::InterfaceProperties {
+                            ownership: ownership.into(),
+                            version_major: prop.interface_major,
+                            properties: vec![],
+                        }
+                    });
+
+                let property = astarte_message_hub_proto::Property {
+                    path: prop.path,
+                    data: Some(prop.value.into()),
+                };
+
+                entry_prop.properties.push(property);
+
+                interface_properties
+            });
+
+    astarte_message_hub_proto::StoredProperties {
+        interface_properties,
     }
 }
 
@@ -408,21 +461,30 @@ where
     }
 }
 
+#[derive(thiserror::Error, Debug, displaydoc::Display)]
+/// Request missing node id
+pub(crate) struct NodeIdError;
+
+impl From<NodeIdError> for Status {
+    fn from(value: NodeIdError) -> Self {
+        Status::failed_precondition(value.to_string())
+    }
+}
+
 /// Retrieve information from a [`Request`]
-pub trait RequestExt {
-    #[allow(clippy::result_large_err)]
-    fn get_node_id(&self) -> Result<&NodeId, Status>;
+pub(crate) trait RequestExt {
+    fn get_node_id(&self) -> Result<&NodeId, NodeIdError>;
 }
 
 impl<R> RequestExt for Request<R> {
-    fn get_node_id(&self) -> Result<&NodeId, Status> {
+    fn get_node_id(&self) -> Result<&NodeId, NodeIdError> {
         if let Some(node_id) = self.extensions().get::<NodeId>() {
             trace!("node id {node_id} checked");
             return Ok(node_id);
         }
 
         error!("missing node id");
-        Err(Status::failed_precondition("missing node id"))
+        Err(NodeIdError)
     }
 }
 
