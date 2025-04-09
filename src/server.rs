@@ -1191,80 +1191,6 @@ mod test {
             .once()
             .returning(|_, _| Box::pin(async { Ok(Some(AstarteType::Boolean(true))) }));
 
-        // expect all properties when no prop value is available
-        mock_astarte
-            .expect_all_props()
-            .once()
-            .returning(|| Box::pin(async { Ok(vec![]) }));
-
-        let p1_dev = StoredProp {
-            interface: "io.demo.Values1".to_string(),
-            path: "/1/test1".to_string(),
-            value: AstarteType::Integer(1),
-            interface_major: 0,
-            ownership: astarte_device_sdk::interface::def::Ownership::Device,
-        };
-        let p2_dev = StoredProp {
-            interface: "io.demo.Values1".to_string(),
-            path: "/1/test2".to_string(),
-            value: AstarteType::Boolean(true),
-            interface_major: 0,
-            ownership: astarte_device_sdk::interface::def::Ownership::Device,
-        };
-        let p1_serv = StoredProp {
-            interface: "io.demo.Values2".to_string(),
-            path: "/2/test1".to_string(),
-            value: AstarteType::Boolean(true),
-            interface_major: 0,
-            ownership: astarte_device_sdk::interface::def::Ownership::Server,
-        };
-
-        let all_props = vec![p1_dev.clone(), p2_dev.clone(), p1_serv.clone()];
-        let dev_props = vec![p1_dev, p2_dev];
-        let serv_props = vec![p1_serv];
-
-        // expect all properties
-        mock_astarte
-            .expect_all_props()
-            .once()
-            .return_once(|| Box::pin(async move { Ok(all_props) }));
-
-        // expect all device properties
-        let dev_props_cl = dev_props.clone();
-        mock_astarte
-            .expect_device_props()
-            .once()
-            .return_once(|| Box::pin(async move { Ok(dev_props_cl) }));
-
-        // expect all server properties
-        let serv_props_cl = serv_props.clone();
-        mock_astarte
-            .expect_server_props()
-            .once()
-            .return_once(|| Box::pin(async move { Ok(serv_props_cl) }));
-
-        // expect Internal status code when get_properties is called with an unknown interface
-        mock_astarte
-            .expect_interface_props()
-            .once()
-            .return_once(|_| {
-                Box::pin(async move {
-                    Err(Error::InterfaceNotFound {
-                        name: "io.demo.Values3".to_string(),
-                    })
-                })
-            });
-
-        // expect get_properties
-        mock_astarte
-            .expect_interface_props()
-            .once()
-            .return_once(|_| Box::pin(async move { Ok(dev_props) }));
-        mock_astarte
-            .expect_interface_props()
-            .once()
-            .return_once(|_| Box::pin(async move { Ok(serv_props) }));
-
         let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, "");
 
@@ -1308,6 +1234,66 @@ mod test {
             astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::Boolean(true)),
         };
         assert_eq!(prop_value_res, exp);
+    }
+
+    #[tokio::test]
+    async fn test_get_all_properties() {
+        let mut mock_astarte = MockAstarteHandler::new();
+
+        let p1_dev = StoredProp {
+            interface: "io.demo.Values1".to_string(),
+            path: "/1/test1".to_string(),
+            value: AstarteType::Integer(1),
+            interface_major: 0,
+            ownership: astarte_device_sdk::interface::def::Ownership::Device,
+        };
+        let p2_dev = StoredProp {
+            interface: "io.demo.Values1".to_string(),
+            path: "/1/test2".to_string(),
+            value: AstarteType::Boolean(true),
+            interface_major: 0,
+            ownership: astarte_device_sdk::interface::def::Ownership::Device,
+        };
+        let p1_serv = StoredProp {
+            interface: "io.demo.Values2".to_string(),
+            path: "/2/test1".to_string(),
+            value: AstarteType::Boolean(true),
+            interface_major: 0,
+            ownership: astarte_device_sdk::interface::def::Ownership::Server,
+        };
+
+        let all_props = vec![p1_dev.clone(), p2_dev.clone(), p1_serv.clone()];
+        let dev_props = vec![p1_dev, p2_dev];
+        let serv_props = vec![p1_serv];
+
+        // expect all properties when no prop value is available
+        mock_astarte
+            .expect_all_props()
+            .once()
+            .returning(|| Box::pin(async { Ok(vec![]) }));
+
+        // expect all properties
+        mock_astarte
+            .expect_all_props()
+            .once()
+            .return_once(|| Box::pin(async move { Ok(all_props) }));
+
+        // expect all device properties
+        let dev_props_cl = dev_props.clone();
+        mock_astarte
+            .expect_device_props()
+            .once()
+            .return_once(|| Box::pin(async move { Ok(dev_props_cl) }));
+
+        // expect all server properties
+        let serv_props_cl = serv_props.clone();
+        mock_astarte
+            .expect_server_props()
+            .once()
+            .return_once(|| Box::pin(async move { Ok(serv_props_cl) }));
+
+        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
+            AstarteMessageHub::new(mock_astarte, "");
 
         // get all properties when no values are available
         let prop_filter = StoredPropertiesFilter { ownership: None };
@@ -1402,6 +1388,61 @@ mod test {
                     panic!("unexpected interface: {}", iface);
                 }
             });
+    }
+
+    #[tokio::test]
+    async fn test_get_properties() {
+        let mut mock_astarte = MockAstarteHandler::new();
+
+        let p1_dev = StoredProp {
+            interface: "io.demo.Values1".to_string(),
+            path: "/1/test1".to_string(),
+            value: AstarteType::Integer(1),
+            interface_major: 0,
+            ownership: astarte_device_sdk::interface::def::Ownership::Device,
+        };
+        let p2_dev = StoredProp {
+            interface: "io.demo.Values1".to_string(),
+            path: "/1/test2".to_string(),
+            value: AstarteType::Boolean(true),
+            interface_major: 0,
+            ownership: astarte_device_sdk::interface::def::Ownership::Device,
+        };
+        let p1_serv = StoredProp {
+            interface: "io.demo.Values2".to_string(),
+            path: "/2/test1".to_string(),
+            value: AstarteType::Boolean(true),
+            interface_major: 0,
+            ownership: astarte_device_sdk::interface::def::Ownership::Server,
+        };
+
+        let dev_props = vec![p1_dev, p2_dev];
+        let serv_props = vec![p1_serv];
+
+        // expect Internal status code when get_properties is called with an unknown interface
+        mock_astarte
+            .expect_interface_props()
+            .once()
+            .return_once(|_| {
+                Box::pin(async move {
+                    Err(Error::InterfaceNotFound {
+                        name: "io.demo.Values3".to_string(),
+                    })
+                })
+            });
+
+        // expect get_properties
+        mock_astarte
+            .expect_interface_props()
+            .once()
+            .return_once(|_| Box::pin(async move { Ok(dev_props) }));
+        mock_astarte
+            .expect_interface_props()
+            .once()
+            .return_once(|_| Box::pin(async move { Ok(serv_props) }));
+
+        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
+            AstarteMessageHub::new(mock_astarte, "");
 
         // get_properties with empty list
         let ifaces_names = InterfacesName { names: vec![] };
