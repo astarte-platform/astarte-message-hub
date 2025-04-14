@@ -16,9 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashMap;
-
-use astarte_device_sdk::{types::AstarteType, AstarteAggregate, Error};
+use astarte_device_sdk::{aggregate::AstarteObject, IntoAstarteObject};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::{base64_decode, timestamp_from_rfc3339, Timestamp};
@@ -89,11 +87,9 @@ impl DeviceAggregate {
     pub const fn path() -> &'static str {
         "/sendor_1"
     }
-}
 
-impl AstarteAggregate for DeviceAggregate {
-    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
-        self.0.astarte_aggregate()
+    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+        self.0.try_into()
     }
 }
 
@@ -112,11 +108,9 @@ impl DeviceDatastream {
     pub const fn interface() -> &'static str {
         DEVICE_DATASTREAM
     }
-}
 
-impl AstarteAggregate for DeviceDatastream {
-    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
-        self.0.astarte_aggregate()
+    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+        self.0.try_into()
     }
 }
 
@@ -135,11 +129,9 @@ impl DeviceProperty {
     pub const fn interface() -> &'static str {
         DEVICE_PROPERTY
     }
-}
 
-impl AstarteAggregate for DeviceProperty {
-    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
-        self.0.astarte_aggregate()
+    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+        self.0.try_into()
     }
 }
 
@@ -162,11 +154,9 @@ impl ServerAggregate {
     pub const fn path() -> &'static str {
         "/sendor_1"
     }
-}
 
-impl AstarteAggregate for ServerAggregate {
-    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
-        self.0.astarte_aggregate()
+    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+        self.0.try_into()
     }
 }
 
@@ -185,11 +175,9 @@ impl ServerDatastream {
     pub const fn interface() -> &'static str {
         SERVER_DATASTREAM
     }
-}
 
-impl AstarteAggregate for ServerDatastream {
-    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
-        self.0.astarte_aggregate()
+    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+        self.0.try_into()
     }
 }
 
@@ -208,11 +196,9 @@ impl ServerProperty {
     pub const fn interface() -> &'static str {
         SERVER_PROPERTY
     }
-}
 
-impl AstarteAggregate for ServerProperty {
-    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
-        self.0.astarte_aggregate()
+    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+        self.0.try_into()
     }
 }
 
@@ -233,11 +219,9 @@ impl AdditionalDeviceDatastream {
     pub const fn interface() -> &'static str {
         ADDITIONAL_DEVICE_DATASTREAM
     }
-}
 
-impl AstarteAggregate for AdditionalDeviceDatastream {
-    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
-        self.0.astarte_aggregate()
+    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+        self.0.try_into()
     }
 }
 
@@ -260,13 +244,8 @@ impl AdditionalServerDatastream {
     }
 }
 
-impl AstarteAggregate for AdditionalServerDatastream {
-    fn astarte_aggregate(self) -> Result<HashMap<String, AstarteType>, Error> {
-        self.0.astarte_aggregate()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, AstarteAggregate, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, IntoAstarteObject)]
+#[astarte_object(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub struct Data {
     double_endpoint: f64,

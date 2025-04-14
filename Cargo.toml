@@ -69,9 +69,9 @@ serial_test = { workspace = true }
 tempfile = { workspace = true }
 
 [workspace.dependencies]
-astarte-device-sdk = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust", rev = "e8469c09100be2ad5446a7eb3bee359ee8314182" }
-astarte-device-sdk-mock = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust", rev = "e8469c09100be2ad5446a7eb3bee359ee8314182" }
-astarte-message-hub-proto = { git = "https://github.com/astarte-platform/astarte-message-hub-proto.git", rev = "5ff0672d8fdc8cba5a2ff023895ae505d75c3d1a" }
+astarte-device-sdk = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust.git", rev = "c2ee721a22cf69f5951752ac9827f104aa372cc8" }
+astarte-device-sdk-mock = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust.git", rev = "c2ee721a22cf69f5951752ac9827f104aa372cc8" }
+astarte-message-hub-proto = { git = "https://github.com/astarte-platform/astarte-message-hub-proto.git", rev = "8e8198de9589c606e63ada8ec104bace81ae9cfa" }
 async-trait = "0.1.80"
 axum = "0.7.5"
 base64 = "0.22.0"
@@ -82,11 +82,11 @@ displaydoc = "0.2.5"
 env_logger = "0.11.3"
 eyre = "0.6.12"
 futures = "0.3.30"
-hyper = "0.14.28"
+hyper = "1.5.1"
 itertools = "0.12.1"
 log = "0.4.21"
 mockall = "0.12.1"
-pbjson-types = "0.6.0"
+pbjson-types = "0.7.0"
 prost = "0.12.4"
 reqwest = "0.12.3"
 serde = "1.0.198"
@@ -99,9 +99,9 @@ tokio = "1.37.0"
 tokio-stream = "0.1.15"
 tokio-util = "0.7.10"
 toml = "0.8.12"
-tonic = "0.11.0"
+tonic = "0.12.3"
 tower = "0.4.13"
-tower-http = "0.4.4"
+tower-http = "0.6.2"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 uuid = "1.8.0"

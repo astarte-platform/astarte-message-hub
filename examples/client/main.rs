@@ -20,7 +20,7 @@
 
 //! Astarte Message Hub client example, will send the uptime every 3 seconds to Astarte.
 
-use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
+use astarte_device_sdk::builder::DeviceBuilder;
 use astarte_device_sdk::client::{ClientDisconnect, RecvError};
 use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::transport::grpc::GrpcConfig;
@@ -77,10 +77,9 @@ async fn main() -> Result<(), DynError> {
         .store(MemoryStore::new())
         .interface_str(DEVICE_DATASTREAM)?
         .interface_str(SERVER_DATASTREAM)?
-        .connect(grpc_cfg)
-        .await?
+        .connection(grpc_cfg)
         .build()
-        .await;
+        .await?;
 
     let mut tasks = JoinSet::<Result<(), DynError>>::new();
 
