@@ -108,11 +108,7 @@ pub enum AstarteMessageHubError {
     InvalidProtoOwnership(#[source] UnknownEnumValue),
 
     /// Interface not present in the node introspection
-    #[error(
-        "nterface {} not present in the introspection of node {}",
-        interface,
-        node_id
-    )]
+    #[error("interface {interface} not present in the introspection of node {node_id}")]
     MissingInterface {
         /// The interface name
         interface: String,
@@ -143,10 +139,7 @@ impl From<AstarteMessageHubError> for Status {
             | AstarteMessageHubError::Uuid(_)
             | AstarteMessageHubError::NodeId(_)
             | AstarteMessageHubError::InvalidProtoOwnership(_)
-            | AstarteMessageHubError::MissingInterface {
-                interface: _,
-                node_id: _,
-            } => Code::InvalidArgument,
+            | AstarteMessageHubError::MissingInterface { .. } => Code::InvalidArgument,
         };
 
         Status::new(code, value.to_string())

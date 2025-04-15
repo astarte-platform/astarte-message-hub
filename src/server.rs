@@ -176,7 +176,7 @@ where
                 .astarte_handler
                 .interface_props(node_id, &iface)
                 .await?;
-            props.extend_from_slice(&iface_props);
+            props.extend(iface_props);
         }
 
         let props = map_stored_properties_to_proto(props);
