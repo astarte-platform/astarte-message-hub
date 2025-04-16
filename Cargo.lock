@@ -130,7 +130,7 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 [[package]]
 name = "astarte-device-sdk"
 version = "0.9.6"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=refactor/property#96ecb4d77c4c87cd42f7a31b827e45b56bc4157f"
+source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust.git?rev=ca0325e0db334e1755fa1e56b14ae31658a4b2c7#ca0325e0db334e1755fa1e56b14ae31658a4b2c7"
 dependencies = [
  "astarte-device-sdk-derive",
  "astarte-message-hub-proto",
@@ -166,7 +166,7 @@ dependencies = [
 [[package]]
 name = "astarte-device-sdk-derive"
 version = "0.9.6"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=refactor/property#96ecb4d77c4c87cd42f7a31b827e45b56bc4157f"
+source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust.git?rev=ca0325e0db334e1755fa1e56b14ae31658a4b2c7#ca0325e0db334e1755fa1e56b14ae31658a4b2c7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -176,7 +176,7 @@ dependencies = [
 [[package]]
 name = "astarte-device-sdk-mock"
 version = "0.9.6"
-source = "git+https://github.com/rgallor/astarte-device-sdk-rust.git?branch=refactor/property#96ecb4d77c4c87cd42f7a31b827e45b56bc4157f"
+source = "git+https://github.com/astarte-platform/astarte-device-sdk-rust.git?rev=ca0325e0db334e1755fa1e56b14ae31658a4b2c7#ca0325e0db334e1755fa1e56b14ae31658a4b2c7"
 dependencies = [
  "astarte-device-sdk",
  "chrono",

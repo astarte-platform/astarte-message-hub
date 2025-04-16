@@ -224,9 +224,7 @@ where
             .await?
             .map(AstarteData::from);
 
-        let prop = AstartePropertyIndividual { data };
-
-        Ok(Response::new(prop))
+        Ok(Response::new(AstartePropertyIndividual { data }))
     }
 }
 
