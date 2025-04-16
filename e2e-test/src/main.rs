@@ -190,10 +190,11 @@ where
 async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Result<()> {
     debug!("sending DeviceAggregate");
     node.client
-        .send_object(
+        .send_object_with_timestamp(
             DeviceAggregate::name(),
             DeviceAggregate::path(),
             DeviceAggregate::default().into_object()?,
+            chrono::Utc::now(),
         )
         .await?;
 
@@ -218,7 +219,12 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
 
         node.client
-            .send(DeviceDatastream::name(), &format!("/{endpoint}"), value)
+            .send_with_timestamp(
+                DeviceDatastream::name(),
+                &format!("/{endpoint}"),
+                value,
+                chrono::Utc::now(),
+            )
             .await?;
 
         barrier.wait().await;
@@ -467,10 +473,11 @@ async fn extend_node_interfaces(
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
 
         node.client
-            .send(
+            .send_with_timestamp(
                 AdditionalDeviceDatastream::name(),
                 &format!("/{endpoint}"),
                 value,
+                chrono::Utc::now(),
             )
             .await?;
 
