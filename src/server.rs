@@ -737,7 +737,10 @@ mod test {
     use astarte_device_sdk::AstarteType;
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::astarte_message::Payload;
-    use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
+    use astarte_message_hub_proto::{
+        AstarteData, AstarteDatastreamIndividual, AstarteDatastreamObject,
+        AstartePropertyIndividual,
+    };
     use async_trait::async_trait;
     use hyper::{Response, StatusCode};
     use mockall::mock;
@@ -779,6 +782,28 @@ mod test {
                 &self,
                 data: &AstarteMessage
             ) -> Result<(), AstarteMessageHubError>;
+
+            async fn publish_individual(
+                &self,
+                data: AstarteDatastreamIndividual,
+                interface_name: &str,
+                path: &str,
+            ) -> Result<(), AstarteMessageHubError>;
+
+            async fn publish_object(
+                &self,
+                object_data: AstarteDatastreamObject,
+                interface_name: &str,
+                path: &str,
+            ) -> Result<(), AstarteMessageHubError>;
+
+            async fn publish_property(
+                &self,
+                data: AstartePropertyIndividual,
+                interface_name: &str,
+                path: &str,
+            ) -> Result<(), AstarteMessageHubError>;
+
         }
 
         #[async_trait]

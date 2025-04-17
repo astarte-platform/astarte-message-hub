@@ -34,7 +34,7 @@ use astarte_device_sdk::{
     Error as AstarteError, Interface, Value,
 };
 use astarte_message_hub_proto::{
-    astarte_message::Payload, AstarteDatastreamIndividual, AstarteDatastreamObject, AstarteMessage,
+    AstarteDatastreamIndividual, AstarteDatastreamObject, AstarteMessage,
     AstartePropertyIndividual, MessageHubEvent,
 };
 use async_trait::async_trait;
@@ -181,75 +181,6 @@ impl DevicePubSub {
         }
 
         Ok(())
-    }
-
-    /// Publish an [`AstarteDatastreamIndividual`] on specific interface and path.
-    async fn publish_individual(
-        &self,
-        data: AstarteDatastreamIndividual,
-        interface_name: &str,
-        path: &str,
-    ) -> Result<(), AstarteMessageHubError> {
-        let astarte_data = data.data.ok_or_else(|| {
-            AstarteMessageHubError::AstarteInvalidData("Invalid individual data".to_string())
-        })?;
-
-        if let Some(timestamp) = data.timestamp {
-            let timestamp = timestamp
-                .try_into()
-                .map_err(AstarteMessageHubError::Timestamp)?;
-            self.client
-                .send_with_timestamp(interface_name, path, astarte_data, timestamp)
-                .await
-        } else {
-            self.client.send(interface_name, path, astarte_data).await
-        }
-        .map_err(AstarteMessageHubError::Astarte)
-    }
-
-    /// Publish an [`AstarteDatastreamObject`] on specific interface and path.
-    async fn publish_object(
-        &self,
-        object_data: AstarteDatastreamObject,
-        interface_name: &str,
-        path: &str,
-    ) -> Result<(), AstarteMessageHubError> {
-        let timestamp = object_data.timestamp;
-        let aggr = AstarteObject::try_from(object_data)?;
-
-        if let Some(timestamp) = timestamp {
-            let timestamp = timestamp
-                .try_into()
-                .map_err(AstarteMessageHubError::Timestamp)?;
-            self.client
-                .send_object_with_timestamp(interface_name, path, aggr, timestamp)
-                .await
-        } else {
-            self.client.send_object(interface_name, path, aggr).await
-        }
-        .map_err(AstarteMessageHubError::Astarte)
-    }
-
-    /// Publish an [`AstartePropertyIndividual`] on specific interface and path.
-    async fn publish_property(
-        &self,
-        data: AstartePropertyIndividual,
-        interface_name: &str,
-        path: &str,
-    ) -> Result<(), AstarteMessageHubError> {
-        match data.data {
-            Some(data) => self
-                .client
-                .send(interface_name, path, data)
-                .await
-                .map_err(AstarteMessageHubError::Astarte),
-            // unset the property
-            None => self
-                .client
-                .unset(interface_name, path)
-                .await
-                .map_err(AstarteMessageHubError::Astarte),
-        }
     }
 
     /// Send all the properties in the attached node introspection.
@@ -489,31 +420,72 @@ impl AstarteSubscriber for DevicePubSub {
 
 #[async_trait]
 impl AstartePublisher for DevicePubSub {
-    async fn publish(
+    /// Publish an [`AstarteDatastreamIndividual`] on specific interface and path.
+    async fn publish_individual(
         &self,
-        astarte_message: &AstarteMessage,
+        data: AstarteDatastreamIndividual,
+        interface_name: &str,
+        path: &str,
     ) -> Result<(), AstarteMessageHubError> {
-        let astarte_message_payload = astarte_message.clone().payload.ok_or_else(|| {
-            AstarteMessageHubError::AstarteInvalidData("Invalid payload".to_string())
+        let astarte_data = data.data.ok_or_else(|| {
+            AstarteMessageHubError::AstarteInvalidData("Invalid individual data".to_string())
         })?;
 
-        match astarte_message_payload {
-            Payload::DatastreamIndividual(data) => {
-                self.publish_individual(
-                    data,
-                    &astarte_message.interface_name,
-                    &astarte_message.path,
-                )
+        if let Some(timestamp) = data.timestamp {
+            let timestamp = timestamp
+                .try_into()
+                .map_err(AstarteMessageHubError::Timestamp)?;
+            self.client
+                .send_with_timestamp(interface_name, path, astarte_data, timestamp)
                 .await
-            }
-            Payload::DatastreamObject(data) => {
-                self.publish_object(data, &astarte_message.interface_name, &astarte_message.path)
-                    .await
-            }
-            Payload::PropertyIndividual(data) => {
-                self.publish_property(data, &astarte_message.interface_name, &astarte_message.path)
-                    .await
-            }
+        } else {
+            self.client.send(interface_name, path, astarte_data).await
+        }
+        .map_err(AstarteMessageHubError::Astarte)
+    }
+
+    /// Publish an [`AstarteDatastreamObject`] on specific interface and path.
+    async fn publish_object(
+        &self,
+        object_data: AstarteDatastreamObject,
+        interface_name: &str,
+        path: &str,
+    ) -> Result<(), AstarteMessageHubError> {
+        let timestamp = object_data.timestamp;
+        let aggr = AstarteObject::try_from(object_data)?;
+
+        if let Some(timestamp) = timestamp {
+            let timestamp = timestamp
+                .try_into()
+                .map_err(AstarteMessageHubError::Timestamp)?;
+            self.client
+                .send_object_with_timestamp(interface_name, path, aggr, timestamp)
+                .await
+        } else {
+            self.client.send_object(interface_name, path, aggr).await
+        }
+        .map_err(AstarteMessageHubError::Astarte)
+    }
+
+    /// Publish an [`AstartePropertyIndividual`] on specific interface and path.
+    async fn publish_property(
+        &self,
+        data: AstartePropertyIndividual,
+        interface_name: &str,
+        path: &str,
+    ) -> Result<(), AstarteMessageHubError> {
+        match data.data {
+            Some(data) => self
+                .client
+                .send(interface_name, path, data)
+                .await
+                .map_err(AstarteMessageHubError::Astarte),
+            // unset the property
+            None => self
+                .client
+                .unset(interface_name, path)
+                .await
+                .map_err(AstarteMessageHubError::Astarte),
         }
     }
 }
@@ -609,6 +581,7 @@ mod test {
     use astarte_device_sdk::{error::Error as AstarteSdkError, AstarteType};
     use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
+    use astarte_message_hub_proto::astarte_message::Payload;
     use astarte_message_hub_proto::{AstarteData, InterfacesJson, MessageHubError};
     use chrono::Utc;
     use mockall::predicate;
