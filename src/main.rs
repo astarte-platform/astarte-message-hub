@@ -28,6 +28,7 @@ use astarte_device_sdk::builder::DeviceBuilder;
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
+use astarte_message_hub::astarte::handler::DevicePubSub;
 use astarte_message_hub::config::{Config, DEFAULT_HOST, DEFAULT_HTTP_PORT};
 use eyre::{Context, OptionExt};
 use std::convert::identity;
@@ -39,9 +40,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-use astarte_message_hub::{
-    astarte::handler::init_pub_sub, config::MessageHubOptions, AstarteMessageHub,
-};
+use astarte_message_hub::{config::MessageHubOptions, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::Parser;
 use eyre::eyre;
@@ -81,10 +80,10 @@ async fn main() -> eyre::Result<()> {
     let (client, connection) = initialize_astarte_device_sdk(&options, &interfaces_dir).await?;
     info!("Connection to Astarte established.");
 
-    let (publisher, mut subscriber) = init_pub_sub(client);
+    let mut pubsub = DevicePubSub::new(client);
 
     // Create a new message hub
-    let message_hub = AstarteMessageHub::new(publisher, interfaces_dir);
+    let message_hub = AstarteMessageHub::new(pubsub.clone(), interfaces_dir);
 
     let mut tasks = JoinSet::new();
 
@@ -98,7 +97,7 @@ async fn main() -> eyre::Result<()> {
 
     // Forward the astarte events to the subscribers
     tasks.spawn(async move {
-        subscriber
+        pubsub
             .forward_events()
             .await
             .wrap_err("subscriber disconnected")
@@ -259,8 +258,6 @@ fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
 
     Ok(future)
 }
-
-#[cfg(not(unix))]
 fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
     use futures::FutureExt;
 
@@ -270,6 +267,8 @@ fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
         }
     }))
 }
+
+#[cfg(not(unix))]
 
 fn init_tracing() -> eyre::Result<()> {
     let fmt = tracing_subscriber::fmt::layer().with_ansi(stdout().is_terminal());
