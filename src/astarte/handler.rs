@@ -593,7 +593,7 @@ impl PropAccessExt for DevicePublisher {
         &self,
         node_id: NodeId,
     ) -> Result<Vec<StoredProp>, AstarteMessageHubError> {
-        // we first need to retrieve all the properties and then filter
+        // we first need to retrieve all the device properties and then filter
         // those belonging to the node introspection
         let mut props = self
             .client
@@ -610,7 +610,7 @@ impl PropAccessExt for DevicePublisher {
         &self,
         node_id: NodeId,
     ) -> Result<Vec<StoredProp>, AstarteMessageHubError> {
-        // we first need to retrieve all the properties and then filter
+        // we first need to retrieve all the server properties and then filter
         // those belonging to the node introspection
         let mut props = self
             .client
