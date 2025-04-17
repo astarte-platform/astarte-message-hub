@@ -76,30 +76,22 @@ impl From<&DeviceError> for Code {
     }
 }
 
-/// Initialize the [`DevicePublisher`] and [`DeviceSubscriber`]
-pub fn init_pub_sub(client: DeviceClient<SqliteStore>) -> (DevicePublisher, DeviceSubscriber) {
-    let subscribers = SubscribersMap::default();
-
-    (
-        DevicePublisher::new(client.clone(), subscribers.clone()),
-        DeviceSubscriber::new(client, subscribers),
-    )
-}
-
-/// Receiver for the [`DeviceEvent`].
+/// An Astarte Device SDK based implementation of an Astarte handler.
 ///
-/// It will forward the events to the registered subscriber.
-pub struct DeviceSubscriber {
+/// Uses the [`DeviceClient`] to provide subscribe functionality, forwarding the events to
+/// the registered subscriber, and the publish ones.
+#[derive(Clone)]
+pub struct DevicePubSub {
     client: DeviceClient<SqliteStore>,
     subscribers: SubscribersMap,
 }
 
-impl DeviceSubscriber {
-    /// Create a new client.
-    pub fn new(client: DeviceClient<SqliteStore>, subscribers: SubscribersMap) -> Self {
+impl DevicePubSub {
+    /// Create a new pubsub handler.
+    pub fn new(client: DeviceClient<SqliteStore>) -> Self {
         Self {
             client,
-            subscribers,
+            subscribers: SubscribersMap::default(),
         }
     }
 
@@ -189,32 +181,6 @@ impl DeviceSubscriber {
         }
 
         Ok(())
-    }
-}
-
-/// A subscriber for the Astarte handler.
-#[derive(Debug, Clone)]
-pub struct Subscriber {
-    introspection: HashSet<String>,
-    sender: Sender<Result<MessageHubEvent, Status>>,
-}
-
-/// An Astarte Device SDK based implementation of an Astarte handler.
-///
-/// Uses the [`DeviceClient`] to provide subscribe and publish functionality.
-#[derive(Clone)]
-pub struct DevicePublisher {
-    client: DeviceClient<SqliteStore>,
-    subscribers: SubscribersMap,
-}
-
-impl DevicePublisher {
-    /// Constructs a new handler from the [AstarteDeviceSdk](astarte_device_sdk::AstarteDeviceSdk)
-    fn new(client: DeviceClient<SqliteStore>, subscribers: SubscribersMap) -> Self {
-        DevicePublisher {
-            client,
-            subscribers,
-        }
     }
 
     /// Publish an [`AstarteDatastreamIndividual`] on specific interface and path.
@@ -360,8 +326,15 @@ impl DevicePublisher {
     }
 }
 
+/// A subscriber for the Astarte handler.
+#[derive(Debug, Clone)]
+pub struct Subscriber {
+    introspection: HashSet<String>,
+    sender: Sender<Result<MessageHubEvent, Status>>,
+}
+
 #[async_trait]
-impl AstarteSubscriber for DevicePublisher {
+impl AstarteSubscriber for DevicePubSub {
     async fn subscribe(&self, node: &AstarteNode) -> Result<Subscription, AstarteMessageHubError> {
         let introspection = node
             .introspection
@@ -515,7 +488,7 @@ impl AstarteSubscriber for DevicePublisher {
 }
 
 #[async_trait]
-impl AstartePublisher for DevicePublisher {
+impl AstartePublisher for DevicePubSub {
     async fn publish(
         &self,
         astarte_message: &AstarteMessage,
@@ -545,7 +518,7 @@ impl AstartePublisher for DevicePublisher {
     }
 }
 
-impl PropAccessExt for DevicePublisher {
+impl PropAccessExt for DevicePubSub {
     async fn property(
         &self,
         node_id: NodeId,
@@ -727,9 +700,9 @@ mod test {
         )
         .unwrap();
 
-        let astarte_handler = DevicePublisher::new(client, SubscribersMap::default());
+        let pubsub = DevicePubSub::new(client);
 
-        let result = astarte_handler.subscribe(&astarte_node).await;
+        let result = pubsub.subscribe(&astarte_node).await;
         assert!(
             result.is_ok(),
             "error {}",
@@ -761,7 +734,9 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         let i_cl = prop_interface.clone();
-        let v = vec![i_cl.clone()];
+        let name = i_cl.interface_name().to_string();
+        let v = vec![i_cl];
+
         client
             .expect_clone()
             .once()
@@ -769,19 +744,25 @@ mod test {
             .returning(move || {
                 let mut client = DeviceClient::<SqliteStore>::default();
 
-                let name = i_cl.interface_name().to_string();
-                client
-                    .expect_extend_interfaces_vec()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(mockall::predicate::eq(v.clone()))
-                    .returning(move |_| Ok(vec![name.clone()]));
+                let interface_string = interface_string.clone();
 
                 client
-                    .expect_server_props()
+                    .expect_recv()
                     .once()
                     .in_sequence(&mut seq)
-                    .returning(|| Ok(Vec::new()));
+                    .return_once(move || {
+                        Ok(DeviceEvent {
+                            interface: interface_string,
+                            path: path.to_string(),
+                            data: Value::Individual(value.into()),
+                        })
+                    });
+
+                client
+                    .expect_recv()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|| Err(RecvError::Disconnected));
 
                 client
             });
@@ -789,27 +770,24 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_recv()
+            .expect_extend_interfaces_vec()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
-                Ok(DeviceEvent {
-                    interface: interface_string.clone(),
-                    path: path.to_string(),
-                    data: Value::Individual(value.into()),
-                })
-            });
+            .with(mockall::predicate::eq(v.clone()))
+            .returning(move |_| Ok(vec![name.clone()]));
+
         client
-            .expect_recv()
+            .expect_server_props()
             .once()
             .in_sequence(&mut seq)
-            .returning(|| Err(RecvError::Disconnected));
+            .returning(|| Ok(Vec::new()));
 
-        let (publisher, mut subscriber) = init_pub_sub(client);
+        let pubsub = DevicePubSub::new(client);
+        let mut pubsub_cl = pubsub.clone();
 
-        let handle = tokio::spawn(async move { subscriber.forward_events().await });
+        let handle = tokio::spawn(async move { pubsub_cl.forward_events().await });
 
-        let subscribe_result = publisher.subscribe(&astarte_node).await;
+        let subscribe_result = pubsub.subscribe(&astarte_node).await;
         assert!(subscribe_result.is_ok());
 
         let mut subscription = subscribe_result.unwrap();
@@ -898,6 +876,11 @@ mod test {
 
         let i_cl = prop_interface.clone();
         let v = vec![i_cl.clone()];
+
+        let name = i_cl.interface_name().to_string();
+        let name_cl1 = name.clone();
+        let name_cl2 = name.clone();
+
         client
             .expect_clone()
             .once()
@@ -905,76 +888,73 @@ mod test {
             .returning(move || {
                 let mut client = DeviceClient::<SqliteStore>::default();
 
-                let name = i_cl.interface_name().to_string();
-                let name_cl1 = name.clone();
-                let name_cl2 = name.clone();
-
-                // subscription of the two nodes
+                // we must check that the RecvError is received by all the nodes having SERV_PROPS_IFACE in
+                // their introspection
                 client
-                    .expect_extend_interfaces_vec()
+                    .expect_recv()
                     .once()
                     .in_sequence(&mut seq)
-                    .with(mockall::predicate::eq(v.clone()))
-                    .returning(move |_| Ok(vec![name_cl1.clone()]));
-
-                client
-                    .expect_server_props()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .returning(|| Ok(vec![]));
-
-                client
-                    .expect_extend_interfaces_vec()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(mockall::predicate::eq(v.clone()))
-                    .returning(move |_| Ok(vec![name_cl2.clone()]));
-
-                client
-                    .expect_server_props()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .returning(|| Ok(vec![]));
-
-                // subscription of the third node
-                client
-                    .expect_extend_interfaces_vec()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(mockall::predicate::eq(vec![]))
-                    .returning(move |_| Ok(vec![]));
-
-                client
-                    .expect_server_props()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .returning(|| Ok(vec![]));
+                    .returning(move || {
+                        Err(RecvError::MappingNotFound {
+                            interface: SERV_PROPS_IFACE.to_string(),
+                            mapping: "test".to_string(),
+                        })
+                    });
 
                 client
             });
 
         let mut seq = mockall::Sequence::new();
 
-        // we must check that the RecvError is received by all the nodes having SERV_PROPS_IFACE in
-        // their introspection
+        // subscription of the two nodes
         client
-            .expect_recv()
+            .expect_extend_interfaces_vec()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
-                Err(RecvError::MappingNotFound {
-                    interface: SERV_PROPS_IFACE.to_string(),
-                    mapping: "test".to_string(),
-                })
-            });
+            .with(mockall::predicate::eq(v.clone()))
+            .returning(move |_| Ok(vec![name_cl1.clone()]));
 
-        let (publisher, mut subscriber) = init_pub_sub(client);
+        client
+            .expect_server_props()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|| Ok(vec![]));
 
-        tokio::spawn(async move { subscriber.forward_events().await });
+        client
+            .expect_extend_interfaces_vec()
+            .once()
+            .in_sequence(&mut seq)
+            .with(mockall::predicate::eq(v.clone()))
+            .returning(move |_| Ok(vec![name_cl2.clone()]));
 
-        let subscribe_1_result = publisher.subscribe(&astarte_node_1).await;
-        let subscribe_2_result = publisher.subscribe(&astarte_node_2).await;
-        let subscribe_3_result = publisher.subscribe(&astarte_node_3).await;
+        client
+            .expect_server_props()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|| Ok(vec![]));
+
+        // subscription of the third node
+        client
+            .expect_extend_interfaces_vec()
+            .once()
+            .in_sequence(&mut seq)
+            .with(mockall::predicate::eq(vec![]))
+            .returning(move |_| Ok(vec![]));
+
+        client
+            .expect_server_props()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|| Ok(vec![]));
+
+        let pubsub = DevicePubSub::new(client);
+        let mut pubsub_cl = pubsub.clone();
+
+        tokio::spawn(async move { pubsub_cl.forward_events().await });
+
+        let subscribe_1_result = pubsub.subscribe(&astarte_node_1).await;
+        let subscribe_2_result = pubsub.subscribe(&astarte_node_2).await;
+        let subscribe_3_result = pubsub.subscribe(&astarte_node_3).await;
         assert!(subscribe_1_result.is_ok());
         assert!(subscribe_2_result.is_ok());
         assert!(subscribe_3_result.is_ok());
@@ -1033,6 +1013,9 @@ mod test {
 
         let i_cl = prop_interface.clone();
         let v = vec![i_cl.clone()];
+
+        let name = i_cl.interface_name().to_string();
+
         client
             .expect_clone()
             .once()
@@ -1040,59 +1023,58 @@ mod test {
             .returning(move || {
                 let mut client = DeviceClient::<SqliteStore>::default();
 
-                let name = i_cl.interface_name().to_string();
-
-                // subscribe the first node
+                // we must check that the RecvError is received by all the nodes having SERV_PROPS_IFACE in
+                // their introspection
                 client
-                    .expect_extend_interfaces_vec()
+                    .expect_recv()
                     .once()
                     .in_sequence(&mut seq)
-                    .with(mockall::predicate::eq(v.clone()))
-                    .returning(move |_| Ok(vec![name.clone()]));
-
-                client
-                    .expect_server_props()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .returning(|| Ok(vec![]));
-
-                // subscription of the second node
-                client
-                    .expect_extend_interfaces_vec()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(mockall::predicate::eq(vec![]))
-                    .returning(move |_| Ok(vec![]));
-
-                client
-                    .expect_server_props()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .returning(|| Ok(vec![]));
+                    .returning(move || {
+                        Err(RecvError::InterfaceNotFound {
+                            name: "wrong interface name".to_string(),
+                        })
+                    });
 
                 client
             });
 
         let mut seq = mockall::Sequence::new();
 
-        // we must check that the RecvError is received by all the nodes having SERV_PROPS_IFACE in
-        // their introspection
+        // subscribe the first node
         client
-            .expect_recv()
+            .expect_extend_interfaces_vec()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
-                Err(RecvError::InterfaceNotFound {
-                    name: "wrong interface name".to_string(),
-                })
-            });
+            .with(mockall::predicate::eq(v.clone()))
+            .returning(move |_| Ok(vec![name.clone()]));
 
-        let (publisher, mut subscriber) = init_pub_sub(client);
+        client
+            .expect_server_props()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|| Ok(vec![]));
 
-        tokio::spawn(async move { subscriber.forward_events().await });
+        // subscription of the second node
+        client
+            .expect_extend_interfaces_vec()
+            .once()
+            .in_sequence(&mut seq)
+            .with(mockall::predicate::eq(vec![]))
+            .returning(move |_| Ok(vec![]));
 
-        let subscribe_1_result = publisher.subscribe(&astarte_node_1).await;
-        let subscribe_2_result = publisher.subscribe(&astarte_node_2).await;
+        client
+            .expect_server_props()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|| Ok(vec![]));
+
+        let pubsub = DevicePubSub::new(client);
+        let mut pubsub_cl = pubsub.clone();
+
+        tokio::spawn(async move { pubsub_cl.forward_events().await });
+
+        let subscribe_1_result = pubsub.subscribe(&astarte_node_1).await;
+        let subscribe_2_result = pubsub.subscribe(&astarte_node_2).await;
         assert!(subscribe_1_result.is_ok());
         assert!(subscribe_2_result.is_ok());
 
@@ -1117,12 +1099,6 @@ mod test {
 
         let mut seq = mockall::Sequence::new();
 
-        client
-            .expect_clone()
-            .once()
-            .in_sequence(&mut seq)
-            .returning(DeviceClient::<SqliteStore>::default);
-
         // Simulate disconnect
         client
             .expect_recv()
@@ -1130,31 +1106,23 @@ mod test {
             .in_sequence(&mut seq)
             .returning(|| Err(RecvError::Disconnected));
 
-        let (_publisher, mut subscriber) = init_pub_sub(client);
+        let mut pubsub = DevicePubSub::new(client);
 
-        let err = subscriber.forward_events().await.unwrap_err();
+        let err = pubsub.forward_events().await.unwrap_err();
         assert!(matches!(err, DeviceError::Disconnected));
     }
 
     #[tokio::test]
     async fn publish_failed_with_invalid_payload() {
-        let mut client = DeviceClient::<SqliteStore>::new();
+        let client = DeviceClient::<SqliteStore>::new();
 
         let expected_interface_name = "io.demo.Properties";
 
         let astarte_message = create_astarte_message(expected_interface_name, "/test", None);
 
-        let mut seq = mockall::Sequence::new();
+        let pubsub = DevicePubSub::new(client);
 
-        client
-            .expect_clone()
-            .once()
-            .in_sequence(&mut seq)
-            .returning(DeviceClient::<SqliteStore>::default);
-
-        let (publisher, _subscriber) = init_pub_sub(client);
-
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let result_err = result.err().unwrap();
@@ -1166,21 +1134,13 @@ mod test {
 
     #[tokio::test]
     async fn publish_failed_with_invalid_astarte_data() {
-        let mut client = DeviceClient::<SqliteStore>::default();
-
-        let mut seq = mockall::Sequence::new();
-
-        client
-            .expect_clone()
-            .once()
-            .in_sequence(&mut seq)
-            .returning(DeviceClient::<SqliteStore>::default);
+        let client = DeviceClient::<SqliteStore>::default();
 
         let astarte_message = create_astarte_message("io.demo.Properties", "/test", None);
 
-        let (publisher, _) = init_pub_sub(client);
+        let pubsub = DevicePubSub::new(client);
 
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
 
         let result_err = result.unwrap_err();
         assert!(matches!(
@@ -1212,28 +1172,19 @@ mod test {
         );
 
         client
-            .expect_clone()
+            .expect_send()
             .once()
             .in_sequence(&mut seq)
-            .return_once(move || {
-                let mut client = DeviceClient::<SqliteStore>::default();
+            .with(
+                predicate::eq(expected_interface_name),
+                predicate::eq(expected_path),
+                predicate::eq(expected_data),
+            )
+            .returning(|_, _, _| Ok(()));
 
-                client
-                    .expect_send()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(
-                        predicate::eq(expected_interface_name),
-                        predicate::eq(expected_path),
-                        predicate::eq(expected_data),
-                    )
-                    .returning(|_, _, _| Ok(()));
-                client
-            });
+        let pubsub = DevicePubSub::new(client);
 
-        let (publisher, _subscriber) = init_pub_sub(client);
-
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
@@ -1261,32 +1212,20 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_clone()
+            .expect_send_with_timestamp()
             .once()
             .in_sequence(&mut seq)
-            .return_once(move || {
-                let mut client = DeviceClient::<SqliteStore>::default();
+            .with(
+                predicate::eq(expected_interface_name),
+                predicate::eq(expected_path),
+                predicate::eq(expected_data),
+                predicate::eq::<chrono::DateTime<Utc>>(expected_timestamp.try_into().unwrap()),
+            )
+            .returning(|_, _, _, _| Ok(()));
 
-                client
-                    .expect_send_with_timestamp()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(
-                        predicate::eq(expected_interface_name),
-                        predicate::eq(expected_path),
-                        predicate::eq(expected_data),
-                        predicate::eq::<chrono::DateTime<Utc>>(
-                            expected_timestamp.try_into().unwrap(),
-                        ),
-                    )
-                    .returning(|_, _, _, _| Ok(()));
+        let pubsub = DevicePubSub::new(client);
 
-                client
-            });
-
-        let (publisher, _subscriber) = init_pub_sub(client);
-
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
@@ -1313,34 +1252,24 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_clone()
+            .expect_send()
             .once()
             .in_sequence(&mut seq)
-            .return_once(move || {
-                let mut client = DeviceClient::<SqliteStore>::new();
-
-                client
-                    .expect_send()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(
-                        predicate::eq(expected_interface_name),
-                        predicate::eq(expected_path),
-                        predicate::eq(expected_data),
-                    )
-                    .returning(|_, _, _| {
-                        Err(AstarteSdkError::MappingNotFound {
-                            interface: expected_interface_name.to_string(),
-                            mapping: String::new(),
-                        })
-                    });
-
-                client
+            .with(
+                predicate::eq(expected_interface_name),
+                predicate::eq(expected_path),
+                predicate::eq(expected_data),
+            )
+            .returning(|_, _, _| {
+                Err(AstarteSdkError::MappingNotFound {
+                    interface: expected_interface_name.to_string(),
+                    mapping: String::new(),
+                })
             });
 
-        let (publisher, _subscriber) = init_pub_sub(client);
+        let pubsub = DevicePubSub::new(client);
 
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let result_err = result.unwrap_err();
@@ -1377,37 +1306,25 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_clone()
+            .expect_send_with_timestamp()
             .once()
             .in_sequence(&mut seq)
-            .return_once(move || {
-                let mut client = DeviceClient::<SqliteStore>::default();
-
-                client
-                    .expect_send_with_timestamp()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(
-                        predicate::eq(expected_interface_name),
-                        predicate::eq(expected_path),
-                        predicate::eq(expected_data),
-                        predicate::eq::<chrono::DateTime<Utc>>(
-                            expected_timestamp.try_into().unwrap(),
-                        ),
-                    )
-                    .returning(|_, _, _, _| {
-                        Err(AstarteSdkError::MappingNotFound {
-                            interface: expected_interface_name.to_string(),
-                            mapping: String::new(),
-                        })
-                    });
-
-                client
+            .with(
+                predicate::eq(expected_interface_name),
+                predicate::eq(expected_path),
+                predicate::eq(expected_data),
+                predicate::eq::<chrono::DateTime<Utc>>(expected_timestamp.try_into().unwrap()),
+            )
+            .returning(|_, _, _, _| {
+                Err(AstarteSdkError::MappingNotFound {
+                    interface: expected_interface_name.to_string(),
+                    mapping: String::new(),
+                })
             });
 
-        let (publisher, _subscriber) = init_pub_sub(client);
+        let pubsub = DevicePubSub::new(client);
 
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let result_err = result.err().unwrap();
@@ -1460,29 +1377,19 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_clone()
+            .expect_send_object()
             .once()
             .in_sequence(&mut seq)
-            .return_once(move || {
-                let mut client = DeviceClient::<SqliteStore>::new();
+            .with(
+                predicate::eq(expected_interface_name),
+                predicate::eq("/test"),
+                predicate::eq(exp_object),
+            )
+            .returning(|_, _, _| Ok(()));
 
-                client
-                    .expect_send_object()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(
-                        predicate::eq(expected_interface_name),
-                        predicate::eq("/test"),
-                        predicate::eq(exp_object),
-                    )
-                    .returning(|_, _, _| Ok(()));
+        let pubsub = DevicePubSub::new(client);
 
-                client
-            });
-
-        let (publisher, _subscriber) = init_pub_sub(client);
-
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
@@ -1528,32 +1435,20 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_clone()
+            .expect_send_object_with_timestamp()
             .once()
             .in_sequence(&mut seq)
-            .return_once(move || {
-                let mut client = DeviceClient::<SqliteStore>::default();
+            .with(
+                predicate::eq(expected_interface_name),
+                predicate::eq("/test"),
+                predicate::eq(exp_object),
+                predicate::eq::<chrono::DateTime<Utc>>(expected_timestamp.try_into().unwrap()),
+            )
+            .returning(|_, _, _, _| Ok(()));
 
-                client
-                    .expect_send_object_with_timestamp()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(
-                        predicate::eq(expected_interface_name),
-                        predicate::eq("/test"),
-                        predicate::eq(exp_object),
-                        predicate::eq::<chrono::DateTime<Utc>>(
-                            expected_timestamp.try_into().unwrap(),
-                        ),
-                    )
-                    .returning(|_, _, _, _| Ok(()));
+        let pubsub = DevicePubSub::new(client);
 
-                client
-            });
-
-        let (publisher, _subscriber) = init_pub_sub(client);
-
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
@@ -1597,34 +1492,24 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_clone()
+            .expect_send_object()
             .once()
             .in_sequence(&mut seq)
-            .return_once(move || {
-                let mut client = DeviceClient::<SqliteStore>::new();
-
-                client
-                    .expect_send_object()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(
-                        predicate::eq(expected_interface_name),
-                        predicate::eq("/test"),
-                        predicate::eq(exp_object),
-                    )
-                    .returning(|_, _, _| {
-                        Err(AstarteSdkError::MappingNotFound {
-                            interface: expected_interface_name.to_string(),
-                            mapping: String::new(),
-                        })
-                    });
-
-                client
+            .with(
+                predicate::eq(expected_interface_name),
+                predicate::eq("/test"),
+                predicate::eq(exp_object),
+            )
+            .returning(|_, _, _| {
+                Err(AstarteSdkError::MappingNotFound {
+                    interface: expected_interface_name.to_string(),
+                    mapping: String::new(),
+                })
             });
 
-        let (publisher, _subscriber) = init_pub_sub(client);
+        let pubsub = DevicePubSub::new(client);
 
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let result_err = result.err().unwrap();
@@ -1679,37 +1564,25 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_clone()
+            .expect_send_object_with_timestamp()
             .once()
             .in_sequence(&mut seq)
-            .return_once(move || {
-                let mut client = DeviceClient::<SqliteStore>::default();
-
-                client
-                    .expect_send_object_with_timestamp()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(
-                        predicate::eq(expected_interface_name),
-                        predicate::eq("/test"),
-                        predicate::eq(exp_object),
-                        predicate::eq::<chrono::DateTime<Utc>>(
-                            expected_timestamp.try_into().unwrap(),
-                        ),
-                    )
-                    .returning(|_, _, _, _| {
-                        Err(AstarteSdkError::MappingNotFound {
-                            interface: expected_interface_name.to_string(),
-                            mapping: String::new(),
-                        })
-                    });
-
-                client
+            .with(
+                predicate::eq(expected_interface_name),
+                predicate::eq("/test"),
+                predicate::eq(exp_object),
+                predicate::eq::<chrono::DateTime<Utc>>(expected_timestamp.try_into().unwrap()),
+            )
+            .returning(|_, _, _, _| {
+                Err(AstarteSdkError::MappingNotFound {
+                    interface: expected_interface_name.to_string(),
+                    mapping: String::new(),
+                })
             });
 
-        let (publisher, _subscriber) = init_pub_sub(client);
+        let pubsub = DevicePubSub::new(client);
 
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let result_err = result.err().unwrap();
@@ -1739,27 +1612,17 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_clone()
+            .expect_unset()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
-                let mut client = DeviceClient::<SqliteStore>::new();
+            .with(
+                predicate::eq(expected_interface_name),
+                predicate::eq("/test"),
+            )
+            .returning(|_: &str, _: &str| Ok(()));
 
-                client
-                    .expect_unset()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .with(
-                        predicate::eq(expected_interface_name),
-                        predicate::eq("/test"),
-                    )
-                    .returning(|_: &str, _: &str| Ok(()));
-
-                client
-            });
-
-        let (publisher, _subscriber) = init_pub_sub(client);
-        let result = publisher.publish(&astarte_message).await;
+        let pubsub = DevicePubSub::new(client);
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_ok())
     }
 
@@ -1781,33 +1644,23 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_clone()
+            .expect_unset()
+            .with(
+                predicate::eq(expected_interface_name),
+                predicate::eq(expected_path),
+            )
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
-                let mut client = DeviceClient::<SqliteStore>::default();
-
-                client
-                    .expect_unset()
-                    .with(
-                        predicate::eq(expected_interface_name),
-                        predicate::eq(expected_path),
-                    )
-                    .once()
-                    .in_sequence(&mut seq)
-                    .returning(|_, _| {
-                        Err(AstarteSdkError::MappingNotFound {
-                            interface: expected_interface_name.to_string(),
-                            mapping: String::new(),
-                        })
-                    });
-
-                client
+            .returning(|_, _| {
+                Err(AstarteSdkError::MappingNotFound {
+                    interface: expected_interface_name.to_string(),
+                    mapping: String::new(),
+                })
             });
 
-        let (publisher, _subscriber) = init_pub_sub(client);
+        let pubsub = DevicePubSub::new(client);
 
-        let result = publisher.publish(&astarte_message).await;
+        let result = pubsub.publish(&astarte_message).await;
         assert!(result.is_err());
 
         let result_err = result.err().unwrap();
@@ -1831,41 +1684,31 @@ mod test {
         let mut seq = mockall::Sequence::new();
 
         client
-            .expect_clone()
+            .expect_extend_interfaces_vec()
             .once()
             .in_sequence(&mut seq)
-            .returning(move || {
-                let mut client = DeviceClient::<SqliteStore>::default();
+            .returning(|_| {
+                Ok(vec![
+                    "org.astarte-platform.test.test".to_string(),
+                    "com.test.object".to_string(),
+                ])
+            });
 
-                client
-                    .expect_extend_interfaces_vec()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .returning(|_| {
-                        Ok(vec![
-                            "org.astarte-platform.test.test".to_string(),
-                            "com.test.object".to_string(),
-                        ])
-                    });
+        client
+            .expect_server_props()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|| Ok(Vec::new()));
 
-                client
-                    .expect_server_props()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .returning(|| Ok(Vec::new()));
-
-                client
-                    .expect_remove_interfaces()
-                    .once()
-                    .in_sequence(&mut seq)
-                    .returning(|_: Vec<String>| {
-                        Ok(vec![
-                            "org.astarte-platform.test.test".to_string(),
-                            "com.test.object".to_string(),
-                        ])
-                    });
-
-                client
+        client
+            .expect_remove_interfaces()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|_: Vec<String>| {
+                Ok(vec![
+                    "org.astarte-platform.test.test".to_string(),
+                    "com.test.object".to_string(),
+                ])
             });
 
         let astarte_node = AstarteNode::from_json(
@@ -1874,12 +1717,12 @@ mod test {
         )
         .unwrap();
 
-        let (publisher, _subscriber) = init_pub_sub(client);
+        let pubsub = DevicePubSub::new(client);
 
-        let result = publisher.subscribe(&astarte_node).await;
+        let result = pubsub.subscribe(&astarte_node).await;
         assert!(result.is_ok());
 
-        let detach_result = publisher.unsubscribe(&astarte_node.id).await;
+        let detach_result = pubsub.unsubscribe(&astarte_node.id).await;
         assert!(detach_result.is_ok())
     }
 
@@ -1887,15 +1730,7 @@ mod test {
     async fn detach_node_unsubscribe_failed() {
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
-        let mut client = DeviceClient::<SqliteStore>::new();
-
-        let mut seq = mockall::Sequence::new();
-
-        client
-            .expect_clone()
-            .once()
-            .in_sequence(&mut seq)
-            .returning(DeviceClient::<SqliteStore>::default);
+        let client = DeviceClient::<SqliteStore>::new();
 
         let astarte_node = AstarteNode::from_json(
             "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
@@ -1903,9 +1738,9 @@ mod test {
         )
         .unwrap();
 
-        let (publisher, _subscriber) = init_pub_sub(client);
+        let pubsub = DevicePubSub::new(client);
 
-        let detach_result = publisher.unsubscribe(&astarte_node.id).await;
+        let detach_result = pubsub.unsubscribe(&astarte_node.id).await;
 
         assert!(detach_result.is_err());
         let err = detach_result.unwrap_err();
