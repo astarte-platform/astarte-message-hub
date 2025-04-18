@@ -22,7 +22,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::future::Future;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -48,9 +47,9 @@ use tonic::{Code, Status};
 use uuid::Uuid;
 
 use super::sdk::{Client, DeviceClient, DynamicIntrospection};
-use super::{AstartePublisher, AstarteSubscriber, Subscription};
+use super::{AstartePublisher, AstarteSubscriber, PropAccessExt, Subscription};
 use crate::error::AstarteMessageHubError;
-use crate::server::AstarteNode;
+use crate::server::{AstarteNode, NodeId};
 
 type SubscribersMap = Arc<RwLock<HashMap<Uuid, Subscriber>>>;
 
@@ -321,6 +320,44 @@ impl DevicePublisher {
 
         Ok(())
     }
+
+    // check if the interface is present in the node introspection
+    async fn check_node_has_interface(
+        &self,
+        node_id: NodeId,
+        interface_name: &str,
+    ) -> Result<(), AstarteMessageHubError> {
+        let nodes = self.subscribers.read().await;
+        let iface_exists = nodes
+            .get(&node_id)
+            .ok_or_else(|| AstarteMessageHubError::NodeId(node_id.into()))?
+            .introspection
+            .contains(interface_name);
+
+        if !iface_exists {
+            return Err(AstarteMessageHubError::MissingInterface {
+                interface: interface_name.to_string(),
+                node_id: node_id.into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    async fn filter_node_props(
+        &self,
+        node_id: NodeId,
+        props: &mut Vec<StoredProp>,
+    ) -> Result<(), AstarteMessageHubError> {
+        let nodes = self.subscribers.read().await;
+        let node = nodes
+            .get(&node_id)
+            .ok_or_else(|| AstarteMessageHubError::NodeId(node_id.into()))?;
+
+        props.retain(|p| node.introspection.contains(&p.interface));
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -508,32 +545,82 @@ impl AstartePublisher for DevicePublisher {
     }
 }
 
-impl PropAccess for DevicePublisher {
-    fn property(
+impl PropAccessExt for DevicePublisher {
+    async fn property(
         &self,
+        node_id: NodeId,
         interface: &str,
         path: &str,
-    ) -> impl Future<Output = Result<Option<AstarteType>, AstarteError>> + Send {
-        self.client.property(interface, path)
+    ) -> Result<Option<AstarteType>, AstarteMessageHubError> {
+        // retrieve the property only if it is present in the node introspection
+        self.check_node_has_interface(node_id, interface).await?;
+
+        self.client
+            .property(interface, path)
+            .await
+            .map_err(AstarteMessageHubError::Astarte)
     }
 
-    fn interface_props(
+    async fn interface_props(
         &self,
+        node_id: NodeId,
         interface: &str,
-    ) -> impl Future<Output = Result<Vec<StoredProp>, AstarteError>> + Send {
-        self.client.interface_props(interface)
+    ) -> Result<Vec<StoredProp>, AstarteMessageHubError> {
+        // retrieve the property only if it is present in the node introspection
+        self.check_node_has_interface(node_id, interface).await?;
+
+        self.client
+            .interface_props(interface)
+            .await
+            .map_err(AstarteMessageHubError::Astarte)
     }
 
-    fn all_props(&self) -> impl Future<Output = Result<Vec<StoredProp>, AstarteError>> + Send {
-        self.client.all_props()
+    async fn all_props(&self, node_id: NodeId) -> Result<Vec<StoredProp>, AstarteMessageHubError> {
+        // we first need to retrieve all the properties and then filter
+        // those belonging to the node introspection
+        let mut props = self
+            .client
+            .all_props()
+            .await
+            .map_err(AstarteMessageHubError::Astarte)?;
+
+        self.filter_node_props(node_id, &mut props).await?;
+
+        Ok(props)
     }
 
-    fn device_props(&self) -> impl Future<Output = Result<Vec<StoredProp>, AstarteError>> + Send {
-        self.client.device_props()
+    async fn device_props(
+        &self,
+        node_id: NodeId,
+    ) -> Result<Vec<StoredProp>, AstarteMessageHubError> {
+        // we first need to retrieve all the device properties and then filter
+        // those belonging to the node introspection
+        let mut props = self
+            .client
+            .device_props()
+            .await
+            .map_err(AstarteMessageHubError::Astarte)?;
+
+        self.filter_node_props(node_id, &mut props).await?;
+
+        Ok(props)
     }
 
-    fn server_props(&self) -> impl Future<Output = Result<Vec<StoredProp>, AstarteError>> + Send {
-        self.client.server_props()
+    async fn server_props(
+        &self,
+        node_id: NodeId,
+    ) -> Result<Vec<StoredProp>, AstarteMessageHubError> {
+        // we first need to retrieve all the server properties and then filter
+        // those belonging to the node introspection
+        let mut props = self
+            .client
+            .server_props()
+            .await
+            .map_err(AstarteMessageHubError::Astarte)?;
+
+        self.filter_node_props(node_id, &mut props).await?;
+
+        Ok(props)
     }
 }
 

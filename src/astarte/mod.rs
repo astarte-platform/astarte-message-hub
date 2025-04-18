@@ -21,7 +21,8 @@
 //!
 //! This module contains all the required traits for such an handler.
 
-use astarte_device_sdk::Interface;
+use astarte_device_sdk::store::StoredProp;
+use astarte_device_sdk::{AstarteType, Interface};
 use astarte_message_hub_proto::{AstarteMessage, MessageHubEvent};
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
@@ -30,7 +31,7 @@ use tonic::Status;
 use uuid::Uuid;
 
 use crate::error::AstarteMessageHubError;
-use crate::server::AstarteNode;
+use crate::server::{AstarteNode, NodeId};
 
 pub mod handler;
 pub(crate) mod sdk;
@@ -83,4 +84,48 @@ pub struct Subscription {
     pub added_interfaces: Vec<Interface>,
     /// The node receiver end.
     pub receiver: Receiver<Result<MessageHubEvent, Status>>,
+}
+
+/// Trait to access the stored properties of a node.
+///
+/// Analogous to the `astarte_device_sdk::store::PropAccess` trait, but
+/// with the addition of the checks for the interfaces in a certain node introspection
+pub trait PropAccessExt {
+    /// Get the value of a node property given the interface and path.
+    fn property(
+        &self,
+        node_id: NodeId,
+        interface: &str,
+        path: &str,
+    ) -> impl std::future::Future<Output = Result<Option<AstarteType>, AstarteMessageHubError>>
+           + std::marker::Send;
+
+    /// Get all the node properties of the given interface.
+    fn interface_props(
+        &self,
+        node_id: NodeId,
+        interface: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
+           + std::marker::Send;
+
+    /// Get all the stored node properties, device or server owners.
+    fn all_props(
+        &self,
+        node_id: NodeId,
+    ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
+           + std::marker::Send;
+
+    /// Get all the stored node device properties.
+    fn device_props(
+        &self,
+        node_id: NodeId,
+    ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
+           + std::marker::Send;
+
+    /// Get all the stored node server properties.
+    fn server_props(
+        &self,
+        node_id: NodeId,
+    ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
+           + std::marker::Send;
 }
