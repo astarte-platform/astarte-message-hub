@@ -23,7 +23,11 @@
 
 use astarte_device_sdk::store::StoredProp;
 use astarte_device_sdk::{AstarteType, Interface};
-use astarte_message_hub_proto::{AstarteMessage, MessageHubEvent};
+use astarte_message_hub_proto::astarte_message::Payload;
+use astarte_message_hub_proto::{
+    AstarteDatastreamIndividual, AstarteDatastreamObject, AstarteMessage,
+    AstartePropertyIndividual, MessageHubEvent,
+};
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::Receiver;
@@ -43,8 +47,57 @@ pub trait AstartePublisher: Send + Sync {
     ///
     /// The `astarte_message` argument format is
     /// defined in `./proto/astarteplatform/msghub/astarte_message.proto`
-    async fn publish(&self, astarte_message: &AstarteMessage)
-        -> Result<(), AstarteMessageHubError>;
+    async fn publish(
+        &self,
+        astarte_message: &AstarteMessage,
+    ) -> Result<(), AstarteMessageHubError> {
+        let astarte_message_payload = astarte_message.clone().payload.ok_or_else(|| {
+            AstarteMessageHubError::AstarteInvalidData("Invalid payload".to_string())
+        })?;
+
+        match astarte_message_payload {
+            Payload::DatastreamIndividual(data) => {
+                self.publish_individual(
+                    data,
+                    &astarte_message.interface_name,
+                    &astarte_message.path,
+                )
+                .await
+            }
+            Payload::DatastreamObject(data) => {
+                self.publish_object(data, &astarte_message.interface_name, &astarte_message.path)
+                    .await
+            }
+            Payload::PropertyIndividual(data) => {
+                self.publish_property(data, &astarte_message.interface_name, &astarte_message.path)
+                    .await
+            }
+        }
+    }
+
+    /// Publish an [`AstarteDatastreamIndividual`] on specific interface and path.
+    async fn publish_individual(
+        &self,
+        data: AstarteDatastreamIndividual,
+        interface_name: &str,
+        path: &str,
+    ) -> Result<(), AstarteMessageHubError>;
+
+    /// Publish an [`AstarteDatastreamObject`] on specific interface and path.
+    async fn publish_object(
+        &self,
+        object_data: AstarteDatastreamObject,
+        interface_name: &str,
+        path: &str,
+    ) -> Result<(), AstarteMessageHubError>;
+
+    /// Publish an [`AstartePropertyIndividual`] on specific interface and path.
+    async fn publish_property(
+        &self,
+        data: AstartePropertyIndividual,
+        interface_name: &str,
+        path: &str,
+    ) -> Result<(), AstarteMessageHubError>;
 }
 
 /// A **trait** required for all Astarte handlers that want to subscribe and unsubscribe a
