@@ -50,3 +50,6 @@ jobs:
   e2e-test:
     uses: ./.github/workflows/e2e-test.yaml
     needs: [reuse, dco]
+  multi-platform:
+    uses: ./.github/workflows/multi-platform.yaml
+    needs: [reuse, dco]
