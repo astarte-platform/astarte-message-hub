@@ -31,9 +31,13 @@ use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
 use astarte_message_hub::config::{Config, DEFAULT_HOST, DEFAULT_HTTP_PORT};
 use eyre::{Context, OptionExt};
 use std::convert::identity;
+use std::io::{stdout, IsTerminal};
 use std::path::Path;
 use std::time::Duration;
 use tokio::task::JoinSet;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 use astarte_message_hub::{
     astarte::handler::init_pub_sub, config::MessageHubOptions, AstarteMessageHub,
@@ -50,7 +54,8 @@ mod cli;
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     stable_eyre::install()?;
-    env_logger::try_init()?;
+
+    init_tracing()?;
 
     let args = Cli::parse();
 
@@ -262,4 +267,27 @@ fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
             error!("couldn't receive SIGINT {err}");
         }
     }))
+}
+
+fn init_tracing() -> eyre::Result<()> {
+    let fmt = tracing_subscriber::fmt::layer().with_ansi(stdout().is_terminal());
+
+    let env = match std::env::var("RUST_LOG") {
+        Ok(env) => env,
+        Err(std::env::VarError::NotPresent) => {
+            "e2e_test=debug,astarte_message_hub=debug".to_string()
+        }
+        Err(err) => {
+            return Err(err).wrap_err("invalid RUST_LOG env variable");
+        }
+    };
+
+    let env = EnvFilter::builder().parse(env)?;
+
+    tracing_subscriber::registry()
+        .with(fmt)
+        .with(env)
+        .try_init()?;
+
+    Ok(())
 }

@@ -28,9 +28,13 @@ use astarte_device_sdk::{Client, EventLoop};
 
 use clap::Parser;
 use log::{error, info};
+use std::io::{stdout, IsTerminal};
 use std::time;
 use tokio::signal::ctrl_c;
 use tokio::task::JoinSet;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
 const DEVICE_DATASTREAM: &str = include_str!(
@@ -63,10 +67,25 @@ struct Cli {
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
+fn init_tracing() -> Result<(), DynError> {
+    let fmt = tracing_subscriber::fmt::layer().with_ansi(stdout().is_terminal());
+    let env_str =
+        std::env::var("RUST_LOG").unwrap_or("e2e_test=debug,astarte_message_hub=debug".to_string());
+    let env = EnvFilter::builder().parse(env_str)?;
+
+    tracing_subscriber::registry()
+        .with(fmt)
+        .with(env)
+        .try_init()?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), DynError> {
     stable_eyre::install()?;
-    env_logger::try_init()?;
+
+    init_tracing()?;
 
     let args = Cli::parse();
     let node_id = Uuid::parse_str(&args.uuid)?;
