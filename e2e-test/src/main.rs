@@ -298,7 +298,7 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
     for prop in stored_prop {
         let exp_value = data
             .remove(prop.path.trim_start_matches('/'))
-            .ok_or_eyre(format!("endpoint not found for prop {:#?}", prop))?;
+            .ok_or_eyre(format!("endpoint not found for prop {prop:#?}"))?;
         assert_eq!(exp_value, prop.value);
     }
 
