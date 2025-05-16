@@ -31,9 +31,13 @@ use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
 use astarte_message_hub::config::{Config, DEFAULT_HOST, DEFAULT_HTTP_PORT};
 use eyre::{Context, OptionExt};
 use std::convert::identity;
+use std::io::{stdout, IsTerminal};
 use std::path::Path;
 use std::time::Duration;
 use tokio::task::JoinSet;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 use astarte_message_hub::{
     astarte::handler::init_pub_sub, config::MessageHubOptions, AstarteMessageHub,
@@ -47,10 +51,13 @@ use crate::cli::Cli;
 
 mod cli;
 
+const DEFAULT_LOG_DIRECTIVE: &str = concat!(env!("CARGO_PKG_NAME"), "=info");
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     stable_eyre::install()?;
-    env_logger::try_init()?;
+
+    init_tracing()?;
 
     let args = Cli::parse();
 
@@ -262,4 +269,19 @@ fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
             error!("couldn't receive SIGINT {err}");
         }
     }))
+}
+
+fn init_tracing() -> eyre::Result<()> {
+    let fmt = tracing_subscriber::fmt::layer().with_ansi(stdout().is_terminal());
+
+    tracing_subscriber::registry()
+        .with(fmt)
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(DEFAULT_LOG_DIRECTIVE.parse()?)
+                .from_env_lossy(),
+        )
+        .try_init()?;
+
+    Ok(())
 }

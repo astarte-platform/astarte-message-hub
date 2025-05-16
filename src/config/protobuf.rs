@@ -81,7 +81,7 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             .map(|host| IpAddr::from_str(&host))
             .transpose()
             .map_err(|err| {
-                Status::new(Code::InvalidArgument, format!("Invalid grpc host: {}", err))
+                Status::new(Code::InvalidArgument, format!("Invalid grpc host: {err}"))
             })?;
 
         // Protobuf version 3 only supports u32
@@ -90,7 +90,7 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             .map(u16::try_from)
             .transpose()
             .map_err(|err: TryFromIntError| {
-                Status::new(Code::InvalidArgument, format!("Invalid grpc port: {}", err))
+                Status::new(Code::InvalidArgument, format!("Invalid grpc port: {err}"))
             })?;
 
         #[allow(deprecated)]

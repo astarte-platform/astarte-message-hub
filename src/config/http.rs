@@ -78,19 +78,19 @@ impl IntoResponse for ErrorResponse {
         let (status, msg) = match self {
             ErrorResponse::InvalidConfig(err) => (
                 StatusCode::BAD_REQUEST,
-                format!("Invalid configuration: {}", err),
+                format!("Invalid configuration: {err}"),
             ),
             ErrorResponse::Serialize(err) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Error in config serialization, {}", err),
+                format!("Error in config serialization, {err}"),
             ),
             ErrorResponse::Write(err) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Unable to write in toml file, {}", err),
+                format!("Unable to write in toml file, {err}"),
             ),
             ErrorResponse::Channel(err) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Channel error, {}", err),
+                format!("Channel error, {err}"),
             ),
         };
 

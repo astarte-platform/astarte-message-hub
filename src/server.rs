@@ -100,7 +100,7 @@ where
         let interfaces_json = InterfacesJson::from_iter(node.interfaces_json);
         let astarte_node = AstarteNode::from_json(node_id, &interfaces_json)?;
 
-        info!("Node attached {:?}", astarte_node);
+        info!("Node attached {astarte_node:?}");
 
         let sub = self.astarte_handler.subscribe(&astarte_node).await?;
 
@@ -606,7 +606,7 @@ where
         let astarte_message = request.into_inner();
 
         if let Err(err) = self.astarte_handler.publish(&astarte_message).await {
-            let err_msg = format!("Unable to publish astarte message, err: {:?}", err);
+            let err_msg = format!("Unable to publish astarte message, err: {err:?}");
             error!("{err_msg}");
             Err(Status::internal(err_msg))
         } else {
