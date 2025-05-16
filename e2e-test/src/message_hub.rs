@@ -21,7 +21,7 @@ use std::{net::Ipv6Addr, path::Path, sync::Arc, time::Duration};
 use astarte_device_sdk::{
     builder::DeviceBuilder, prelude::*, store::SqliteStore, transport::mqtt::MqttConfig,
 };
-use astarte_message_hub::{astarte::handler::init_pub_sub, AstarteMessageHub};
+use astarte_message_hub::{astarte::handler::DevicePubSub, AstarteMessageHub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use eyre::{Context, OptionExt};
 use futures::{future::BoxFuture, FutureExt};
@@ -83,9 +83,9 @@ pub async fn init_message_hub(
         .build()
         .await?;
 
-    let (publisher, mut subscriber) = init_pub_sub(client);
+    let mut pubsub = DevicePubSub::new(client);
 
-    let message_hub = AstarteMessageHub::new(publisher, interfaces);
+    let message_hub = AstarteMessageHub::new(pubsub.clone(), interfaces);
 
     let server = tasks.spawn(async move {
         let layer = ServiceBuilder::new()
@@ -114,7 +114,7 @@ pub async fn init_message_hub(
 
     // Forward the astarte events to the subscribers
     let forwarder = tasks.spawn(async move {
-        subscriber
+        pubsub
             .forward_events()
             .await
             .wrap_err("subscriber disconnected")
