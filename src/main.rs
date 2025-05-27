@@ -258,6 +258,8 @@ fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
 
     Ok(future)
 }
+
+#[cfg(not(unix))]
 fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
     use futures::FutureExt;
 
@@ -267,8 +269,6 @@ fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
         }
     }))
 }
-
-#[cfg(not(unix))]
 
 fn init_tracing() -> eyre::Result<()> {
     let fmt = tracing_subscriber::fmt::layer().with_ansi(stdout().is_terminal());

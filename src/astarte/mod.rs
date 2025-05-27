@@ -41,8 +41,9 @@ pub mod handler;
 pub(crate) mod sdk;
 
 /// A **trait** required for all Astarte handlers that want to publish data on Astarte.
+/// Also provide functionality to subscribe and unsubscribe a node to Astarte.
 #[async_trait]
-pub trait AstartePublisher: Send + Sync {
+pub trait AstartePubSub: Send + Sync {
     /// Publish new data on Astarte.
     ///
     /// The `astarte_message` argument format is
@@ -98,12 +99,7 @@ pub trait AstartePublisher: Send + Sync {
         interface_name: &str,
         path: &str,
     ) -> Result<(), AstarteMessageHubError>;
-}
 
-/// A **trait** required for all Astarte handlers that want to subscribe and unsubscribe a
-/// node to Astarte.
-#[async_trait]
-pub trait AstarteSubscriber {
     /// Subscribe a new node to Astarte.
     async fn subscribe(
         &self,
