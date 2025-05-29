@@ -58,7 +58,7 @@ impl Introspection {
     }
 
     fn interface_file(&self, interface_name: &str) -> PathBuf {
-        self.interface_dir.join(format!("{}.json", interface_name))
+        self.interface_dir.join(format!("{interface_name}.json"))
     }
 
     pub(crate) async fn store_many<'a, I>(&self, interfaces: I)

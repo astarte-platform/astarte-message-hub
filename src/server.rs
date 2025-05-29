@@ -350,20 +350,30 @@ where
     }
 }
 
+#[derive(thiserror::Error, Debug, displaydoc::Display)]
+/// Request missing node id
+pub struct NodeIdError;
+
+impl From<NodeIdError> for Status {
+    fn from(value: NodeIdError) -> Self {
+        Status::failed_precondition(value.to_string())
+    }
+}
+
 /// Retrieve information from a [`Request`]
 pub trait RequestExt {
-    fn get_node_id(&self) -> Result<&NodeId, Status>;
+    fn get_node_id(&self) -> Result<&NodeId, NodeIdError>;
 }
 
 impl<R> RequestExt for Request<R> {
-    fn get_node_id(&self) -> Result<&NodeId, Status> {
+    fn get_node_id(&self) -> Result<&NodeId, NodeIdError> {
         if let Some(node_id) = self.extensions().get::<NodeId>() {
             trace!("node id {node_id} checked");
             return Ok(node_id);
         }
 
         error!("missing node id");
-        Err(Status::failed_precondition("missing node id"))
+        Err(NodeIdError)
     }
 }
 
@@ -488,7 +498,7 @@ where
         let astarte_message = request.into_inner();
 
         if let Err(err) = self.astarte_handler.publish(&astarte_message).await {
-            let err_msg = format!("Unable to publish astarte message, err: {:?}", err);
+            let err_msg = format!("Unable to publish astarte message, err: {err:?}");
             Err(Status::internal(err_msg))
         } else {
             Ok(Response::new(Empty {}))

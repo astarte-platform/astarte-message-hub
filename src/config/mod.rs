@@ -469,7 +469,7 @@ mod test {
         };
 
         let res = expected_msg_hub_opts.validate();
-        assert!(res.is_ok(), "{:?}", res);
+        assert!(res.is_ok(), "{res:?}");
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap();
     }
 
@@ -748,7 +748,7 @@ mod test {
 
         let opts = toml::from_str::<Config>(config);
 
-        assert!(opts.is_ok(), "error deserializing config: {:?}", opts);
+        assert!(opts.is_ok(), "error deserializing config: {opts:?}");
         let opts = opts.unwrap();
 
         #[allow(deprecated)]
@@ -826,8 +826,7 @@ mod test {
 
         assert!(
             device_id.is_ok(),
-            "error obtaining stored credential {:?}",
-            device_id
+            "error obtaining stored credential {device_id:?}",
         );
         assert_eq!(opt.device_id.unwrap(), expected);
     }
