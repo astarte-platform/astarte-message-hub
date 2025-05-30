@@ -16,6 +16,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Bump MSRV to 1.78.0.
 
+## [0.7.3] - 2025-05-29
+
+### Added
+
+- Add the `pairing_url` configuration option to the cmdline `--pairing-url` and environment variable
+  `MSGHUB_PAIRING_URL`. [#334](https://github.com/astarte-platform/astarte-message-hub/pull/334)
+
 ## [0.7.2] - 2025-03-07
 
 ### Changed

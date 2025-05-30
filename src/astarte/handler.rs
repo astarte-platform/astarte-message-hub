@@ -57,7 +57,8 @@ type SubscribersMap = Arc<RwLock<HashMap<Uuid, Subscriber>>>;
 #[derive(Debug, thiserror::Error, displaydoc::Display)]
 pub enum DeviceError {
     /// received error from Astarte
-    Astarte(#[source] AstarteError),
+    // TODO: remove Box when updating the Astarte SDK
+    Astarte(#[source] Box<AstarteError>),
     /// couldn't convert the astarte event into a proto message
     Convert(#[from] MessageHubProtoError),
     /// subscriber already disconnected

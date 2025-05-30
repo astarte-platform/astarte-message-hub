@@ -38,6 +38,7 @@ The format for the configuration file is the following:
 # Required fields
 #
 realm = "<REALM>"
+# Required to comunicate with Astarte.
 pairing_url = "<PAIRING_URL>"
 # Used to register a device and obtain a `credentials_secret`
 pairing_token = "[PAIRING_TOKEN]"
