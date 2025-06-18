@@ -16,7 +16,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-FROM rust:1.86-alpine3.20 AS build
+FROM rust:1.87-alpine3.20 AS build
 
 RUN mkdir /msg-hub && \
     apk add --no-cache alpine-sdk musl-dev pkgconfig \
@@ -29,7 +29,7 @@ WORKDIR /msg-hub
 
 RUN cargo build --release
 
-FROM alpine:3.21
+FROM alpine:3.22
 
 RUN mkdir -p /usr/share/message-hub/astarte-interfaces \
     /var/lib/message-hub/interfaces
