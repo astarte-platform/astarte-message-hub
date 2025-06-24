@@ -22,7 +22,7 @@ use astarte_device_sdk::{
     builder::DeviceBuilder,
     prelude::*,
     store::memory::MemoryStore,
-    transport::grpc::{store::GrpcStore, GrpcConfig},
+    transport::grpc::{Grpc, GrpcConfig},
     DeviceClient, DeviceEvent,
 };
 use eyre::Context;
@@ -37,7 +37,7 @@ use crate::{interfaces::INTERFACES, GRPC_PORT, UUID};
 
 pub struct Node {
     handle: AbortHandle,
-    pub client: DeviceClient<GrpcStore>,
+    pub client: DeviceClient<Grpc>,
 }
 
 impl Node {

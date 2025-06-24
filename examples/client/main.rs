@@ -79,7 +79,7 @@ async fn main() -> Result<(), DynError> {
 
     let grpc_cfg = GrpcConfig::from_url(node_id, args.endpoint)?;
 
-    let (client, connection) = DeviceBuilder::new()
+    let (mut client, connection) = DeviceBuilder::new()
         .store(MemoryStore::new())
         .interface_str(DEVICE_DATASTREAM)?
         .interface_str(SERVER_DATASTREAM)?
@@ -110,7 +110,7 @@ async fn main() -> Result<(), DynError> {
 
     // Create a task to transmit
     tasks.spawn({
-        let client = client.clone();
+        let mut client = client.clone();
 
         async move {
             let now = time::SystemTime::now();
@@ -128,10 +128,10 @@ async fn main() -> Result<(), DynError> {
                 let elapsed_str = format!("Uptime for node {}: {}", args.uuid, elapsed);
 
                 client
-                    .send(
+                    .send_individual(
                         "org.astarte-platform.rust.examples.datastream.DeviceDatastream",
                         "/uptime",
-                        elapsed_str,
+                        elapsed_str.into(),
                     )
                     .await?;
 

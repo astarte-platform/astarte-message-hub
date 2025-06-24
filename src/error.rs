@@ -24,7 +24,7 @@
 use std::io;
 use std::path::PathBuf;
 
-use astarte_device_sdk::interface::error::InterfaceError;
+use astarte_device_sdk::astarte_interfaces::error::Error as InterfaceError;
 use astarte_device_sdk::introspection::AddInterfaceError;
 use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
 use astarte_message_hub_proto::prost::UnknownEnumValue;
