@@ -27,7 +27,7 @@ use interfaces::ServerAggregate;
 use itertools::Itertools;
 use tempfile::tempdir;
 use tokio::{sync::Barrier, task::JoinSet};
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use uuid::{uuid, Uuid};
 
@@ -171,6 +171,20 @@ async fn e2e_test(
     Ok(())
 }
 
+async fn send<F, O>(node: &Node, barrier: &Barrier, f: F) -> eyre::Result<()>
+where
+    F: FnOnce(DeviceClient<Grpc>) -> O,
+    O: Future<Output = eyre::Result<()>> + Send + 'static,
+{
+    let client = node.client.clone();
+    let handle = tokio::spawn((f)(client));
+
+    // wait for send call
+    barrier.wait().await;
+
+    handle.await?
+}
+
 async fn send_prop<F, O>(node: &Node, barrier: &Barrier, f: F) -> eyre::Result<()>
 where
     F: FnOnce(DeviceClient<Grpc>) -> O,
@@ -190,16 +204,19 @@ where
 #[instrument(skip_all)]
 async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre::Result<()> {
     debug!("sending DeviceAggregate");
-    node.client
-        .send_object_with_timestamp(
-            DeviceAggregate::name(),
-            DeviceAggregate::path(),
-            DeviceAggregate::default().into_object()?,
-            chrono::Utc::now(),
-        )
-        .await?;
+    send(node, barrier, |mut client| async move {
+        client
+            .send_object_with_timestamp(
+                DeviceAggregate::name(),
+                DeviceAggregate::path(),
+                DeviceAggregate::default().into_object()?,
+                chrono::Utc::now(),
+            )
+            .await?;
 
-    barrier.wait().await;
+        Ok(())
+    })
+    .await?;
 
     retry(10, || async move {
         let data: DeviceAggregate = api
@@ -218,17 +235,19 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
     let mut data = DeviceDatastream::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
+        send(node, barrier, |mut client| async move {
+            client
+                .send_individual_with_timestamp(
+                    DeviceDatastream::name(),
+                    &format!("/{endpoint}"),
+                    value,
+                    chrono::Utc::now(),
+                )
+                .await?;
 
-        node.client
-            .send_individual_with_timestamp(
-                DeviceDatastream::name(),
-                &format!("/{endpoint}"),
-                value,
-                chrono::Utc::now(),
-            )
-            .await?;
-
-        barrier.wait().await;
+            Ok(())
+        })
+        .await?;
     }
 
     retry(10, || {
@@ -322,11 +341,14 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
     for &endpoint in ENDPOINTS {
         ensure!(data.get(endpoint).is_some(), "endpoint not found");
 
-        node.client
-            .unset_property(DeviceProperty::name(), &format!("/{endpoint}"))
-            .await?;
+        send(node, barrier, |mut client| async move {
+            client
+                .unset_property(DeviceProperty::name(), &format!("/{endpoint}"))
+                .await?;
 
-        barrier.wait().await;
+            Ok(())
+        })
+        .await?;
     }
 
     retry(10, || async move {
