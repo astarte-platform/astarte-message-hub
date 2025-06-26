@@ -25,6 +25,7 @@
 #![warn(missing_docs)]
 
 use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
+use astarte_device_sdk::rumqttc::tokio_rustls::rustls;
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
@@ -51,6 +52,11 @@ mod cli;
 async fn main() -> eyre::Result<()> {
     stable_eyre::install()?;
     env_logger::try_init()?;
+
+    // Use aws_lc as default crypto provider
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .map_err(|_| eyre!("failed to install default crypto provider"))?;
 
     let args = Cli::parse();
 

@@ -61,6 +61,9 @@ zbus = { workspace = true, default-features = false, features = ["tokio"] }
 # Transitive dependencies
 native-tls = { workspace = true }
 
+# C dependencies
+aws-lc-rs = { version = "*", optional = true }
+
 [dev-dependencies]
 astarte-device-sdk-mock = { workspace = true }
 mockall = { workspace = true }
@@ -109,3 +112,9 @@ zbus = { version = "3.15.2", default-features = false }
 
 # Transitive dependencies
 native-tls = "=0.2.13"
+
+[features]
+vendored = ["native-tls/vendored"]
+bindgen = ["dep:aws-lc-rs", "aws-lc-rs/bindgen"]
+# Feature to make it easier to cross compile the astarte message hub
+cross = ["vendored", "bindgen"]
