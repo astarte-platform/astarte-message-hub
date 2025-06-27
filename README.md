@@ -60,7 +60,7 @@ interfaces_directory = "[INTERFACES_DIRECTORY]"
 store_directory = "./"
 # Address the gRPC connection will bind to
 grpc_socket_host = "127.0.0.1"
-grpc_socket_port = 5051
+grpc_socket_port = 50051
 
 [astarte]
 # Ignore SSL errors
