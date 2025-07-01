@@ -609,7 +609,6 @@ where
             error!("{err_msg}");
             Err(Status::internal(err_msg))
         } else {
-            info!("PUBLISH COMPLETED, SENDING RESPONSE");
             Ok(Response::new(Empty {}))
         }
     }

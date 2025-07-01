@@ -404,7 +404,13 @@ async fn receive_server_data(node: &mut Node, api: &Api, barrier: &Barrier) -> e
         assert_eq!(event.interface, ServerProperty::name());
         assert_eq!(event.path, format!("/{k}"));
 
-        let (data, _timestamp) = event.data.as_individual().ok_or_eyre("not an object")?;
+        let data = event
+            .data
+            .as_property()
+            .ok_or_eyre("not an object")?
+            .as_ref()
+            .unwrap();
+
         assert_eq!(data, v);
     }
 
@@ -494,17 +500,19 @@ async fn extend_node_interfaces(
     let mut data = AdditionalDeviceDatastream::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
+        send(node, barrier, |mut client| async move {
+            client
+                .send_individual_with_timestamp(
+                    AdditionalDeviceDatastream::name(),
+                    &format!("/{endpoint}"),
+                    value,
+                    chrono::Utc::now(),
+                )
+                .await?;
 
-        node.client
-            .send_individual_with_timestamp(
-                AdditionalDeviceDatastream::name(),
-                &format!("/{endpoint}"),
-                value,
-                chrono::Utc::now(),
-            )
-            .await?;
-
-        barrier.wait().await;
+            Ok(())
+        })
+        .await?;
     }
 
     retry(10, || {
