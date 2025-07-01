@@ -63,6 +63,7 @@ native-tls = { workspace = true }
 
 # C dependencies
 aws-lc-rs = { version = "*", optional = true }
+rusqlite = { version = "*", optional = true }
 
 [dev-dependencies]
 astarte-device-sdk-mock = { workspace = true }
@@ -114,7 +115,7 @@ zbus = { version = "3.15.2", default-features = false }
 native-tls = "=0.2.13"
 
 [features]
-vendored = ["native-tls/vendored"]
-bindgen = ["dep:aws-lc-rs", "aws-lc-rs/bindgen"]
+vendored = ["native-tls/vendored", "dep:rusqlite", "rusqlite/bundled"]
+bindgen = ["dep:aws-lc-rs", "aws-lc-rs/bindgen", "dep:rusqlite", "rusqlite/buildtime_bindgen"]
 # Feature to make it easier to cross compile the astarte message hub
 cross = ["vendored", "bindgen"]
