@@ -38,7 +38,7 @@ The format for the configuration file is the following:
 # Required fields
 #
 realm = "<REALM>"
-# Required to comunicate with Astarte.
+# Required to communicate with Astarte.
 pairing_url = "<PAIRING_URL>"
 # Used to register a device and obtain a `credentials_secret`
 pairing_token = "[PAIRING_TOKEN]"
@@ -60,7 +60,7 @@ interfaces_directory = "[INTERFACES_DIRECTORY]"
 store_directory = "./"
 # Address the gRPC connection will bind to
 grpc_socket_host = "127.0.0.1"
-grpc_socket_port = 5051
+grpc_socket_port = 50051
 
 [astarte]
 # Ignore SSL errors
