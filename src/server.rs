@@ -51,14 +51,14 @@ use tower::{Layer, Service};
 use uuid::Uuid;
 
 use crate::astarte::handler::DeviceError;
-use crate::astarte::{AstartePublisher, AstarteSubscriber, PropAccessExt};
+use crate::astarte::{AstartePubSub, PropAccessExt};
 use crate::cache::Introspection;
 use crate::error::AstarteMessageHubError;
 
 type Resp<T> = Result<Response<T>, AstarteMessageHubError>;
 
 /// Main struct for the Astarte message hub.
-pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber + PropAccessExt> {
+pub struct AstarteMessageHub<T: Clone + AstartePubSub + PropAccessExt> {
     /// The nodes connected to the message hub.
     nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
     /// The Astarte handler used to communicate with Astarte.
@@ -68,7 +68,7 @@ pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber + P
 
 impl<T> AstarteMessageHub<T>
 where
-    T: 'static + Clone + AstartePublisher + AstarteSubscriber + PropAccessExt,
+    T: 'static + Clone + AstartePubSub + PropAccessExt,
 {
     /// Instantiate a new Astarte message hub.
     ///
@@ -482,7 +482,7 @@ impl<R> RequestExt for Request<R> {
 #[tonic::async_trait]
 impl<T> MessageHub for AstarteMessageHub<T>
 where
-    T: Clone + AstartePublisher + AstarteSubscriber + PropAccessExt + 'static,
+    T: Clone + AstartePubSub + PropAccessExt + 'static,
 {
     type AttachStream = ReceiverStream<Result<MessageHubEvent, Status>>;
 
@@ -737,7 +737,10 @@ mod test {
     use astarte_device_sdk::AstarteType;
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::astarte_message::Payload;
-    use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
+    use astarte_message_hub_proto::{
+        AstarteData, AstarteDatastreamIndividual, AstarteDatastreamObject,
+        AstartePropertyIndividual,
+    };
     use async_trait::async_trait;
     use hyper::{Response, StatusCode};
     use mockall::mock;
@@ -754,8 +757,8 @@ mod test {
     use tower::{Service, ServiceBuilder};
     use uuid::Uuid;
 
+    use crate::astarte::AstartePubSub;
     use crate::astarte::Subscription;
-    use crate::astarte::{AstartePublisher, AstarteSubscriber};
     use crate::error::AstarteMessageHubError;
     use crate::server::{
         node_id_from_ascii, node_id_from_bin, AstarteNode, InterceptorError, NodeId,
@@ -774,15 +777,33 @@ mod test {
         }
 
         #[async_trait]
-        impl AstartePublisher for AstarteHandler {
+        impl AstartePubSub for AstarteHandler {
             async fn publish(
                 &self,
                 data: &AstarteMessage
             ) -> Result<(), AstarteMessageHubError>;
-        }
 
-        #[async_trait]
-        impl AstarteSubscriber for AstarteHandler {
+            async fn publish_individual(
+                &self,
+                data: AstarteDatastreamIndividual,
+                interface_name: &str,
+                path: &str,
+            ) -> Result<(), AstarteMessageHubError>;
+
+            async fn publish_object(
+                &self,
+                object_data: AstarteDatastreamObject,
+                interface_name: &str,
+                path: &str,
+            ) -> Result<(), AstarteMessageHubError>;
+
+            async fn publish_property(
+                &self,
+                data: AstartePropertyIndividual,
+                interface_name: &str,
+                path: &str,
+            ) -> Result<(), AstarteMessageHubError>;
+
             async fn subscribe(
                 &self,
                 astarte_node: &AstarteNode,
