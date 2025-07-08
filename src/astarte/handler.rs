@@ -39,7 +39,6 @@ use astarte_message_hub_proto::{
     AstartePropertyIndividual, MessageHubEvent,
 };
 use async_trait::async_trait;
-use chrono::Utc;
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use log::{debug, error, info, trace};
@@ -317,15 +316,11 @@ impl DevicePublisher {
             .await?
             .into_iter()
             .filter_map(|prop| {
-                let timestamp = Utc::now();
                 node.introspection.contains_key(&prop.interface).then(|| {
                     let event = DeviceEvent {
                         interface: prop.interface,
                         path: prop.path,
-                        data: Value::Individual {
-                            data: prop.value,
-                            timestamp,
-                        },
+                        data: Value::Property(Some(prop.value)),
                     };
 
                     MessageHubEvent::from(AstarteMessage::from(event))
