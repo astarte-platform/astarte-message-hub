@@ -22,7 +22,8 @@
 //! This module contains all the required traits for such an handler.
 
 use astarte_device_sdk::store::StoredProp;
-use astarte_device_sdk::{AstarteType, Interface};
+use astarte_device_sdk::AstarteData;
+use astarte_interfaces::Interface;
 use astarte_message_hub_proto::{AstarteMessage, MessageHubEvent};
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
@@ -97,7 +98,7 @@ pub trait PropAccessExt {
         node_id: NodeId,
         interface: &str,
         path: &str,
-    ) -> impl std::future::Future<Output = Result<Option<AstarteType>, AstarteMessageHubError>>
+    ) -> impl std::future::Future<Output = Result<Option<AstarteData>, AstarteMessageHubError>>
            + std::marker::Send;
 
     /// Get all the node properties of the given interface.

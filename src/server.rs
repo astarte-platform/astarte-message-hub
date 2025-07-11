@@ -28,9 +28,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use astarte_device_sdk::interface::def::Ownership;
 use astarte_device_sdk::store::StoredProp;
-use astarte_device_sdk::Interface;
+use astarte_interfaces::{interface::Ownership, Interface};
 use astarte_message_hub_proto::message_hub_server::MessageHub;
 use astarte_message_hub_proto::{
     AstarteData, AstarteMessage, AstartePropertyIndividual, InterfaceName, InterfacesJson,
@@ -734,7 +733,8 @@ impl AstarteNode {
 #[cfg(test)]
 mod test {
     use astarte_device_sdk::store::StoredProp;
-    use astarte_device_sdk::AstarteType;
+    use astarte_device_sdk::AstarteData as AstarteDataSdk;
+    use astarte_interfaces::error::Error as InterfaceError;
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::astarte_message::Payload;
     use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
@@ -801,7 +801,7 @@ mod test {
                 node_id: NodeId,
                 interface: &str,
                 path: &str,
-            ) -> Result<Option<AstarteType>, AstarteMessageHubError>;
+            ) -> Result<Option<AstarteDataSdk>, AstarteMessageHubError>;
 
             async fn interface_props(
                 &self,
@@ -938,9 +938,10 @@ mod test {
 
         // send a custom error to the Node
         let msghub_event = MessageHubEvent::from_error(AstarteMessageHubError::Astarte(
-            astarte_device_sdk::Error::Interface(
-                astarte_device_sdk::interface::error::InterfaceError::MajorMinor,
-            ),
+            astarte_device_sdk::Error::Interface(InterfaceError::DuplicateMapping {
+                endpoint: "test".to_string(),
+                duplicate: "test".to_string(),
+            }),
         ));
         if let Err(err) = tx.send(Ok(msghub_event.clone())).await {
             panic!("send error: {err:?}");
@@ -1196,7 +1197,7 @@ mod test {
         mock_astarte
             .expect_property()
             .once()
-            .returning(|_, _, _| Ok(Some(AstarteType::Boolean(true))));
+            .returning(|_, _, _| Ok(Some(AstarteDataSdk::Boolean(true))));
 
         let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, "");
@@ -1243,23 +1244,23 @@ mod test {
         let p1_dev = StoredProp {
             interface: "io.demo.Values1".to_string(),
             path: "/1/test1".to_string(),
-            value: AstarteType::Integer(1),
+            value: AstarteDataSdk::Integer(1),
             interface_major: 0,
-            ownership: astarte_device_sdk::interface::def::Ownership::Device,
+            ownership: Ownership::Device,
         };
         let p2_dev = StoredProp {
             interface: "io.demo.Values1".to_string(),
             path: "/1/test2".to_string(),
-            value: AstarteType::Boolean(true),
+            value: AstarteDataSdk::Boolean(true),
             interface_major: 0,
-            ownership: astarte_device_sdk::interface::def::Ownership::Device,
+            ownership: Ownership::Device,
         };
         let p1_serv = StoredProp {
             interface: "io.demo.Values2".to_string(),
             path: "/2/test1".to_string(),
-            value: AstarteType::Boolean(true),
+            value: AstarteDataSdk::Boolean(true),
             interface_major: 0,
-            ownership: astarte_device_sdk::interface::def::Ownership::Server,
+            ownership: Ownership::Server,
         };
 
         let all_props = vec![p1_dev.clone(), p2_dev.clone(), p1_serv.clone()];
@@ -1325,7 +1326,7 @@ mod test {
 
         // get all device properties
         let prop_filter = PropertyFilter {
-            ownership: Some(astarte_device_sdk::interface::def::Ownership::Device as i32),
+            ownership: Some(Ownership::Device as i32),
         };
 
         let mut req_astarte_message = Request::new(prop_filter);
@@ -1351,7 +1352,7 @@ mod test {
 
         // get all server properties
         let prop_filter = PropertyFilter {
-            ownership: Some(astarte_device_sdk::interface::def::Ownership::Server as i32),
+            ownership: Some(Ownership::Server as i32),
         };
 
         let mut req_astarte_message = Request::new(prop_filter);
@@ -1383,16 +1384,16 @@ mod test {
         let prop1 = StoredProp {
             interface: "io.demo.Values1".to_string(),
             path: "/1/test1".to_string(),
-            value: AstarteType::Integer(1),
+            value: AstarteDataSdk::Integer(1),
             interface_major: 0,
-            ownership: astarte_device_sdk::interface::def::Ownership::Device,
+            ownership: Ownership::Device,
         };
         let prop2 = StoredProp {
             interface: "io.demo.Values1".to_string(),
             path: "/1/test2".to_string(),
-            value: AstarteType::Boolean(true),
+            value: AstarteDataSdk::Boolean(true),
             interface_major: 0,
-            ownership: astarte_device_sdk::interface::def::Ownership::Device,
+            ownership: Ownership::Device,
         };
 
         let props = vec![prop1, prop2];

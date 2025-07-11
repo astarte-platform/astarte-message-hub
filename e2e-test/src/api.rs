@@ -18,9 +18,10 @@
 
 use std::{collections::HashMap, fmt::Debug, str::FromStr};
 
-use astarte_device_sdk::{aggregate::AstarteObject, types::AstarteType};
+use astarte_device_sdk::{aggregate::AstarteObject, AstarteData};
 use color_eyre::{owo_colors::OwoColorize, Section, SectionExt};
 use eyre::{ensure, eyre};
+use itertools::Itertools;
 use reqwest::{Response, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
@@ -78,39 +79,39 @@ async fn check_response(url: &str, res: Response) -> eyre::Result<Response> {
     }
 }
 
-fn check_astarte_value(data: &AstarteType, value: &Value) -> eyre::Result<bool> {
+fn check_astarte_value(data: &AstarteData, value: &Value) -> eyre::Result<bool> {
     let check = match data {
-        AstarteType::Double(exp) => value.as_f64().is_some_and(|v| v == *exp),
-        AstarteType::Integer(exp) => value.as_i64().is_some_and(|v| v == i64::from(*exp)),
-        AstarteType::Boolean(exp) => value.as_bool().is_some_and(|v| v == *exp),
-        AstarteType::LongInteger(exp) => value.as_str().is_some_and(|v| v == exp.to_string()),
-        AstarteType::String(exp) => value.as_str().is_some_and(|v| v == exp),
-        AstarteType::BinaryBlob(exp) => value
+        AstarteData::Double(exp) => value.as_f64().is_some_and(|v| v == *exp),
+        AstarteData::Integer(exp) => value.as_i64().is_some_and(|v| v == i64::from(*exp)),
+        AstarteData::Boolean(exp) => value.as_bool().is_some_and(|v| v == *exp),
+        AstarteData::LongInteger(exp) => value.as_str().is_some_and(|v| v == exp.to_string()),
+        AstarteData::String(exp) => value.as_str().is_some_and(|v| v == exp),
+        AstarteData::BinaryBlob(exp) => value
             .as_str()
             .map(base64_decode)
             .transpose()?
             .is_some_and(|blob| blob == *exp),
-        AstarteType::DateTime(exp) => value
+        AstarteData::DateTime(exp) => value
             .as_str()
             .map(Timestamp::from_str)
             .transpose()?
             .is_some_and(|date_time| date_time == *exp),
-        AstarteType::DoubleArray(exp) => {
+        AstarteData::DoubleArray(exp) => {
             let arr: Vec<f64> = serde_json::from_value(value.clone())?;
 
             arr == *exp
         }
-        AstarteType::IntegerArray(exp) => {
+        AstarteData::IntegerArray(exp) => {
             let arr: Vec<i32> = serde_json::from_value(value.clone())?;
 
             arr == *exp
         }
-        AstarteType::BooleanArray(exp) => {
+        AstarteData::BooleanArray(exp) => {
             let arr: Vec<bool> = serde_json::from_value(value.clone())?;
 
             arr == *exp
         }
-        AstarteType::LongIntegerArray(exp) => {
+        AstarteData::LongIntegerArray(exp) => {
             let arr: Vec<String> = serde_json::from_value(value.clone())?;
             let arr = arr
                 .into_iter()
@@ -119,12 +120,12 @@ fn check_astarte_value(data: &AstarteType, value: &Value) -> eyre::Result<bool> 
 
             arr == *exp
         }
-        AstarteType::StringArray(exp) => {
+        AstarteData::StringArray(exp) => {
             let arr: Vec<String> = serde_json::from_value(value.clone())?;
 
             arr == *exp
         }
-        AstarteType::BinaryBlobArray(exp) => {
+        AstarteData::BinaryBlobArray(exp) => {
             let arr: Vec<String> = serde_json::from_value(value.clone())?;
             let arr = arr
                 .into_iter()
@@ -133,7 +134,7 @@ fn check_astarte_value(data: &AstarteType, value: &Value) -> eyre::Result<bool> 
 
             arr == *exp
         }
-        AstarteType::DateTimeArray(exp) => {
+        AstarteData::DateTimeArray(exp) => {
             let arr: Vec<String> = serde_json::from_value(value.clone())?;
             let arr = arr
                 .into_iter()
@@ -268,27 +269,27 @@ impl Api {
         &self,
         interface: &str,
         path: &str,
-        data: &AstarteType,
+        data: &AstarteData,
     ) -> eyre::Result<()> {
         let url = format!("{}/interfaces/{interface}/{path}", self.url);
 
         let value = match data {
-            AstarteType::Double(v) => Value::from(*v),
-            AstarteType::Integer(v) => Value::from(*v),
-            AstarteType::Boolean(v) => Value::from(*v),
-            AstarteType::LongInteger(v) => Value::from(*v),
-            AstarteType::String(v) => Value::from(v.as_str()),
-            AstarteType::BinaryBlob(v) => Value::from(base64_encode(v)),
-            AstarteType::DateTime(v) => Value::from(v.to_rfc3339()),
-            AstarteType::DoubleArray(v) => Value::from(v.as_slice()),
-            AstarteType::IntegerArray(v) => Value::from(v.as_slice()),
-            AstarteType::BooleanArray(v) => Value::from(v.as_slice()),
-            AstarteType::LongIntegerArray(v) => Value::from(v.as_slice()),
-            AstarteType::StringArray(v) => Value::from(v.as_slice()),
-            AstarteType::BinaryBlobArray(v) => {
+            AstarteData::Double(v) => Value::from(**v),
+            AstarteData::Integer(v) => Value::from(*v),
+            AstarteData::Boolean(v) => Value::from(*v),
+            AstarteData::LongInteger(v) => Value::from(*v),
+            AstarteData::String(v) => Value::from(v.as_str()),
+            AstarteData::BinaryBlob(v) => Value::from(base64_encode(v)),
+            AstarteData::DateTime(v) => Value::from(v.to_rfc3339()),
+            AstarteData::DoubleArray(v) => Value::from(v.iter().map(|v| **v).collect_vec()),
+            AstarteData::IntegerArray(v) => Value::from(v.as_slice()),
+            AstarteData::BooleanArray(v) => Value::from(v.as_slice()),
+            AstarteData::LongIntegerArray(v) => Value::from(v.as_slice()),
+            AstarteData::StringArray(v) => Value::from(v.as_slice()),
+            AstarteData::BinaryBlobArray(v) => {
                 Value::from(v.iter().map(base64_encode).collect::<Vec<_>>())
             }
-            AstarteType::DateTimeArray(v) => {
+            AstarteData::DateTimeArray(v) => {
                 Value::from(v.iter().map(|d| d.to_rfc3339()).collect::<Vec<_>>())
             }
         };

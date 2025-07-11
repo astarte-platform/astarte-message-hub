@@ -177,8 +177,8 @@ async fn initialize_astarte_device_sdk(
     msg_hub_opts: &MessageHubOptions,
     interfaces_dir: &Path,
 ) -> eyre::Result<(
-    DeviceClient<SqliteStore>,
-    DeviceConnection<SqliteStore, Mqtt<SqliteStore>>,
+    DeviceClient<Mqtt<SqliteStore>>,
+    DeviceConnection<Mqtt<SqliteStore>>,
 )> {
     tokio::fs::create_dir_all(&msg_hub_opts.store_directory)
         .await

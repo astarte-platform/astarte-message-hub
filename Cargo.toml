@@ -31,6 +31,7 @@ description = "A central service that runs on (Linux) devices for collecting and
 
 [dependencies]
 astarte-device-sdk = { workspace = true, features = ["derive", "message-hub"] }
+astarte-interfaces = { workspace = true }
 astarte-message-hub-proto = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
@@ -63,7 +64,7 @@ native-tls = { workspace = true }
 
 # C dependencies
 aws-lc-rs = { version = "1.12.5", optional = true }
-rusqlite = { version = "0.29.0", optional = true }
+rusqlite = { version = "0.32.1", optional = true }
 
 [dev-dependencies]
 astarte-device-sdk-mock = { workspace = true }
@@ -73,9 +74,10 @@ serial_test = { workspace = true }
 tempfile = { workspace = true }
 
 [workspace.dependencies]
-astarte-device-sdk = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust.git", rev = "ca0325e0db334e1755fa1e56b14ae31658a4b2c7" }
-astarte-device-sdk-mock = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust.git", rev = "ca0325e0db334e1755fa1e56b14ae31658a4b2c7" }
-astarte-message-hub-proto = { git = "https://github.com/astarte-platform/astarte-message-hub-proto.git", rev = "87e9b3937cd563576de4bcb801a91c700bf196bb" }
+astarte-device-sdk = "0.10.2"
+astarte-device-sdk-mock = "0.10.2"
+astarte-interfaces = "0.1.1"
+astarte-message-hub-proto = "0.8.3"
 async-trait = "0.1.80"
 axum = "0.7.5"
 base64 = "0.22.0"
