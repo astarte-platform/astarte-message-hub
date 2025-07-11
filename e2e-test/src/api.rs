@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{collections::HashMap, fmt::Debug, ops::Deref, str::FromStr};
+use std::{collections::HashMap, fmt::Debug, str::FromStr};
 
 use astarte_device_sdk::{aggregate::AstarteObject, AstarteData};
 use color_eyre::{owo_colors::OwoColorize, Section, SectionExt};
@@ -274,14 +274,14 @@ impl Api {
         let url = format!("{}/interfaces/{interface}/{path}", self.url);
 
         let value = match data {
-            AstarteData::Double(v) => Value::from(*v.deref()),
+            AstarteData::Double(v) => Value::from(**v),
             AstarteData::Integer(v) => Value::from(*v),
             AstarteData::Boolean(v) => Value::from(*v),
             AstarteData::LongInteger(v) => Value::from(*v),
             AstarteData::String(v) => Value::from(v.as_str()),
             AstarteData::BinaryBlob(v) => Value::from(base64_encode(v)),
             AstarteData::DateTime(v) => Value::from(v.to_rfc3339()),
-            AstarteData::DoubleArray(v) => Value::from(v.iter().map(|v| *v.deref()).collect_vec()),
+            AstarteData::DoubleArray(v) => Value::from(v.iter().map(|v| **v).collect_vec()),
             AstarteData::IntegerArray(v) => Value::from(v.as_slice()),
             AstarteData::BooleanArray(v) => Value::from(v.as_slice()),
             AstarteData::LongIntegerArray(v) => Value::from(v.as_slice()),

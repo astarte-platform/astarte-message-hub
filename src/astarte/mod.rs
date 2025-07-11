@@ -21,9 +21,9 @@
 //!
 //! This module contains all the required traits for such an handler.
 
-use astarte_device_sdk::astarte_interfaces::Interface;
 use astarte_device_sdk::store::StoredProp;
 use astarte_device_sdk::AstarteData;
+use astarte_interfaces::Interface;
 use astarte_message_hub_proto::{AstarteMessage, MessageHubEvent};
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};

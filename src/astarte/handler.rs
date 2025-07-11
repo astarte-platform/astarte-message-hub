@@ -26,7 +26,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use astarte_device_sdk::aggregate::AstarteObject;
-use astarte_device_sdk::astarte_interfaces::{error::Error as InterfaceError, Interface};
 use astarte_device_sdk::store::StoredProp;
 use astarte_device_sdk::transport::mqtt::Mqtt;
 use astarte_device_sdk::AstarteData;
@@ -34,6 +33,7 @@ use astarte_device_sdk::{
     client::RecvError, properties::PropAccess, store::SqliteStore,
     transport::grpc::convert::MessageHubProtoError, DeviceEvent, Error as AstarteError, Value,
 };
+use astarte_interfaces::{error::Error as InterfaceError, Interface};
 use astarte_message_hub_proto::{
     astarte_message::Payload, AstarteDatastreamIndividual, AstarteDatastreamObject, AstarteMessage,
     AstartePropertyIndividual, MessageHubEvent,

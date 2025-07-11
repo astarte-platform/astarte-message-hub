@@ -200,6 +200,7 @@ version = "0.7.4"
 dependencies = [
  "astarte-device-sdk",
  "astarte-device-sdk-mock",
+ "astarte-interfaces",
  "astarte-message-hub-proto",
  "async-trait",
  "aws-lc-rs",
@@ -922,6 +923,7 @@ name = "e2e-test"
 version = "0.7.4"
 dependencies = [
  "astarte-device-sdk",
+ "astarte-interfaces",
  "astarte-message-hub",
  "astarte-message-hub-proto",
  "base64 0.22.1",

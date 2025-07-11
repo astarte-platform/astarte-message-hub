@@ -28,8 +28,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use astarte_device_sdk::astarte_interfaces::{interface::Ownership, Interface};
 use astarte_device_sdk::store::StoredProp;
+use astarte_interfaces::{interface::Ownership, Interface};
 use astarte_message_hub_proto::message_hub_server::MessageHub;
 use astarte_message_hub_proto::{
     AstarteData, AstarteMessage, AstartePropertyIndividual, InterfaceName, InterfacesJson,
@@ -732,9 +732,9 @@ impl AstarteNode {
 
 #[cfg(test)]
 mod test {
-    use astarte_device_sdk::astarte_interfaces::error::Error as InterfaceError;
     use astarte_device_sdk::store::StoredProp;
     use astarte_device_sdk::AstarteData as AstarteDataSdk;
+    use astarte_interfaces::error::Error as InterfaceError;
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::astarte_message::Payload;
     use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};

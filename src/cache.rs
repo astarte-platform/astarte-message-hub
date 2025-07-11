@@ -20,7 +20,7 @@
 
 use std::path::PathBuf;
 
-use astarte_device_sdk::astarte_interfaces::Interface;
+use astarte_interfaces::Interface;
 use log::{debug, error};
 
 /// Caching for the device introspection.

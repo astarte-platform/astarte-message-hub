@@ -19,9 +19,9 @@
 use std::str::FromStr;
 use std::{env::VarError, future::Future, sync::Arc};
 
-use astarte_device_sdk::astarte_interfaces::Interface;
 use astarte_device_sdk::transport::grpc::Grpc;
 use astarte_device_sdk::{prelude::*, DeviceClient, Value};
+use astarte_interfaces::Interface;
 use eyre::{bail, ensure, eyre, Context, OptionExt};
 use interfaces::ServerAggregate;
 use itertools::Itertools;
@@ -180,7 +180,7 @@ where
     let handle = tokio::spawn((f)(client));
 
     // wait for send call
-    barrier.wait().await;
+    tokio::time::timeout(tokio::time::Duration::from_secs(5), barrier.wait()).await?;
 
     handle.await?
 }
