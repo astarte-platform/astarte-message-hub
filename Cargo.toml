@@ -74,8 +74,8 @@ serial_test = { workspace = true }
 tempfile = { workspace = true }
 
 [workspace.dependencies]
-astarte-device-sdk = "0.10.1"
-astarte-device-sdk-mock = "0.10.1"
+astarte-device-sdk = "0.10.2"
+astarte-device-sdk-mock = "0.10.2"
 astarte-interfaces = "0.1.1"
 astarte-message-hub-proto = "0.8.1"
 async-trait = "0.1.80"

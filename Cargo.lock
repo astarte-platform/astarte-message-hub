@@ -123,9 +123,9 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 
 [[package]]
 name = "astarte-device-sdk"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe3ab2292d62520117b120bdb5323fac215c8b77a9ff645e42a03be1d1bcf679"
+checksum = "8b8c4dc0ed851c7d4594170e7ecb07f936b40076583dd42df5da56fc7722f752"
 dependencies = [
  "astarte-device-sdk-derive",
  "astarte-interfaces",
@@ -160,9 +160,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-derive"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "392b5d007c95b6abab37c1de722a736d011bdf3cd5edd7478dcd539f25d024a4"
+checksum = "c8a771e13d9eb0305df0f00e053708c0c309beeba65ae37fb4dd97059c020147"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -171,9 +171,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-mock"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1348abde57b06ad9303fa97a5e5d046e51e973ce20aa3ea340d3b56b58c1e927"
+checksum = "8a09b5d0ffda586198d3ca1376910682aad99350a3d1defa81ae9ead54191578"
 dependencies = [
  "astarte-device-sdk",
  "chrono",
@@ -1826,7 +1826,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
