@@ -11,3 +11,7 @@ store_directory = "/var/lib/message-hub"
 ignore_ssl = false
 # keep_alive_secs = 30
 # timeout_secs = 5
+
+[astarte.store]
+# max_db_size = { value = 1, unit = "gib" }
+# max_db_journal_size = { value = 64, unit = "mib" }

@@ -24,6 +24,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use astarte_device_sdk::store::sqlite::Size;
 use astarte_device_sdk::transport::mqtt::Credential;
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -416,11 +417,32 @@ pub struct DeviceSdkOptions {
     /// Whether to ignore SSL errors when connecting to Astarte.
     #[serde(default)]
     pub ignore_ssl: bool,
+    /// Astarte device SDK peristent store options.
+    #[serde(skip_serializing_if = "DeviceSdkStoreOptions::is_default", default)]
+    pub store: DeviceSdkStoreOptions,
 }
 
 impl DeviceSdkOptions {
     fn is_default(&self) -> bool {
         *self == Self::default()
+    }
+}
+
+/// Options to pass to the [Astarte device SDK](`astarte_device_sdk`).
+/// These configure the files stored on the disk by the library.
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct DeviceSdkStoreOptions {
+    /// Maximum allowed size of the astarte database
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_db_size: Option<Size>,
+    /// Maximum allowed size of the astarte database journal
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_db_journal_size: Option<Size>,
+}
+
+impl DeviceSdkStoreOptions {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
     }
 }
 
@@ -856,6 +878,8 @@ mod test {
         let ignore_ssl = !options.astarte_ignore_ssl;
         assert!(ignore_ssl);
         assert!(!options.astarte.ignore_ssl);
+        assert!(options.astarte.store.max_db_size.is_none());
+        assert!(options.astarte.store.max_db_journal_size.is_none());
         assert_eq!(options.grpc_socket_port, Some(5));
     }
 
@@ -883,6 +907,8 @@ mod test {
         let ignore_ssl = options.astarte_ignore_ssl;
         assert!(ignore_ssl);
         assert!(options.astarte.ignore_ssl);
+        assert!(options.astarte.store.max_db_size.is_none());
+        assert!(options.astarte.store.max_db_journal_size.is_none());
         assert_eq!(options.grpc_socket_port, Some(5));
     }
 
@@ -911,6 +937,8 @@ mod test {
         let ignore_ssl = options.astarte_ignore_ssl;
         assert!(ignore_ssl);
         assert!(options.astarte.ignore_ssl);
+        assert!(options.astarte.store.max_db_size.is_none());
+        assert!(options.astarte.store.max_db_journal_size.is_none());
         assert_eq!(options.grpc_socket_port, Some(6));
     }
 
@@ -947,5 +975,89 @@ mod test {
         let config = toml::from_str::<Config>(TOML_FILE).unwrap();
         assert!(config.validate().is_err());
         MessageHubOptions::try_from(config).unwrap_err();
+    }
+
+    #[test]
+    fn test_read_options_from_toml_both_ok_with_size() {
+        const TOML_FILE: &str = r#"
+            realm = "1"
+            device_id = "2"
+            pairing_url = "3"
+            credentials_secret = "4"
+            pairing_token = "5"
+            astarte_ignore_ssl = true
+            grpc_socket_port = 6
+            [astarte]
+            ignore_ssl = true
+            [astarte.store]
+            max_db_size = { value = 5, unit = "mb" }
+        "#;
+
+        let res = toml::from_str::<Config>(TOML_FILE);
+        let options = res.expect("Parsing of TOML file failed");
+        assert_eq!(options.realm.unwrap(), "1");
+        assert_eq!(options.device_id.unwrap(), "2");
+        assert_eq!(options.pairing_url.unwrap(), "3");
+        assert_eq!(options.credentials_secret, Some("4".to_string()));
+        assert_eq!(options.pairing_token, Some("5".to_string()));
+        #[allow(deprecated)]
+        let ignore_ssl = options.astarte_ignore_ssl;
+        assert!(ignore_ssl);
+        assert!(options.astarte.ignore_ssl);
+        assert_eq!(options.grpc_socket_port, Some(6));
+        assert!(options.astarte.store.max_db_journal_size.is_none());
+        assert_eq!(
+            options.astarte.store.max_db_size,
+            Some(Size::Mb(5.try_into().unwrap()))
+        );
+    }
+
+    #[test]
+    fn test_read_options_from_toml_both_sizes() {
+        const TOML_FILE: &str = r#"
+            [astarte]
+            ignore_ssl = true
+
+            [astarte.store]
+            max_db_size = { value = 5, unit = "mib" }
+            max_db_journal_size = { value = 5, unit = "kb" }
+        "#;
+
+        let res = toml::from_str::<Config>(TOML_FILE);
+        let options = res.expect("Parsing of TOML file failed");
+        assert!(options.astarte.ignore_ssl);
+        assert_eq!(
+            options.astarte.store.max_db_size,
+            Some(Size::MiB(5.try_into().unwrap()))
+        );
+        assert_eq!(
+            options.astarte.store.max_db_journal_size,
+            Some(Size::Kb(5.try_into().unwrap()))
+        );
+    }
+
+    #[test]
+    fn test_read_options_from_toml_size_error_case_sensitive() {
+        const TOML_FILE: &str = r#"
+            [astarte.store]
+            max_db_size = { value = 10, unit = "MiB" }
+        "#;
+
+        let res = toml::from_str::<Config>(TOML_FILE);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_read_options_from_toml_size_error_tb() {
+        const TOML_FILE: &str = r#"
+            [astarte]
+            ignore_ssl = true
+            [astarte.store]
+            max_db_size = { value = 10, unit = "mib" }
+            max_db_journal_size = { value = 5, unit = "tb" }
+        "#;
+
+        let res = toml::from_str::<Config>(TOML_FILE);
+        assert!(res.is_err());
     }
 }

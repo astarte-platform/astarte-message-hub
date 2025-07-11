@@ -225,7 +225,21 @@ async fn initialize_astarte_device_sdk(
         .map(|d| format!("{d}/database.db"))
         .ok_or_else(|| eyre!("non UTF-8 store directory option"))?;
 
-    let store = SqliteStore::connect_db(&store_path).await?;
+    let mut store = SqliteStore::connect_db(&store_path).await?;
+
+    if let Some(s) = msg_hub_opts.astarte.store.max_db_size {
+        debug!("setting astarte max db size to {s:?}");
+        store.set_db_max_size(s).await?;
+    } else {
+        debug!("astarte max db size is not set, using default");
+    }
+
+    if let Some(s) = msg_hub_opts.astarte.store.max_db_journal_size {
+        debug!("setting astarte max db journal size to {s:?}");
+        store.set_journal_size_limit(s).await?;
+    } else {
+        debug!("astarte max db journal size is not set, using default");
+    }
 
     // create a device instance
     let (client, connection) = builder.store(store).connection(mqtt_config).build().await?;
