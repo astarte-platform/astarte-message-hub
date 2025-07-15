@@ -219,6 +219,11 @@ async fn initialize_astarte_device_sdk(
 
     builder = builder.interface_directory(interfaces_dir)?;
 
+    if let Some(max_volatile_items) = msg_hub_opts.astarte.volatile.max_retention_items {
+        debug!("setting astarte max number of volatile items to {max_volatile_items}");
+        builder = builder.max_volatile_retention(max_volatile_items);
+    }
+
     let store_path = msg_hub_opts
         .store_directory
         .to_str()
@@ -241,8 +246,15 @@ async fn initialize_astarte_device_sdk(
         debug!("astarte max db journal size is not set, using default");
     }
 
+    let mut builder = builder.store(store);
+
+    if let Some(max_stored_items) = msg_hub_opts.astarte.store.max_retention_items {
+        debug!("setting astarte max number of stored items to {max_stored_items}");
+        builder = builder.max_stored_retention(max_stored_items);
+    }
+
     // create a device instance
-    let (client, connection) = builder.store(store).connection(mqtt_config).build().await?;
+    let (client, connection) = builder.connection(mqtt_config).build().await?;
 
     Ok((client, connection))
 }
