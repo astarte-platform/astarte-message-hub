@@ -219,16 +219,42 @@ async fn initialize_astarte_device_sdk(
 
     builder = builder.interface_directory(interfaces_dir)?;
 
+    if let Some(max_volatile_items) = msg_hub_opts.astarte.volatile.max_retention_items {
+        debug!("setting astarte max number of volatile items to {max_volatile_items}");
+        builder = builder.max_volatile_retention(max_volatile_items);
+    }
+
     let store_path = msg_hub_opts
         .store_directory
         .to_str()
         .map(|d| format!("{d}/database.db"))
         .ok_or_else(|| eyre!("non UTF-8 store directory option"))?;
 
-    let store = SqliteStore::connect_db(&store_path).await?;
+    let mut store = SqliteStore::connect_db(&store_path).await?;
+
+    if let Some(s) = msg_hub_opts.astarte.store.max_db_size {
+        debug!("setting astarte max db size to {s:?}");
+        store.set_db_max_size(s).await?;
+    } else {
+        debug!("astarte max db size is not set, using default");
+    }
+
+    if let Some(s) = msg_hub_opts.astarte.store.max_db_journal_size {
+        debug!("setting astarte max db journal size to {s:?}");
+        store.set_journal_size_limit(s).await?;
+    } else {
+        debug!("astarte max db journal size is not set, using default");
+    }
+
+    let mut builder = builder.store(store);
+
+    if let Some(max_stored_items) = msg_hub_opts.astarte.store.max_retention_items {
+        debug!("setting astarte max number of stored items to {max_stored_items}");
+        builder = builder.max_stored_retention(max_stored_items);
+    }
 
     // create a device instance
-    let (client, connection) = builder.store(store).connection(mqtt_config).build().await?;
+    let (client, connection) = builder.connection(mqtt_config).build().await?;
 
     Ok((client, connection))
 }
