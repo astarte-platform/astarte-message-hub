@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Configure the size limit of the database used by the astarte device sdk
+  [#372](https://github.com/astarte-platform/astarte-message-hub/pull/372).
+
+### Changed
+
+- Reflect proto changes to retrieve the properties
+  [#336](https://github.com/astarte-platform/astarte-message-hub/pull/336).
+
+### Fixed
+
+- Let a node receive only the properties in its introspection
+  [#335](https://github.com/astarte-platform/astarte-message-hub/pull/335).
+
 ## [0.7.4] - 2025-07-02
 
 ### Added
