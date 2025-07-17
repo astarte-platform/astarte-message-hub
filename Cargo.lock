@@ -238,9 +238,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-message-hub-proto"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11112f88aa5ab376b816ff7fe1fc4673ee9f0eb9f2d762bce3f9bff8cbf231bb"
+checksum = "7030bf779a092a37f182e4b59571b0632aa410ea6000db6b913db3c3806d575f"
 dependencies = [
  "chrono",
  "pbjson-types",
