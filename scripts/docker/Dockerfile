@@ -29,7 +29,7 @@ WORKDIR /msg-hub
 
 RUN cargo build --release
 
-FROM alpine:3.21
+FROM alpine:3.22
 
 RUN mkdir -p /usr/share/message-hub/astarte-interfaces \
     /var/lib/message-hub/interfaces
