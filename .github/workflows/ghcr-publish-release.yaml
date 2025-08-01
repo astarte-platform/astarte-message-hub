@@ -7,6 +7,12 @@
 name: Publish Docker images
 on:
   workflow_call:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The tag to checkout and release'
+        required: true
+        type: string
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/astarte-message-hub
 jobs:
@@ -21,21 +27,37 @@ jobs:
     strategy:
       fail-fast: true
     steps:
-      - name: Check out the repo
+      - name: Check out the repo current push
+        if: ${{ inputs.tag == '' }}
         uses: actions/checkout@v4
+      - name: Check out the repo at specified tag
+        if: ${{ inputs.tag != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
       - name: Log in to registry
         uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+      - name: Set docker metadata required tag information
+        id: tag-types
+        run: |
+          echo "metadata<<EOF" >> $GITHUB_OUTPUT
+          if [[ -z "${{ inputs.tag }}" ]]; then
+            echo "type=semver,pattern={{version}}" >> $GITHUB_OUTPUT
+          else
+            echo "type=semver,pattern={{version}},value=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          fi
+          echo "EOF" >> $GITHUB_OUTPUT
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
+            ${{ steps.tag-types.outputs.metadata }}
       - name: Build and push tagged Docker image
         id: push
         uses: docker/build-push-action@3b5e8027fcad23fda98b2e3ac259d8d67585f671
