@@ -71,6 +71,34 @@ An example configuration file can be found in the
 [examples](https://github.com/astarte-platform/astarte-message-hub/blob/master/examples/message-hub-config.toml)
 direction.
 
+### Configuration in docker
+
+The message-hub is also distributed as a docker image available in the ghcr.
+Using the image you can quickly test out and connect nodes to the message hub.
+Remember to expose the grpc port (the default is 50051) if you need to accept
+external connections.
+You can use docker-compose or run it directly:
+
+Using an already registed device id:
+```sh
+docker run -e MSGHUB_REALM=realm \
+  -e MSGHUB_DEVICE_ID=s6USRuvRSv6Te7S2dVVh3Q \
+  -e MSGHUB_PAIRING_URL=https://api.eu1.astarte.cloud/pairing \
+  -e MSGHUB_CREDENTIALS_SECRET=your_secret \
+  -p 50051 ghcr.io/lucaato/astarte-message-hub:snapshot
+```
+Replace the environment values with the appropriate ones for your device.
+
+Or by using a pairing token:
+```sh
+docker run -e MSGHUB_REALM=realm \
+  -e MSGHUB_DEVICE_ID=s6USRuvRSv6Te7S2dVVh3Q \
+  -e MSGHUB_PAIRING_URL=https://api.eu1.astarte.cloud/pairing \
+  -e MSGHUB_PAIRING_TOKEN=your_pairing_token \
+  -p 50051 ghcr.io/lucaato/astarte-message-hub:snapshot
+```
+Replace the environment values with the appropriate ones for your device.
+
 ### Override the configuration file
 
 You can override the configuration file options by passing arguments to the command line or
