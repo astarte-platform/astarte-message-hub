@@ -417,15 +417,19 @@ impl AstarteSubscriber for DevicePublisher {
     ///
     /// All the interfaces in this node introspection that are not in the introspection of any other
     /// node will be removed and the names will be returned.
-    async fn unsubscribe(&self, id: &Uuid) -> Result<Vec<String>, AstarteMessageHubError> {
+    async fn unsubscribe(
+        &self,
+        id: &Uuid,
+        cleanup_interfaces: bool,
+    ) -> Result<Vec<String>, AstarteMessageHubError> {
         let mut subscribers: tokio::sync::RwLockWriteGuard<'_, HashMap<Uuid, Subscriber>> =
             self.subscribers.write().await;
+        let (id, node) = subscribers
+            .get_key_value(id)
+            .map(|(u, s)| (*u, s))
+            .ok_or_else(|| AstarteMessageHubError::NodeId(*id))?;
 
-        let removed = {
-            let (id, node) = subscribers
-                .get_key_value(id)
-                .ok_or_else(|| AstarteMessageHubError::NodeId(*id))?;
-
+        let removed = if cleanup_interfaces {
             let to_remove = node
                 .introspection
                 .iter()
@@ -434,19 +438,19 @@ impl AstarteSubscriber for DevicePublisher {
                         .iter()
                         // Check if any other subscriber use the same interface
                         .any(|(s_id, s_node)| {
-                            s_id != id && s_node.introspection.contains(interface)
+                            s_id != &id && s_node.introspection.contains(interface)
                         })
                 })
                 .cloned()
                 .collect_vec();
 
             debug!("interfaces to remove {to_remove:?}");
-
-            let mut client = self.client.clone();
-            client.remove_interfaces(to_remove).await?
+            self.client.clone().remove_interfaces(to_remove).await?
+        } else {
+            Vec::new()
         };
 
-        subscribers.remove(id);
+        subscribers.remove(&id);
 
         Ok(removed)
     }
@@ -1912,7 +1916,7 @@ mod test {
         let result = publisher.subscribe(&astarte_node).await;
         assert!(result.is_ok());
 
-        let detach_result = publisher.unsubscribe(&astarte_node.id).await;
+        let detach_result = publisher.unsubscribe(&astarte_node.id, true).await;
         assert!(detach_result.is_ok())
     }
 
@@ -1936,7 +1940,7 @@ mod test {
 
         let (publisher, _subscriber) = init_pub_sub(client);
 
-        let detach_result = publisher.unsubscribe(&astarte_node.id).await;
+        let detach_result = publisher.unsubscribe(&astarte_node.id, true).await;
 
         assert!(detach_result.is_err());
         let err = detach_result.unwrap_err();
@@ -1944,5 +1948,66 @@ mod test {
             matches!(err, AstarteMessageHubError::NodeId(_)),
             "actual {err:?}",
         )
+    }
+
+    #[tokio::test]
+    async fn detach_node_success_no_cleanup() {
+        let interfaces = InterfacesJson::from_iter(vec![
+            SERV_PROPS_IFACE.to_string(),
+            SERV_OBJ_IFACE.to_string(),
+        ]);
+
+        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
+
+        client
+            .expect_clone()
+            .once()
+            .in_sequence(&mut seq)
+            .return_once(move || {
+                let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+
+                client
+                    .expect_clone()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|| {
+                        let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+
+                        client
+                            .expect_extend_interfaces::<Vec<Interface>>()
+                            .once()
+                            .returning(|_| {
+                                Ok(vec![
+                                    "org.astarte-platform.test.test".to_string(),
+                                    "com.test.object".to_string(),
+                                ])
+                            });
+
+                        client
+                    });
+
+                client
+                    .expect_server_props()
+                    .once()
+                    .in_sequence(&mut seq)
+                    .returning(|| Ok(Vec::new()));
+
+                client
+            });
+
+        let astarte_node = AstarteNode::from_json(
+            "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            &interfaces,
+        )
+        .unwrap();
+
+        let (publisher, _subscriber) = init_pub_sub(client);
+
+        let result = publisher.subscribe(&astarte_node).await;
+        assert!(result.is_ok());
+
+        let detach_result = publisher.unsubscribe(&astarte_node.id, false).await;
+        assert!(detach_result.is_ok())
     }
 }

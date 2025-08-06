@@ -61,7 +61,11 @@ pub trait AstarteSubscriber {
     /// Unsubscribe a previously subscribed node to Astarte.
     ///
     /// Returns the names of the interfaces that have been removed.
-    async fn unsubscribe(&self, id: &Uuid) -> Result<Vec<String>, AstarteMessageHubError>;
+    async fn unsubscribe(
+        &self,
+        id: &Uuid,
+        cleanup_interfaces: bool,
+    ) -> Result<Vec<String>, AstarteMessageHubError>;
 
     /// Extend the device interfaces
     async fn extend_interfaces(

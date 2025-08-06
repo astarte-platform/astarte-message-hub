@@ -114,13 +114,12 @@ where
     async fn detach_node(&self, id: &Uuid) -> Resp<Empty> {
         info!("Node {id} Detach Request");
 
-        let mut nodes = self.nodes.write().await;
-
-        let removed = self.astarte_handler.unsubscribe(id).await?;
-
-        nodes.remove(id);
-
+        // TODO we should receive this currently hardcoded `false` flag from the grpc method
+        let removed = self.astarte_handler.unsubscribe(id, false).await?;
         self.introspection.remove_many(&removed).await;
+
+        let mut nodes = self.nodes.write().await;
+        nodes.remove(id);
 
         Ok(Response::new(Empty {}))
     }
@@ -788,7 +787,7 @@ mod test {
                 astarte_node: &AstarteNode,
             ) -> Result<Subscription, AstarteMessageHubError>;
 
-            async fn unsubscribe(&self, id: &Uuid) -> Result<Vec<String>, AstarteMessageHubError>;
+            async fn unsubscribe(&self, id: &Uuid, cleanup_interfaces: bool) -> Result<Vec<String>, AstarteMessageHubError>;
 
             async fn extend_interfaces(&self, node_id: &Uuid, to_add: HashMap<String, Interface>) -> Result<Vec<Interface>, AstarteMessageHubError>;
 
@@ -1098,7 +1097,7 @@ mod test {
         });
         mock_astarte
             .expect_unsubscribe()
-            .returning(|_| Ok(vec!["org.astarte-platform.test.test".to_string()]));
+            .returning(|_, _| Ok(vec!["org.astarte-platform.test.test".to_string()]));
         let tmp = tempfile::tempdir().unwrap();
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
@@ -1115,7 +1114,7 @@ mod test {
     #[tokio::test]
     async fn detach_node_not_found() {
         let mut mock_astarte = MockAstarteHandler::new();
-        mock_astarte.expect_unsubscribe().returning(|_| {
+        mock_astarte.expect_unsubscribe().returning(|_, _| {
             Err(AstarteMessageHubError::AstarteInvalidData(
                 "invalid node".to_string(),
             ))
@@ -1155,7 +1154,7 @@ mod test {
                 receiver: rx,
             })
         });
-        mock_astarte.expect_unsubscribe().returning(|_| {
+        mock_astarte.expect_unsubscribe().returning(|_, _| {
             Err(AstarteMessageHubError::AstarteInvalidData(
                 "invalid node".to_string(),
             ))
