@@ -36,7 +36,7 @@ jobs:
       matrix:
         toolchain: [stable, beta]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install dependencies
         run: sudo apt-get -y install libsqlite3-dev libssl-dev
       - name: Install ${{ matrix.toolchain }}
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     name: ubuntu / stable / coverage
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install dependencies
         run: sudo apt-get -y install libsqlite3-dev libssl-dev
       - name: Install stable
