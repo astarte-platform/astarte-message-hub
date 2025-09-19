@@ -129,9 +129,9 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 
 [[package]]
 name = "astarte-device-sdk"
-version = "0.9.6"
+version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bae0eac94b76f3be87f1c91e1b16964ecbfb5fb001d2cd71d503c8d87ea49979"
+checksum = "675b96b83d4ff8a15cce90d607f65d23b993f216160b9c0b37aedc82e5aaf072"
 dependencies = [
  "ahash",
  "astarte-device-sdk-derive",
@@ -171,9 +171,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-derive"
-version = "0.9.6"
+version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c89dce73bc73ce21d93e392cf14811e86cd921d903d7a8fe30254c0bfbbeebc"
+checksum = "1f9c68464d2601116cb78848870359134e96d922a5b8a85820edae0fd2f8c677"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -182,9 +182,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-mock"
-version = "0.9.6"
+version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cd6e1218359cf03f927e0711cdf39946a88a6b3ba1614b15dec430198473d15"
+checksum = "81f95a4720c2ee3687e83c946964f5fa459bf4787c18150d089da6e5180c0512"
 dependencies = [
  "astarte-device-sdk",
  "async-trait",
@@ -1086,7 +1086,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1993,7 +1993,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -2870,7 +2870,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3320,7 +3320,7 @@ dependencies = [
  "getrandom 0.3.1",
  "once_cell",
  "rustix 0.38.44",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
