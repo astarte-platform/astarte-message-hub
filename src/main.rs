@@ -25,7 +25,6 @@
 #![warn(missing_docs)]
 
 use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
-use astarte_device_sdk::rumqttc::tokio_rustls::rustls;
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
