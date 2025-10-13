@@ -57,6 +57,11 @@ async fn main() -> eyre::Result<()> {
 
     init_tracing()?;
 
+    // Set default crypto provider
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .map_err(|_| eyre!("failed to install default crypto provider"))?;
+
     let args = Cli::parse();
 
     if args.toml.is_some() {
