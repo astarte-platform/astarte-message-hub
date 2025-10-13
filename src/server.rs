@@ -28,12 +28,15 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use astarte_device_sdk::Interface;
+use astarte_device_sdk::store::StoredProp;
+use astarte_interfaces::{interface::Ownership, Interface};
 use astarte_message_hub_proto::message_hub_server::MessageHub;
 use astarte_message_hub_proto::{
-    AstarteMessage, InterfacesJson, InterfacesName, MessageHubEvent, Node,
+    AstarteData, AstarteMessage, AstartePropertyIndividual, InterfaceName, InterfacesJson,
+    InterfacesName, MessageHubEvent, Node, Property, PropertyFilter, PropertyIdentifier,
+    StoredProperties,
 };
-use hyper::{http, Body, Uri};
+use hyper::{http, Uri};
 use itertools::Itertools;
 use log::{debug, error, info, trace};
 use pbjson_types::Empty;
@@ -47,14 +50,14 @@ use tower::{Layer, Service};
 use uuid::Uuid;
 
 use crate::astarte::handler::DeviceError;
-use crate::astarte::{AstartePublisher, AstarteSubscriber};
+use crate::astarte::{AstartePublisher, AstarteSubscriber, PropAccessExt};
 use crate::cache::Introspection;
 use crate::error::AstarteMessageHubError;
 
 type Resp<T> = Result<Response<T>, AstarteMessageHubError>;
 
 /// Main struct for the Astarte message hub.
-pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber> {
+pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber + PropAccessExt> {
     /// The nodes connected to the message hub.
     nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
     /// The Astarte handler used to communicate with Astarte.
@@ -64,7 +67,7 @@ pub struct AstarteMessageHub<T: Clone + AstartePublisher + AstarteSubscriber> {
 
 impl<T> AstarteMessageHub<T>
 where
-    T: 'static + Clone + AstartePublisher + AstarteSubscriber,
+    T: 'static + Clone + AstartePublisher + AstarteSubscriber + PropAccessExt,
 {
     /// Instantiate a new Astarte message hub.
     ///
@@ -96,7 +99,7 @@ where
         let interfaces_json = InterfacesJson::from_iter(node.interfaces_json);
         let astarte_node = AstarteNode::from_json(node_id, &interfaces_json)?;
 
-        info!("Node attached {:?}", astarte_node);
+        info!("Node attached {astarte_node:?}");
 
         let sub = self.astarte_handler.subscribe(&astarte_node).await?;
 
@@ -111,13 +114,12 @@ where
     async fn detach_node(&self, id: &Uuid) -> Resp<Empty> {
         info!("Node {id} Detach Request");
 
-        let mut nodes = self.nodes.write().await;
-
-        let removed = self.astarte_handler.unsubscribe(id).await?;
-
-        nodes.remove(id);
-
+        // TODO we should receive this currently hardcoded `false` flag from the grpc method
+        let removed = self.astarte_handler.unsubscribe(id, false).await?;
         self.introspection.remove_many(&removed).await;
+
+        let mut nodes = self.nodes.write().await;
+        nodes.remove(id);
 
         Ok(Response::new(Empty {}))
     }
@@ -160,6 +162,95 @@ where
 
         Ok(Response::new(Empty {}))
     }
+
+    async fn get_node_properties(
+        &self,
+        node_id: NodeId,
+        interface_name: InterfaceName,
+    ) -> Resp<StoredProperties> {
+        let props = self
+            .astarte_handler
+            .interface_props(node_id, &interface_name.name)
+            .await?;
+
+        Ok(Response::new(map_stored_properties_to_proto(props)))
+    }
+
+    async fn get_node_all_properties(
+        &self,
+        node_id: NodeId,
+        filter: PropertyFilter,
+    ) -> Resp<StoredProperties> {
+        // retrieve all props if no filter is specified
+        let Some(owenrship) = filter.ownership else {
+            debug!("get all properties");
+            let props = self.astarte_handler.all_props(node_id).await?;
+            let props = map_stored_properties_to_proto(props);
+
+            return Ok(Response::new(props));
+        };
+
+        let props = match owenrship.try_into() {
+            Ok(astarte_message_hub_proto::Ownership::Device) => {
+                debug!("get device properties");
+                self.astarte_handler.device_props(node_id).await?
+            }
+            Ok(astarte_message_hub_proto::Ownership::Server) => {
+                debug!("get server properties");
+                self.astarte_handler.server_props(node_id).await?
+            }
+            Err(err) => {
+                error!("Invalid ownership enum value: {err}");
+                return Err(AstarteMessageHubError::InvalidProtoOwnership(err));
+            }
+        };
+
+        let props = map_stored_properties_to_proto(props);
+
+        Ok(Response::new(props))
+    }
+
+    async fn get_node_property(
+        &self,
+        node_id: NodeId,
+        prop_req: PropertyIdentifier,
+    ) -> Resp<AstartePropertyIndividual> {
+        // retrieve the property value
+        let data = self
+            .astarte_handler
+            .property(node_id, &prop_req.interface_name, &prop_req.path)
+            .await?
+            .map(AstarteData::from);
+
+        Ok(Response::new(AstartePropertyIndividual { data }))
+    }
+}
+
+/// Map a list of stored properties to the respective protobuf version
+///
+/// Unset values will result in a conversion error.
+fn map_stored_properties_to_proto(
+    props: Vec<StoredProp>,
+) -> astarte_message_hub_proto::StoredProperties {
+    let properties = props
+        .into_iter()
+        .map(|prop| {
+            let ownership = match prop.ownership {
+                Ownership::Device => astarte_message_hub_proto::Ownership::Device,
+                Ownership::Server => astarte_message_hub_proto::Ownership::Server,
+            };
+
+            Property {
+                interface_name: prop.interface,
+                path: prop.path,
+                version_major: prop.interface_major,
+                ownership: ownership.into(),
+                data: Some(prop.value.into()),
+            }
+        })
+        .collect();
+
+    astarte_message_hub_proto::StoredProperties { properties }
 }
 
 /// Errors related to the interception of the NodeId into gRPC request
@@ -233,8 +324,8 @@ impl<S> NodeIdInterceptor<S> {
     /// checks.
     async fn check_node_id(
         nodes: &Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
-        req: hyper::Request<Body>,
-    ) -> Result<hyper::Request<Body>, InterceptorError> {
+        req: hyper::Request<BoxBody>,
+    ) -> Result<hyper::Request<BoxBody>, InterceptorError> {
         // check if the request is an Attach rpc
         let is_attach = is_attach(req.uri());
 
@@ -295,6 +386,12 @@ impl Deref for NodeId {
     }
 }
 
+impl From<NodeId> for Uuid {
+    fn from(value: NodeId) -> Self {
+        value.0
+    }
+}
+
 fn node_id_from_bin(metadata: &MetadataMap) -> Result<Option<Uuid>, InterceptorError> {
     let Some(node_id) = metadata.get_bin("node-id-bin") else {
         return Ok(None);
@@ -319,9 +416,12 @@ fn node_id_from_ascii(metadata: &MetadataMap) -> Result<Option<Uuid>, Intercepto
         .map_err(InterceptorError::Uuid)
 }
 
-impl<S> Service<hyper::Request<Body>> for NodeIdInterceptor<S>
+impl<S> Service<hyper::Request<BoxBody>> for NodeIdInterceptor<S>
 where
-    S: Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>> + Clone + Send + 'static,
+    S: Service<hyper::Request<BoxBody>, Response = hyper::Response<BoxBody>>
+        + Clone
+        + Send
+        + 'static,
     S::Future: Send + 'static,
 {
     type Response = S::Response;
@@ -332,7 +432,7 @@ where
         self.inner.poll_ready(cx).map_err(S::Error::into)
     }
 
-    fn call(&mut self, req: hyper::Request<Body>) -> Self::Future {
+    fn call(&mut self, req: hyper::Request<BoxBody>) -> Self::Future {
         let clone = self.clone();
         let mut service = std::mem::replace(self, clone);
 
@@ -341,7 +441,7 @@ where
                 Ok(req) => req,
                 // return a response with the status code related to the given error
                 Err(err) => {
-                    return Ok(Status::from(err).to_http());
+                    return Ok(Status::from(err).into_http());
                 }
             };
 
@@ -352,7 +452,7 @@ where
 
 #[derive(thiserror::Error, Debug, displaydoc::Display)]
 /// Request missing node id
-pub struct NodeIdError;
+pub(crate) struct NodeIdError;
 
 impl From<NodeIdError> for Status {
     fn from(value: NodeIdError) -> Self {
@@ -361,7 +461,7 @@ impl From<NodeIdError> for Status {
 }
 
 /// Retrieve information from a [`Request`]
-pub trait RequestExt {
+pub(crate) trait RequestExt {
     fn get_node_id(&self) -> Result<&NodeId, NodeIdError>;
 }
 
@@ -380,7 +480,7 @@ impl<R> RequestExt for Request<R> {
 #[tonic::async_trait]
 impl<T> MessageHub for AstarteMessageHub<T>
 where
-    T: Clone + AstartePublisher + AstarteSubscriber + 'static,
+    T: Clone + AstartePublisher + AstarteSubscriber + PropAccessExt + 'static,
 {
     type AttachStream = ReceiverStream<Result<MessageHubEvent, Status>>;
 
@@ -390,6 +490,8 @@ where
     ///
     /// ```no_run
     /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
+    /// use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
+    /// use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     /// use astarte_message_hub_proto::Node;
     /// use tonic::transport::channel::Endpoint;
     /// use tonic::metadata::MetadataValue;
@@ -446,6 +548,8 @@ where
     /// use astarte_message_hub_proto::Node;
     /// use astarte_message_hub_proto::astarte_message::Payload;
     /// use astarte_message_hub_proto::message_hub_client::MessageHubClient;
+    /// use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
+    /// use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     /// use astarte_message_hub_proto::AstarteMessage;
     /// use tonic::transport::channel::Endpoint;
     /// use tonic::metadata::MetadataValue;
@@ -482,8 +586,10 @@ where
     ///     let astarte_message = AstarteMessage {
     ///         interface_name: "org.astarteplatform.esp32.examples.DeviceDatastream".to_string(),
     ///         path: "uptimeSeconds".to_string(),
-    ///         timestamp: None,
-    ///         payload: Some(Payload::AstarteData(100.into()))
+    ///         payload: Some(Payload::DatastreamIndividual(AstarteDatastreamIndividual {
+    ///             data: Some(AstarteData { astarte_data: Some(ProtoData::Integer(5) )}),
+    ///             timestamp: Some(chrono::Utc::now().into()),
+    ///         }))
     ///     };
     ///
     ///     let _ = client.send(astarte_message).await;
@@ -499,6 +605,7 @@ where
 
         if let Err(err) = self.astarte_handler.publish(&astarte_message).await {
             let err_msg = format!("Unable to publish astarte message, err: {err:?}");
+            error!("{err_msg}");
             Err(Status::internal(err_msg))
         } else {
             Ok(Response::new(Empty {}))
@@ -542,6 +649,51 @@ where
             .await
             .map_err(Status::from)
     }
+
+    async fn get_properties(
+        &self,
+        request: Request<InterfaceName>,
+    ) -> Result<Response<StoredProperties>, Status> {
+        // retrieve the node id
+        let node_id = *request.get_node_id()?;
+
+        info!("Node {node_id} Get Properties Request");
+        let prop_req = request.into_inner();
+
+        self.get_node_properties(node_id, prop_req)
+            .await
+            .map_err(Status::from)
+    }
+
+    async fn get_all_properties(
+        &self,
+        request: Request<PropertyFilter>,
+    ) -> Result<Response<StoredProperties>, Status> {
+        // retrieve the node id
+        let node_id = *request.get_node_id()?;
+
+        info!("Node {node_id} Get All Properties Request");
+        let filter = request.into_inner();
+
+        self.get_node_all_properties(node_id, filter)
+            .await
+            .map_err(Status::from)
+    }
+
+    async fn get_property(
+        &self,
+        request: Request<PropertyIdentifier>,
+    ) -> Result<Response<AstartePropertyIndividual>, Status> {
+        // retrieve the node id
+        let node_id = *request.get_node_id()?;
+
+        info!("Node {node_id} Get Property Request");
+        let prop_req = request.into_inner();
+
+        self.get_node_property(node_id, prop_req)
+            .await
+            .map_err(Status::from)
+    }
 }
 
 /// A single node that can be connected to the Astarte message hub.
@@ -579,18 +731,20 @@ impl AstarteNode {
 
 #[cfg(test)]
 mod test {
+    use astarte_device_sdk::store::StoredProp;
+    use astarte_device_sdk::AstarteData as AstarteDataSdk;
+    use astarte_interfaces::error::Error as InterfaceError;
+    use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
+    use astarte_message_hub_proto::astarte_message::Payload;
+    use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
+    use async_trait::async_trait;
+    use hyper::{Response, StatusCode};
+    use mockall::mock;
     use std::collections::HashMap;
     use std::io;
     use std::io::ErrorKind;
     use std::ops::Deref;
     use std::sync::Arc;
-
-    use astarte_message_hub_proto::astarte_message::Payload;
-    use astarte_message_hub_proto::message_hub_server::MessageHub;
-    use astarte_message_hub_proto::{AstarteMessage, InterfacesJson};
-    use async_trait::async_trait;
-    use hyper::{Body, Response, StatusCode};
-    use mockall::mock;
     use tokio::sync::mpsc;
     use tokio::sync::RwLock;
     use tonic::body::BoxBody;
@@ -633,11 +787,38 @@ mod test {
                 astarte_node: &AstarteNode,
             ) -> Result<Subscription, AstarteMessageHubError>;
 
-            async fn unsubscribe(&self, id: &Uuid) -> Result<Vec<String>, AstarteMessageHubError>;
+            async fn unsubscribe(&self, id: &Uuid, cleanup_interfaces: bool) -> Result<Vec<String>, AstarteMessageHubError>;
 
             async fn extend_interfaces(&self, node_id: &Uuid, to_add: HashMap<String, Interface>) -> Result<Vec<Interface>, AstarteMessageHubError>;
 
             async fn remove_interfaces(&self, node_id: &Uuid, to_remove: HashSet<String>) -> Result<Vec<String>, AstarteMessageHubError>;
+        }
+
+        impl PropAccessExt for AstarteHandler {
+            async fn property(
+                &self,
+                node_id: NodeId,
+                interface: &str,
+                path: &str,
+            ) -> Result<Option<AstarteDataSdk>, AstarteMessageHubError>;
+
+            async fn interface_props(
+                &self,
+                node_id: NodeId,
+                interface: &str,
+            ) -> Result<Vec<StoredProp>, AstarteMessageHubError>;
+
+            async fn all_props(&self, node_id: NodeId) -> Result<Vec<StoredProp>, AstarteMessageHubError>;
+
+            async fn device_props(
+                &self,
+                node_id: NodeId,
+            ) -> Result<Vec<StoredProp>, AstarteMessageHubError>;
+
+            async fn server_props(
+                &self,
+                node_id: NodeId,
+            ) -> Result<Vec<StoredProp>, AstarteMessageHubError>;
         }
     }
 
@@ -756,9 +937,10 @@ mod test {
 
         // send a custom error to the Node
         let msghub_event = MessageHubEvent::from_error(AstarteMessageHubError::Astarte(
-            astarte_device_sdk::Error::Interface(
-                astarte_device_sdk::interface::error::InterfaceError::MajorMinor,
-            ),
+            astarte_device_sdk::Error::Interface(InterfaceError::DuplicateMapping {
+                endpoint: "test".to_string(),
+                duplicate: "test".to_string(),
+            }),
         ));
         if let Err(err) = tx.send(Ok(msghub_event.clone())).await {
             panic!("send error: {err:?}");
@@ -831,12 +1013,18 @@ mod test {
             AstarteMessageHub::new(mock_astarte, "");
 
         let interface_name = "io.demo.Values".to_owned();
+        let astarte_data = AstarteData {
+            astarte_data: Some(ProtoData::Integer(5)),
+        };
+        let payload = Payload::DatastreamIndividual(AstarteDatastreamIndividual {
+            data: Some(astarte_data.clone()),
+            timestamp: None,
+        });
 
         let astarte_message = AstarteMessage {
             interface_name,
             path: "/test".to_string(),
-            payload: Some(Payload::AstarteData(5.into())),
-            timestamp: None,
+            payload: Some(payload),
         };
 
         let mut req_astarte_message = Request::new(astarte_message);
@@ -867,14 +1055,18 @@ mod test {
             AstarteMessageHub::new(mock_astarte, "");
 
         let interface_name = "io.demo.Values".to_owned();
-
-        let value: i32 = 5;
+        let astarte_data = AstarteData {
+            astarte_data: Some(ProtoData::Integer(5)),
+        };
+        let payload = Payload::DatastreamIndividual(AstarteDatastreamIndividual {
+            data: Some(astarte_data.clone()),
+            timestamp: None,
+        });
 
         let astarte_message = AstarteMessage {
             interface_name,
             path: "/test".to_string(),
-            payload: Some(Payload::AstarteData(value.into())),
-            timestamp: None,
+            payload: Some(payload),
         };
 
         let mut req_astarte_message = Request::new(astarte_message);
@@ -905,7 +1097,7 @@ mod test {
         });
         mock_astarte
             .expect_unsubscribe()
-            .returning(|_| Ok(vec!["org.astarte-platform.test.test".to_string()]));
+            .returning(|_, _| Ok(vec!["org.astarte-platform.test.test".to_string()]));
         let tmp = tempfile::tempdir().unwrap();
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
@@ -922,7 +1114,7 @@ mod test {
     #[tokio::test]
     async fn detach_node_not_found() {
         let mut mock_astarte = MockAstarteHandler::new();
-        mock_astarte.expect_unsubscribe().returning(|_| {
+        mock_astarte.expect_unsubscribe().returning(|_, _| {
             Err(AstarteMessageHubError::AstarteInvalidData(
                 "invalid node".to_string(),
             ))
@@ -962,7 +1154,7 @@ mod test {
                 receiver: rx,
             })
         });
-        mock_astarte.expect_unsubscribe().returning(|_| {
+        mock_astarte.expect_unsubscribe().returning(|_, _| {
             Err(AstarteMessageHubError::AstarteInvalidData(
                 "invalid node".to_string(),
             ))
@@ -985,6 +1177,282 @@ mod test {
         assert!(detach_result.is_err());
         let err: Status = detach_result.err().unwrap();
         assert_eq!(err.code(), Code::InvalidArgument)
+    }
+
+    #[tokio::test]
+    async fn test_get_property() {
+        let mut mock_astarte = MockAstarteHandler::new();
+        mock_astarte
+            .expect_clone()
+            .returning(MockAstarteHandler::new);
+
+        // expect property not found
+        mock_astarte
+            .expect_property()
+            .once()
+            .returning(|_, _, _| Ok(None));
+
+        // expect property
+        mock_astarte
+            .expect_property()
+            .once()
+            .returning(|_, _, _| Ok(Some(AstarteDataSdk::Boolean(true))));
+
+        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
+            AstarteMessageHub::new(mock_astarte, "");
+
+        let interface_name = "io.demo.Values".to_owned();
+
+        let prop_identifier = PropertyIdentifier {
+            interface_name,
+            path: "/1/test".to_string(),
+        };
+
+        // get an unset property
+        let mut req_astarte_message = Request::new(prop_identifier.clone());
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub.get_property(req_astarte_message).await;
+        assert!(res.is_ok());
+
+        let prop_res = res.unwrap().into_inner();
+        assert!(matches!(prop_res, AstartePropertyIndividual { data: None }));
+
+        // get a property value
+        let mut req_astarte_message = Request::new(prop_identifier);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub.get_property(req_astarte_message).await;
+        let prop_value_res = res.unwrap().into_inner().data.unwrap();
+        let exp = astarte_message_hub_proto::AstarteData {
+            astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::Boolean(true)),
+        };
+        assert_eq!(prop_value_res, exp);
+    }
+
+    #[tokio::test]
+    async fn test_get_all_properties() {
+        let mut mock_astarte = MockAstarteHandler::new();
+
+        let p1_dev = StoredProp {
+            interface: "io.demo.Values1".to_string(),
+            path: "/1/test1".to_string(),
+            value: AstarteDataSdk::Integer(1),
+            interface_major: 0,
+            ownership: Ownership::Device,
+        };
+        let p2_dev = StoredProp {
+            interface: "io.demo.Values1".to_string(),
+            path: "/1/test2".to_string(),
+            value: AstarteDataSdk::Boolean(true),
+            interface_major: 0,
+            ownership: Ownership::Device,
+        };
+        let p1_serv = StoredProp {
+            interface: "io.demo.Values2".to_string(),
+            path: "/2/test1".to_string(),
+            value: AstarteDataSdk::Boolean(true),
+            interface_major: 0,
+            ownership: Ownership::Server,
+        };
+
+        let all_props = vec![p1_dev.clone(), p2_dev.clone(), p1_serv.clone()];
+        let dev_props = vec![p1_dev, p2_dev];
+        let serv_props = vec![p1_serv];
+
+        // expect all properties when no prop value is available
+        mock_astarte
+            .expect_all_props()
+            .once()
+            .returning(|_| Ok(vec![]));
+
+        // expect all properties
+        mock_astarte
+            .expect_all_props()
+            .once()
+            .return_once(|_| Ok(all_props));
+
+        // expect all device properties
+        let dev_props_cl = dev_props.clone();
+        mock_astarte
+            .expect_device_props()
+            .once()
+            .return_once(|_| Ok(dev_props_cl));
+
+        // expect all server properties
+        let serv_props_cl = serv_props.clone();
+        mock_astarte
+            .expect_server_props()
+            .once()
+            .return_once(|_| Ok(serv_props_cl));
+
+        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
+            AstarteMessageHub::new(mock_astarte, "");
+
+        // get all properties when no values are available
+        let prop_filter = PropertyFilter { ownership: None };
+
+        let mut req_astarte_message = Request::new(prop_filter);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_all_properties(req_astarte_message)
+            .await;
+        let prop_res = res.unwrap().into_inner().properties;
+        assert!(prop_res.is_empty());
+
+        // get all properties when values are available
+        let mut req_astarte_message = Request::new(prop_filter);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_all_properties(req_astarte_message)
+            .await;
+
+        assert_eq!(res.unwrap().into_inner().properties.len(), 3);
+
+        // get all device properties
+        let prop_filter = PropertyFilter {
+            ownership: Some(Ownership::Device as i32),
+        };
+
+        let mut req_astarte_message = Request::new(prop_filter);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_all_properties(req_astarte_message)
+            .await;
+
+        let len = res
+            .unwrap()
+            .into_inner()
+            .properties
+            .iter()
+            .filter(|prop| prop.interface_name == "io.demo.Values1")
+            .collect_vec()
+            .len();
+
+        assert_eq!(len, 2);
+
+        // get all server properties
+        let prop_filter = PropertyFilter {
+            ownership: Some(Ownership::Server as i32),
+        };
+
+        let mut req_astarte_message = Request::new(prop_filter);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_all_properties(req_astarte_message)
+            .await;
+
+        let len = res
+            .unwrap()
+            .into_inner()
+            .properties
+            .iter()
+            .filter(|prop| prop.interface_name == "io.demo.Values2")
+            .collect_vec()
+            .len();
+
+        assert_eq!(len, 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_properties() {
+        let mut mock_astarte = MockAstarteHandler::new();
+
+        let prop1 = StoredProp {
+            interface: "io.demo.Values1".to_string(),
+            path: "/1/test1".to_string(),
+            value: AstarteDataSdk::Integer(1),
+            interface_major: 0,
+            ownership: Ownership::Device,
+        };
+        let prop2 = StoredProp {
+            interface: "io.demo.Values1".to_string(),
+            path: "/1/test2".to_string(),
+            value: AstarteDataSdk::Boolean(true),
+            interface_major: 0,
+            ownership: Ownership::Device,
+        };
+
+        let props = vec![prop1, prop2];
+
+        // expect Internal status code when get_properties is called with an unknown interface
+        mock_astarte
+            .expect_interface_props()
+            .once()
+            .return_once(|_, _| {
+                Err(AstarteMessageHubError::Astarte(
+                    astarte_device_sdk::Error::InterfaceNotFound {
+                        name: "io.demo.Values3".to_string(),
+                    },
+                ))
+            });
+
+        // expect get_properties
+        mock_astarte
+            .expect_interface_props()
+            .once()
+            .return_once(|_, _| Ok(props));
+
+        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
+            AstarteMessageHub::new(mock_astarte, "");
+
+        // get_properties with unknown interface
+        let iface_name = InterfaceName {
+            name: "unknown".to_string(),
+        };
+
+        let mut req_astarte_message = Request::new(iface_name);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_properties(req_astarte_message)
+            .await;
+
+        assert_eq!(res.err().unwrap().code(), Code::Internal);
+
+        // get properties
+        let iface_name = InterfaceName {
+            name: "io.demo.Values1".to_string(),
+        };
+
+        let mut req_astarte_message = Request::new(iface_name);
+        // it is necessary to add the NodeId extensions otherwise sending is not allowed
+        req_astarte_message
+            .extensions_mut()
+            .insert(NodeId(TEST_UUID));
+
+        let res = astarte_message_hub
+            .get_properties(req_astarte_message)
+            .await;
+
+        let props = res.unwrap().into_inner().properties;
+
+        assert_eq!(props.len(), 2);
     }
 
     #[test]
@@ -1051,17 +1519,17 @@ mod test {
         assert!(res.is_some());
     }
 
-    fn create_http_req(uri: &str) -> hyper::Request<Body> {
+    fn create_http_req(uri: &str) -> hyper::Request<BoxBody> {
         hyper::Request::builder()
             .uri(uri)
-            .body(Body::default())
+            .body(BoxBody::default())
             .expect("failed to create http req")
     }
 
-    fn create_http_req_with_metadata_node_id(uri: &str) -> hyper::Request<Body> {
+    fn create_http_req_with_metadata_node_id(uri: &str) -> hyper::Request<BoxBody> {
         let req = hyper::Request::builder()
             .uri(uri)
-            .body(Body::default())
+            .body(BoxBody::default())
             .expect("failed to create http req");
 
         let (mut parts, body) = req.into_parts();
@@ -1075,13 +1543,16 @@ mod test {
 
     fn create_node_interceptor_service(
         hm: HashMap<Uuid, AstarteNode>,
-    ) -> impl Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>, Error = InterceptorError>
-    {
+    ) -> impl Service<
+        hyper::Request<BoxBody>,
+        Response = hyper::Response<BoxBody>,
+        Error = InterceptorError,
+    > {
         let msg_hub_nodes = Arc::new(RwLock::new(hm));
 
         ServiceBuilder::new()
             .layer(NodeIdInterceptorLayer::new(msg_hub_nodes))
-            .service_fn(|_req: hyper::Request<Body>| {
+            .service_fn(|_req: hyper::Request<BoxBody>| {
                 futures::future::ready(
                     Response::builder()
                         .status(StatusCode::OK)

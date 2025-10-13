@@ -7,73 +7,59 @@
     "mappings": [
         {
             "endpoint": "/binaryblob_endpoint",
-            "type": "binaryblob",
-            "explicit_timestamp": true
+            "type": "binaryblob"
         },
         {
             "endpoint": "/binaryblobarray_endpoint",
-            "type": "binaryblobarray",
-            "explicit_timestamp": true
+            "type": "binaryblobarray"
         },
         {
             "endpoint": "/boolean_endpoint",
-            "type": "boolean",
-            "explicit_timestamp": true
+            "type": "boolean"
         },
         {
             "endpoint": "/booleanarray_endpoint",
-            "type": "booleanarray",
-            "explicit_timestamp": true
+            "type": "booleanarray"
         },
         {
             "endpoint": "/datetime_endpoint",
-            "type": "datetime",
-            "explicit_timestamp": true
+            "type": "datetime"
         },
         {
             "endpoint": "/datetimearray_endpoint",
-            "type": "datetimearray",
-            "explicit_timestamp": true
+            "type": "datetimearray"
         },
         {
             "endpoint": "/double_endpoint",
-            "type": "double",
-            "explicit_timestamp": true
+            "type": "double"
         },
         {
             "endpoint": "/doublearray_endpoint",
-            "type": "doublearray",
-            "explicit_timestamp": true
+            "type": "doublearray"
         },
         {
             "endpoint": "/integer_endpoint",
-            "type": "integer",
-            "explicit_timestamp": true
+            "type": "integer"
         },
         {
             "endpoint": "/integerarray_endpoint",
-            "type": "integerarray",
-            "explicit_timestamp": true
+            "type": "integerarray"
         },
         {
             "endpoint": "/longinteger_endpoint",
-            "type": "longinteger",
-            "explicit_timestamp": true
+            "type": "longinteger"
         },
         {
             "endpoint": "/longintegerarray_endpoint",
-            "type": "longintegerarray",
-            "explicit_timestamp": true
+            "type": "longintegerarray"
         },
         {
             "endpoint": "/string_endpoint",
-            "type": "string",
-            "explicit_timestamp": true
+            "type": "string"
         },
         {
             "endpoint": "/stringarray_endpoint",
-            "type": "stringarray",
-            "explicit_timestamp": true
+            "type": "stringarray"
         }
     ]
 }

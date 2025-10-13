@@ -8,12 +8,12 @@
 members = ["e2e-test"]
 
 [workspace.package]
-version = "0.7.5"
+version = "0.8.1"
 edition = "2021"
 homepage = "https://astarte.cloud/"
 license = "Apache-2.0"
 repository = "https://github.com/astarte-platform/astarte-message-hub"
-rust-version = "1.72.0"
+rust-version = "1.78.0"
 
 [package]
 name = "astarte-message-hub"
@@ -31,13 +31,13 @@ description = "A central service that runs on (Linux) devices for collecting and
 
 [dependencies]
 astarte-device-sdk = { workspace = true, features = ["derive", "message-hub"] }
+astarte-interfaces = { workspace = true }
 astarte-message-hub-proto = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 displaydoc = { workspace = true }
-env_logger = { workspace = true }
 eyre = { workspace = true }
 futures = { workspace = true }
 hyper = { workspace = true }
@@ -56,6 +56,7 @@ tokio-util = { workspace = true }
 toml = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 uuid = { workspace = true }
 zbus = { workspace = true, default-features = false, features = ["tokio"] }
 
@@ -64,7 +65,7 @@ native-tls = { workspace = true }
 
 # C dependencies
 aws-lc-rs = { version = "1.12.5", optional = true }
-rusqlite = { version = "0.29.0", optional = true }
+rusqlite = { version = "0.32.1", optional = true }
 
 [dev-dependencies]
 astarte-device-sdk-mock = { workspace = true }
@@ -74,24 +75,24 @@ serial_test = { workspace = true }
 tempfile = { workspace = true }
 
 [workspace.dependencies]
-astarte-device-sdk = "0.9.9"
-astarte-device-sdk-mock = "0.9.9"
-astarte-message-hub-proto = "0.7.0"
+astarte-device-sdk = "0.10.4"
+astarte-device-sdk-mock = "0.10.4"
+astarte-interfaces = "0.1.1"
+astarte-message-hub-proto = "0.8.4"
 async-trait = "0.1.80"
 axum = "0.7.5"
 base64 = "0.22.0"
 chrono = "0.4.38"
-clap = "<4.5.0"
+clap = "4.5.36"
 color-eyre = "0.6.3"
-displaydoc = "0.2.4"
-env_logger = "0.11.3"
+displaydoc = "0.2.5"
 eyre = "0.6.12"
 futures = "0.3.30"
-hyper = "0.14.28"
+hyper = "1.5.1"
 itertools = "0.12.1"
 log = "0.4.21"
 mockall = "0.12.1"
-pbjson-types = "0.6.0"
+pbjson-types = "0.7.0"
 prost = "0.12.4"
 reqwest = "0.12.3"
 rustls = "0.23.32"
@@ -105,9 +106,9 @@ tokio = "1.37.0"
 tokio-stream = "0.1.15"
 tokio-util = "0.7.10"
 toml = "0.8.12"
-tonic = "0.11.0"
-tower = "0.4.13"
-tower-http = "0.4.4"
+tonic = "0.12.3"
+tower = "0.5.2"
+tower-http = "0.6.2"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 uuid = "1.8.0"

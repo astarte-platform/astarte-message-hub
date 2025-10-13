@@ -19,13 +19,15 @@
 use std::str::FromStr;
 use std::{env::VarError, future::Future, sync::Arc};
 
-use astarte_device_sdk::{prelude::*, Value};
+use astarte_device_sdk::transport::grpc::Grpc;
+use astarte_device_sdk::{prelude::*, DeviceClient, Value};
+use astarte_interfaces::Interface;
 use eyre::{bail, ensure, eyre, Context, OptionExt};
 use interfaces::ServerAggregate;
 use itertools::Itertools;
 use tempfile::tempdir;
 use tokio::{sync::Barrier, task::JoinSet};
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use uuid::{uuid, Uuid};
 
@@ -146,10 +148,10 @@ async fn e2e_test(
     .await?;
 
     // Send the device data
-    send_device_data(&node, &api, &barrier).await?;
+    send_device_data(&mut node, &api, &barrier).await?;
 
     // Receive the server data
-    receive_server_data(&mut node, &api).await?;
+    receive_server_data(&mut node, &api, &barrier).await?;
 
     // Extend the node interfaces
     let additional_interfaces = additional_interfaces()?;
@@ -169,18 +171,52 @@ async fn e2e_test(
     Ok(())
 }
 
-#[instrument(skip_all)]
-async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Result<()> {
-    debug!("sending DeviceAggregate");
-    node.client
-        .send_object(
-            DeviceAggregate::name(),
-            DeviceAggregate::path(),
-            DeviceAggregate::default(),
-        )
-        .await?;
+async fn send<F, O>(node: &Node, barrier: &Barrier, f: F) -> eyre::Result<()>
+where
+    F: FnOnce(DeviceClient<Grpc>) -> O,
+    O: Future<Output = eyre::Result<()>> + Send + 'static,
+{
+    let client = node.client.clone();
+    let handle = tokio::spawn((f)(client));
 
+    // wait for send call
+    tokio::time::timeout(tokio::time::Duration::from_secs(5), barrier.wait()).await?;
+
+    handle.await?
+}
+
+async fn send_prop<F, O>(node: &Node, barrier: &Barrier, f: F) -> eyre::Result<()>
+where
+    F: FnOnce(DeviceClient<Grpc>) -> O,
+    O: Future<Output = eyre::Result<()>> + Send + 'static,
+{
+    let client = node.client.clone();
+    let handle = tokio::spawn((f)(client));
+
+    // wait for inner try_load_prop call
     barrier.wait().await;
+    // wait for send call
+    barrier.wait().await;
+
+    handle.await?
+}
+
+#[instrument(skip_all)]
+async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre::Result<()> {
+    debug!("sending DeviceAggregate");
+    send(node, barrier, |mut client| async move {
+        client
+            .send_object_with_timestamp(
+                DeviceAggregate::name(),
+                DeviceAggregate::path(),
+                DeviceAggregate::default().into_object()?,
+                chrono::Utc::now(),
+            )
+            .await?;
+
+        Ok(())
+    })
+    .await?;
 
     retry(10, || async move {
         let data: DeviceAggregate = api
@@ -196,15 +232,22 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
     .await?;
 
     debug!("sending DeviceDatastream");
-    let mut data = DeviceDatastream::default().astarte_aggregate()?;
+    let mut data = DeviceDatastream::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
+        send(node, barrier, |mut client| async move {
+            client
+                .send_individual_with_timestamp(
+                    DeviceDatastream::name(),
+                    &format!("/{endpoint}"),
+                    value,
+                    chrono::Utc::now(),
+                )
+                .await?;
 
-        node.client
-            .send(DeviceDatastream::name(), &format!("/{endpoint}"), value)
-            .await?;
-
-        barrier.wait().await;
+            Ok(())
+        })
+        .await?;
     }
 
     retry(10, || {
@@ -222,15 +265,18 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
     .await?;
 
     debug!("sending DeviceProperty");
-    let mut data = DeviceProperty::default().astarte_aggregate()?;
+    let mut data = DeviceProperty::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
 
-        node.client
-            .send(DeviceProperty::name(), &format!("/{endpoint}"), value)
-            .await?;
+        send_prop(node, barrier, |mut client| async move {
+            client
+                .set_property(DeviceProperty::name(), &format!("/{endpoint}"), value)
+                .await?;
 
-        barrier.wait().await;
+            Ok(())
+        })
+        .await?;
     }
 
     retry(10, || {
@@ -245,16 +291,64 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
     })
     .await?;
 
-    debug!("unsetting DeviceProperty");
-    let data = DeviceProperty::default().astarte_aggregate()?;
+    debug!("retrieving property values given the property name and the specific endpoint");
+    let mut data = DeviceProperty::default().into_object()?;
     for &endpoint in ENDPOINTS {
-        ensure!(data.contains_key(endpoint), "endpoint not found");
-
-        node.client
-            .unset(DeviceProperty::name(), &format!("/{endpoint}"))
-            .await?;
-
+        let client = node.client.clone();
+        let handle = tokio::spawn(async move {
+            client
+                .property(DeviceProperty::name(), &format!("/{endpoint}"))
+                .await?
+                .ok_or_eyre(format!("property endpoint {endpoint} not stored"))
+        });
         barrier.wait().await;
+        let stored_prop = handle.await??;
+
+        let exp_value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
+
+        assert_eq!(exp_value, stored_prop);
+    }
+
+    debug!("retrieving property values associated to all endpoints given the property name");
+    let mut data = DeviceProperty::default().into_object()?;
+    let client = node.client.clone();
+    let handle = tokio::spawn(async move { client.interface_props(DeviceProperty::name()).await });
+    barrier.wait().await;
+    let stored_prop = handle.await??;
+    for prop in stored_prop {
+        let exp_value = data
+            .remove(prop.path.trim_start_matches('/'))
+            .ok_or_eyre(format!("endpoint not found for prop {prop:#?}"))?;
+        assert_eq!(exp_value, prop.value);
+    }
+
+    debug!("retrieving all device property values");
+    let mut data = DeviceProperty::default().into_object()?;
+    let client = node.client.clone();
+    let handle = tokio::spawn(async move { client.device_props().await });
+    barrier.wait().await;
+    let stored_prop = handle.await??;
+    for prop in stored_prop {
+        let exp_value = data
+            .remove(prop.path.trim_start_matches('/'))
+            .ok_or_eyre("endpoint not found")?
+            .clone();
+        assert_eq!(exp_value, prop.value);
+    }
+
+    debug!("unsetting DeviceProperty");
+    let data = DeviceProperty::default().into_object()?;
+    for &endpoint in ENDPOINTS {
+        ensure!(data.get(endpoint).is_some(), "endpoint not found");
+
+        send(node, barrier, |mut client| async move {
+            client
+                .unset_property(DeviceProperty::name(), &format!("/{endpoint}"))
+                .await?;
+
+            Ok(())
+        })
+        .await?;
     }
 
     retry(10, || async move {
@@ -269,7 +363,7 @@ async fn send_device_data(node: &Node, api: &Api, barrier: &Barrier) -> eyre::Re
 }
 
 #[instrument(skip_all)]
-async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
+async fn receive_server_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre::Result<()> {
     debug!("checking ServerAggregate");
     api.send_interface(
         ServerAggregate::name(),
@@ -283,41 +377,60 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
     assert_eq!(event.interface, ServerAggregate::name());
     assert_eq!(event.path, ServerAggregate::path());
 
-    let data = event.data.as_object().ok_or_eyre("not an object")?;
-    assert_eq!(*data, ServerAggregate::default().astarte_aggregate()?);
+    let (data, _timestamp) = event.data.as_object().ok_or_eyre("not an object")?;
+    assert_eq!(*data, ServerAggregate::default().into_object()?);
 
     debug!("checking ServerDatastream");
-    let data = ServerDatastream::default().astarte_aggregate()?;
-    for (k, v) in data {
-        api.send_individual(ServerDatastream::name(), &k, &v)
-            .await?;
+    let data = ServerDatastream::default().into_object()?;
+    for (k, v) in data.iter() {
+        api.send_individual(ServerDatastream::name(), k, v).await?;
 
         let event = node.recv().await?;
 
         assert_eq!(event.interface, ServerDatastream::name());
         assert_eq!(event.path, format!("/{k}"));
 
-        let data = event.data.as_individual().ok_or_eyre("not an object")?;
-        assert_eq!(*data, v);
+        let (data, _timestamp) = event.data.as_individual().ok_or_eyre("not an object")?;
+        assert_eq!(data, v);
     }
 
     debug!("checking ServerProperty");
-    let data = ServerProperty::default().astarte_aggregate()?;
-    for (k, v) in data {
-        api.send_individual(ServerProperty::name(), &k, &v).await?;
+    let data = ServerProperty::default().into_object()?;
+    for (k, v) in data.iter() {
+        api.send_individual(ServerProperty::name(), k, v).await?;
 
         let event = node.recv().await?;
 
         assert_eq!(event.interface, ServerProperty::name());
         assert_eq!(event.path, format!("/{k}"));
 
-        let data = event.data.as_individual().ok_or_eyre("not an object")?;
-        assert_eq!(*data, v);
+        let data = event
+            .data
+            .as_property()
+            .ok_or_eyre("not an object")?
+            .as_ref()
+            .unwrap();
+
+        assert_eq!(data, v);
+    }
+
+    debug!("retrieving all server property values");
+    let mut data = ServerProperty::default().into_object()?;
+    let client = node.client.clone();
+    let handle = tokio::spawn(async move { client.server_props().await });
+    barrier.wait().await;
+    let stored_prop = handle.await??;
+    for prop in stored_prop {
+        let exp_value = data
+            .remove(prop.path.trim_start_matches('/'))
+            .ok_or_eyre("endpoint not found")?
+            .clone();
+        assert_eq!(exp_value, prop.value);
     }
 
     debug!("checking unset for ServerProperty");
-    let data = ServerProperty::default().astarte_aggregate()?;
-    for k in data.keys() {
+    let data = ServerProperty::default().into_object()?;
+    for (k, _) in data.iter() {
         api.unset(ServerProperty::name(), k).await?;
 
         let event = node.recv().await?;
@@ -325,18 +438,18 @@ async fn receive_server_data(node: &mut Node, api: &Api) -> eyre::Result<()> {
         assert_eq!(event.interface, ServerProperty::name());
         assert_eq!(event.path, format!("/{k}"));
 
-        assert_eq!(event.data, Value::Unset);
+        assert_eq!(event.data, Value::Property(None));
     }
 
     Ok(())
 }
 
 #[instrument(skip_all)]
-fn additional_interfaces() -> eyre::Result<Vec<astarte_device_sdk::interface::Interface>> {
+fn additional_interfaces() -> eyre::Result<Vec<Interface>> {
     let to_add = ADDITIONAL_INTERFACES
         .iter()
         .copied()
-        .map(astarte_device_sdk::interface::Interface::from_str)
+        .map(Interface::from_str)
         .try_collect()?;
 
     Ok(to_add)
@@ -347,11 +460,11 @@ async fn extend_node_interfaces(
     node: &mut Node,
     api: &Api,
     barrier: &Barrier,
-    to_add: Vec<astarte_device_sdk::interface::Interface>,
+    to_add: Vec<Interface>,
 ) -> eyre::Result<()> {
     debug!("extending interfaces with AdditionalDeviceDatastream");
-    let client = node.client.clone();
-    let handle = tokio::spawn(async move { client.extend_interfaces_vec(to_add).await });
+    let mut client = node.client.clone();
+    let handle = tokio::spawn(async move { client.extend_interfaces(to_add).await });
 
     barrier.wait().await;
 
@@ -384,19 +497,22 @@ async fn extend_node_interfaces(
     .await?;
 
     debug!("sending AdditionalDeviceDatastream");
-    let mut data = AdditionalDeviceDatastream::default().astarte_aggregate()?;
+    let mut data = AdditionalDeviceDatastream::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
+        send(node, barrier, |mut client| async move {
+            client
+                .send_individual_with_timestamp(
+                    AdditionalDeviceDatastream::name(),
+                    &format!("/{endpoint}"),
+                    value,
+                    chrono::Utc::now(),
+                )
+                .await?;
 
-        node.client
-            .send(
-                AdditionalDeviceDatastream::name(),
-                &format!("/{endpoint}"),
-                value,
-            )
-            .await?;
-
-        barrier.wait().await;
+            Ok(())
+        })
+        .await?;
     }
 
     retry(10, || {
@@ -424,9 +540,9 @@ async fn remove_node_interfaces(
     mut to_remove: Vec<String>,
 ) -> eyre::Result<()> {
     debug!("removing interfaces {to_remove:?}");
-    let client = node.client.clone();
+    let mut client = node.client.clone();
     let to_remove_cl = to_remove.clone();
-    let handle = tokio::spawn(async move { client.remove_interfaces_vec(to_remove_cl).await });
+    let handle = tokio::spawn(async move { client.remove_interfaces(to_remove_cl).await });
 
     barrier.wait().await;
 

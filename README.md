@@ -23,7 +23,7 @@ using 1 MQTT connection to Astarte.
 ## Requirements
 
 - protobuf >= 3.15
-- Rust version >= 1.72.0
+- Rust version >= 1.78.0
 
 ## Configuration
 
@@ -38,7 +38,7 @@ The format for the configuration file is the following:
 # Required fields
 #
 realm = "<REALM>"
-# Required to comunicate with Astarte.
+# Required to communicate with Astarte.
 pairing_url = "<PAIRING_URL>"
 # Used to register a device and obtain a `credentials_secret`
 pairing_token = "[PAIRING_TOKEN]"
