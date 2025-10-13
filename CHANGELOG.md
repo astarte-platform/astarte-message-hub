@@ -5,7 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.2] - 2025-10-13
+
+### Fixed
+- Crypto provider install.
+
+## [0.8.1] - 2025-09-19
+
+### Changed
+- Forward port release v0.7.5.
+- Bump Astarte Device SDK to 0.10.4.
+
+## [0.7.5] - 2025-09-19
+
+### Changed
+
+- Bump Astarte Device SDK to 0.9.9.
+
+## [0.8.0] - 2025-07-17
 
 ### Added
 
@@ -21,6 +38,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Let a node receive only the properties in its introspection
   [#335](https://github.com/astarte-platform/astarte-message-hub/pull/335).
+
 
 ## [0.7.4] - 2025-07-02
 
