@@ -51,13 +51,16 @@ use crate::cli::Cli;
 
 mod cli;
 
-const DEFAULT_LOG_DIRECTIVE: &str = concat!(env!("CARGO_PKG_NAME"), "=info");
-
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     stable_eyre::install()?;
 
     init_tracing()?;
+
+    // Set default crypto provider
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .map_err(|_| eyre!("failed to install default crypto provider"))?;
 
     let args = Cli::parse();
 
@@ -304,7 +307,7 @@ fn init_tracing() -> eyre::Result<()> {
         .with(fmt)
         .with(
             EnvFilter::builder()
-                .with_default_directive(DEFAULT_LOG_DIRECTIVE.parse()?)
+                .with_default_directive("astarte_message_hub=info".parse()?)
                 .from_env_lossy(),
         )
         .try_init()?;
