@@ -43,7 +43,7 @@ jobs:
             type=raw,value=${{ steps.compute-tag.outputs.TAG }}
       - name: Build and push tagged Docker image
         id: push
-        uses: docker/build-push-action@3b5e8027fcad23fda98b2e3ac259d8d67585f671
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
           file: scripts/docker/Dockerfile
           push: true
