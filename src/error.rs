@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use astarte_device_sdk::interface::error::InterfaceError;
 use astarte_device_sdk::introspection::AddInterfaceError;
 use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
-use log::{debug, error};
+use log::debug;
 use tonic::{Code, Status};
 use uuid::Uuid;
 
