@@ -32,9 +32,12 @@ RUN cargo build --release
 FROM alpine:3.21
 
 RUN mkdir -p /usr/share/message-hub/astarte-interfaces \
-    /var/lib/message-hub/interfaces
+    /var/lib/message-hub/interfaces \
+    /etc/astarte-message-hub
 
 COPY scripts/docker/entrypoint.sh /entrypoint.sh
+
+COPY scripts/docker/message-hub-config.toml /etc/astarte-message-hub/config.toml
 
 COPY --from=build /msg-hub/target/release/astarte-message-hub /usr/bin/
 

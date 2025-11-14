@@ -20,3 +20,4 @@
 /.reuse
 /scripts/docker
 !/scripts/docker/entrypoint.sh
+!/scripts/docker/message-hub-config.toml
