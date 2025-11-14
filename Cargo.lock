@@ -129,9 +129,9 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 
 [[package]]
 name = "astarte-device-sdk"
-version = "0.9.9"
+version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "675b96b83d4ff8a15cce90d607f65d23b993f216160b9c0b37aedc82e5aaf072"
+checksum = "3358edf5885116f6713c51c6a2c100fdfd0db9644e74303f55d8269353d22737"
 dependencies = [
  "ahash",
  "astarte-device-sdk-derive",
@@ -171,9 +171,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-derive"
-version = "0.9.9"
+version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f9c68464d2601116cb78848870359134e96d922a5b8a85820edae0fd2f8c677"
+checksum = "fa3c7f6cee151fc7836e28b7d4991b54af99a59d51f0e7694d3ac69161fb9ad1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -182,9 +182,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-mock"
-version = "0.9.9"
+version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81f95a4720c2ee3687e83c946964f5fa459bf4787c18150d089da6e5180c0512"
+checksum = "93c4c4f366b51022b283470ec25bfb87c396c9f22307051b05d76c3493956014"
 dependencies = [
  "astarte-device-sdk",
  "async-trait",
@@ -2822,9 +2822,9 @@ dependencies = [
 
 [[package]]
 name = "rumqttc-dev-patched"
-version = "0.24.6-ack-notify"
+version = "0.24.10-ack-notify"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27aa48273c2956fb942154248a3d16c61c40123af33121796e3fcb5d319ec596"
+checksum = "f0be31967e5cd924cb83478ab8daaf01423249a0ea2ffd2dba84c2ec6fe85708"
 dependencies = [
  "bytes",
  "fixedbitset 0.5.7",
