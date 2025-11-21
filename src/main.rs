@@ -37,7 +37,7 @@ use std::time::Duration;
 use tokio::task::JoinSet;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{EnvFilter, Layer};
 
 use astarte_message_hub::{
     astarte::handler::init_pub_sub, config::MessageHubOptions, AstarteMessageHub,
@@ -50,6 +50,8 @@ use log::{debug, error, info, warn};
 use crate::cli::Cli;
 
 mod cli;
+#[cfg(feature = "security-events")]
+mod events;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -84,12 +86,15 @@ async fn main() -> eyre::Result<()> {
     let (client, connection) = initialize_astarte_device_sdk(&options, &interfaces_dir).await?;
     info!("Connection to Astarte established.");
 
-    let (publisher, mut subscriber) = init_pub_sub(client);
+    let (publisher, mut subscriber) = init_pub_sub(client.clone());
 
     // Create a new message hub
     let message_hub = AstarteMessageHub::new(publisher, interfaces_dir);
 
     let mut tasks = JoinSet::new();
+
+    #[cfg(feature = "security-events")]
+    tasks.spawn(events::check_cert_expiry(client));
 
     // Event loop for the astarte device sdk
     tasks.spawn(async move {
@@ -204,15 +209,15 @@ async fn initialize_astarte_device_sdk(
         mqtt_config.ignore_ssl_errors();
     }
 
-    if let Some(timeout) = msg_hub_opts.astarte.timeout_secs {
-        mqtt_config.connection_timeout(Duration::from_secs(timeout));
-    }
-
     if let Some(keep_alive) = msg_hub_opts.astarte.keep_alive_secs {
         mqtt_config.keepalive(Duration::from_secs(keep_alive));
     }
 
     let mut builder = DeviceBuilder::new().writable_dir(&msg_hub_opts.store_directory)?;
+
+    if let Some(timeout) = msg_hub_opts.astarte.timeout_secs {
+        builder = builder.connection_timeout(Duration::from_secs(timeout))
+    }
 
     if let Some(ref int_dir) = msg_hub_opts.interfaces_directory {
         debug!("reading interfaces from {}", int_dir.display());
@@ -301,16 +306,27 @@ fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
 }
 
 fn init_tracing() -> eyre::Result<()> {
-    let fmt = tracing_subscriber::fmt::layer().with_ansi(stdout().is_terminal());
-
-    tracing_subscriber::registry()
-        .with(fmt)
-        .with(
+    let default_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(stdout().is_terminal())
+        .with_filter(
             EnvFilter::builder()
                 .with_default_directive("astarte_message_hub=info".parse()?)
                 .from_env_lossy(),
-        )
-        .try_init()?;
+        );
+
+    let subscribers = tracing_subscriber::registry().with(default_layer);
+
+    #[cfg(feature = "security-events")]
+    let subscribers = subscribers.with(
+        tracing_journald::layer()?
+            .with_syslog_identifier("astarte_sdk_security_events".to_string())
+            .with_filter(
+                tracing_subscriber::filter::Targets::new()
+                    .with_target("security-event", tracing::Level::TRACE),
+            ),
+    );
+
+    subscribers.try_init()?;
 
     Ok(())
 }
