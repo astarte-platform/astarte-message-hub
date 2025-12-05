@@ -26,7 +26,7 @@
 
 use astarte_message_hub::config::{Config, DEFAULT_HOST, DEFAULT_HTTP_PORT};
 use eyre::{Context, OptionExt};
-use std::io::{stdout, IsTerminal};
+use std::io::{IsTerminal, stdout};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
@@ -46,7 +46,7 @@ mod tasks;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    stable_eyre::install()?;
+    color_eyre::install()?;
 
     init_tracing()?;
 

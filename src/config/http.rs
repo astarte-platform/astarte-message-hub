@@ -33,8 +33,8 @@ use axum::{Json, Router};
 use log::debug;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
-use tokio::sync::mpsc::error::SendError;
 use tokio::sync::Notify;
+use tokio::sync::mpsc::error::SendError;
 use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 

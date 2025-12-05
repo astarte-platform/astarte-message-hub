@@ -25,7 +25,6 @@ use std::io;
 use std::path::PathBuf;
 
 use astarte_device_sdk::introspection::AddInterfaceError;
-use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
 use astarte_interfaces::error::Error as InterfaceError;
 use astarte_message_hub_proto::prost::UnknownEnumValue;
 use log::debug;
@@ -75,10 +74,6 @@ pub enum AstarteMessageHubError {
     #[error("couldn't convert timestamp, {0}")]
     Timestamp(&'static str),
 
-    /// Astarte Message Hub proto error
-    #[error("Astarte Message Hub proto error, {0}")]
-    Proto(#[from] MessageHubProtoError),
-
     /// Error returned by  the device
     #[error("error returned by the device")]
     Device(#[from] DeviceError),
@@ -115,6 +110,13 @@ pub enum AstarteMessageHubError {
         /// The node ID
         node_id: Uuid,
     },
+
+    /// Couldn't convert value from or to proto
+    #[error("couldn't convert value {ctx}")]
+    Conversion {
+        /// Reason why the conversion failed
+        ctx: &'static str,
+    },
 }
 
 impl From<AstarteMessageHubError> for Status {
@@ -135,10 +137,10 @@ impl From<AstarteMessageHubError> for Status {
             AstarteMessageHubError::Device(ref err) => err.into(),
             AstarteMessageHubError::AstarteInvalidData(_)
             | AstarteMessageHubError::Timestamp(_)
-            | AstarteMessageHubError::Proto(_)
             | AstarteMessageHubError::Uuid(_)
             | AstarteMessageHubError::NodeId(_)
             | AstarteMessageHubError::InvalidProtoOwnership(_)
+            | AstarteMessageHubError::Conversion { .. }
             | AstarteMessageHubError::MissingInterface { .. } => Code::InvalidArgument,
         };
 

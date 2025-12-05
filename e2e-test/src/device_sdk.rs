@@ -19,11 +19,11 @@
 use std::{sync::Arc, time::Duration};
 
 use astarte_device_sdk::{
+    DeviceClient, DeviceEvent,
     builder::DeviceBuilder,
     prelude::*,
     store::memory::MemoryStore,
     transport::grpc::{Grpc, GrpcConfig},
-    DeviceClient, DeviceEvent,
 };
 use eyre::Context;
 use tokio::{
@@ -33,7 +33,7 @@ use tokio::{
 };
 use tracing::{debug, info, instrument};
 
-use crate::{interfaces::INTERFACES, GRPC_PORT, UUID};
+use crate::{GRPC_PORT, UUID, interfaces::INTERFACES};
 
 pub struct Node {
     handle: AbortHandle,

@@ -31,9 +31,9 @@ use log::{error, info};
 use std::time;
 use tokio::signal::ctrl_c;
 use tokio::task::JoinSet;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
 const DEVICE_DATASTREAM: &str = include_str!(
@@ -68,7 +68,8 @@ type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 #[tokio::main]
 async fn main() -> Result<(), DynError> {
-    stable_eyre::install()?;
+    color_eyre::install()?;
+
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .with(EnvFilter::from_default_env())

@@ -21,9 +21,9 @@
 use std::time::Duration;
 
 use astarte_device_sdk::{
+    DeviceClient,
     store::{PropertyStore, StoreCapabilities},
     transport::mqtt::Mqtt,
-    DeviceClient,
 };
 use chrono::Utc;
 use log::debug;

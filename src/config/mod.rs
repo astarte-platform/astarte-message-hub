@@ -140,14 +140,13 @@ impl Config {
 
     /// Validate the values are present for the server configuration.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        if !self.realm.as_ref().is_some_and(|realm| !realm.is_empty()) {
+        if self.realm.as_ref().is_none_or(|realm| realm.is_empty()) {
             return Err(ConfigError::MissingField("realm"));
         }
 
-        if !self
+        if self
             .device_id
-            .as_ref()
-            .is_some_and(|device_id| !device_id.is_empty())
+            .as_ref().is_none_or(|device_id| device_id.is_empty())
         {
             return Err(ConfigError::MissingField("device_id"));
         }
@@ -166,10 +165,9 @@ impl Config {
             return Err(ConfigError::Credentials);
         }
 
-        if !self
+        if self
             .pairing_url
-            .as_ref()
-            .is_some_and(|pairing_url| !pairing_url.is_empty())
+            .as_ref().is_none_or(|pairing_url| pairing_url.is_empty())
         {
             return Err(ConfigError::MissingField("pairing_url"));
         }
@@ -255,7 +253,7 @@ impl Config {
                     "failed to read {}: {}",
                     path.to_string_lossy(),
                     err
-                )))
+                )));
             }
         };
 

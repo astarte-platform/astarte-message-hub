@@ -22,9 +22,9 @@ use base64::prelude::*;
 use chrono::{DateTime, Utc};
 use eyre::Context;
 use serde::{
+    Deserializer, Serializer,
     de::{self, Visitor},
     ser::SerializeSeq,
-    Deserializer, Serializer,
 };
 
 pub type Timestamp = DateTime<Utc>;

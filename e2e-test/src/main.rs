@@ -20,26 +20,26 @@ use std::str::FromStr;
 use std::{env::VarError, future::Future, sync::Arc};
 
 use astarte_device_sdk::transport::grpc::Grpc;
-use astarte_device_sdk::{prelude::*, DeviceClient, Value};
+use astarte_device_sdk::{DeviceClient, Value, prelude::*};
 use astarte_interfaces::Interface;
-use eyre::{bail, ensure, eyre, Context, OptionExt};
+use eyre::{Context, OptionExt, bail, ensure, eyre};
 use interfaces::ServerAggregate;
 use itertools::Itertools;
 use tempfile::tempdir;
 use tokio::{sync::Barrier, task::JoinSet};
 use tracing::{debug, error, instrument, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use uuid::{uuid, Uuid};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use uuid::{Uuid, uuid};
 
 use crate::interfaces::ADDITIONAL_INTERFACES;
 use crate::{
     api::Api,
-    device_sdk::{init_node, Node},
+    device_sdk::{Node, init_node},
     interfaces::{
-        AdditionalDeviceDatastream, DeviceAggregate, DeviceDatastream, DeviceProperty,
-        ServerDatastream, ServerProperty, ADDITIONAL_INTERFACE_NAMES, ENDPOINTS, INTERFACE_NAMES,
+        ADDITIONAL_INTERFACE_NAMES, AdditionalDeviceDatastream, DeviceAggregate, DeviceDatastream,
+        DeviceProperty, ENDPOINTS, INTERFACE_NAMES, ServerDatastream, ServerProperty,
     },
-    message_hub::{init_message_hub, MsgHub},
+    message_hub::{MsgHub, init_message_hub},
 };
 
 pub mod api;

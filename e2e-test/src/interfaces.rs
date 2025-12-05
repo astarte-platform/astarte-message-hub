@@ -16,10 +16,10 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use astarte_device_sdk::{aggregate::AstarteObject, IntoAstarteObject};
+use astarte_device_sdk::{IntoAstarteObject, aggregate::AstarteObject};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{base64_decode, timestamp_from_rfc3339, Timestamp};
+use crate::utils::{Timestamp, base64_decode, timestamp_from_rfc3339};
 
 /// List of all the interfaces
 pub static INTERFACES: &[&str] = &[

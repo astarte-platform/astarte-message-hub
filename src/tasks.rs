@@ -25,19 +25,19 @@ use std::{
 };
 
 use astarte_device_sdk::{
+    DeviceClient, DeviceConnection, EventLoop,
     builder::DeviceBuilder,
     client::ClientDisconnect,
     store::SqliteStore,
     transport::mqtt::{Mqtt, MqttConfig},
-    DeviceClient, DeviceConnection, EventLoop,
 };
 use astarte_message_hub::{
-    astarte::handler::{init_pub_sub, DevicePublisher, DeviceSubscriber},
-    config::MessageHubOptions,
     AstarteMessageHub,
+    astarte::handler::{DevicePublisher, DeviceSubscriber, init_pub_sub},
+    config::MessageHubOptions,
 };
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
-use eyre::{eyre, WrapErr};
+use eyre::{WrapErr, eyre};
 use log::{debug, error, info};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;

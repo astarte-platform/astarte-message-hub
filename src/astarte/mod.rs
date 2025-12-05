@@ -21,8 +21,8 @@
 //!
 //! This module contains all the required traits for such an handler.
 
-use astarte_device_sdk::store::StoredProp;
 use astarte_device_sdk::AstarteData;
+use astarte_device_sdk::store::StoredProp;
 use astarte_interfaces::Interface;
 use astarte_message_hub_proto::{AstarteMessage, MessageHubEvent};
 use async_trait::async_trait;
@@ -45,7 +45,7 @@ pub trait AstartePublisher: Send + Sync {
     /// The `astarte_message` argument format is
     /// defined in `./proto/astarteplatform/msghub/astarte_message.proto`
     async fn publish(&self, astarte_message: &AstarteMessage)
-        -> Result<(), AstarteMessageHubError>;
+    -> Result<(), AstarteMessageHubError>;
 }
 
 /// A **trait** required for all Astarte handlers that want to subscribe and unsubscribe a
@@ -103,7 +103,7 @@ pub trait PropAccessExt {
         interface: &str,
         path: &str,
     ) -> impl std::future::Future<Output = Result<Option<AstarteData>, AstarteMessageHubError>>
-           + std::marker::Send;
+    + std::marker::Send;
 
     /// Get all the node properties of the given interface.
     fn interface_props(
@@ -111,26 +111,26 @@ pub trait PropAccessExt {
         node_id: NodeId,
         interface: &str,
     ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
-           + std::marker::Send;
+    + std::marker::Send;
 
     /// Get all the stored node properties, device or server owners.
     fn all_props(
         &self,
         node_id: NodeId,
     ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
-           + std::marker::Send;
+    + std::marker::Send;
 
     /// Get all the stored node device properties.
     fn device_props(
         &self,
         node_id: NodeId,
     ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
-           + std::marker::Send;
+    + std::marker::Send;
 
     /// Get all the stored node server properties.
     fn server_props(
         &self,
         node_id: NodeId,
     ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
-           + std::marker::Send;
+    + std::marker::Send;
 }

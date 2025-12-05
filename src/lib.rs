@@ -27,4 +27,5 @@ pub(crate) mod cache;
 pub mod config;
 mod device;
 pub mod error;
+mod messages;
 mod server;
