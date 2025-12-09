@@ -23,10 +23,12 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use astarte_device_sdk::builder::DeviceBuilder;
+use astarte_device_sdk::pairing::fdo::FdoConfig;
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Credential, Mqtt, MqttArgs, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection};
 use eyre::{Context, OptionExt};
+use rustls_platform_verifier::ConfigVerifierExt;
 use tracing::{debug, info};
 use url::Url;
 
@@ -67,23 +69,42 @@ impl<T> Override for Option<T> {
     }
 }
 
+/// Pairing method to connect with Astarte
+#[derive(Debug, PartialEq, Eq)]
+pub enum Pairing {
+    /// FIDO Device Onboard
+    #[cfg(feature = "fdo")]
+    Fdo {
+        /// Url of the manufacturing server
+        manufacturing_url: Url,
+        /// Unique ID for the device
+        device_id: String,
+    },
+    /// Register the device using the [`Credential`] the Astarte paring API
+    Legacy {
+        /// Realm the device is registered in.
+        realm: String,
+        /// A unique ID for the device.
+        device_id: String,
+        /// The URL of the Astarte pairing API.
+        pairing_url: Url,
+        /// The credentials secret used to authenticate with Astarte.
+        credential: Credential,
+    },
+}
+
 /// Struct containing all the configuration options for the Astarte message hub.
 #[derive(Debug, PartialEq, Eq)]
 pub struct MessageHubOptions {
     /// The Astarte realm the device belongs to.
-    pub realm: String,
-    /// A unique ID for the device.
-    pub device_id: String,
-    /// The URL of the Astarte pairing API.
-    pub pairing_url: Url,
-    /// The credentials secret used to authenticate with Astarte.
-    pub credential: Credential,
     /// Directory containing the Astarte interfaces.
     pub interfaces_directory: Option<PathBuf>,
     /// The gRPC host to use bind.
     pub grpc_socket_host: IpAddr,
     /// The gRPC port to use.
     pub grpc_socket_port: u16,
+    /// Configuration on how to pair with Astarte
+    pub pairing: Pairing,
     /// Astarte device SDK options.
     pub astarte: DeviceSdkOptions,
 }
@@ -103,12 +124,41 @@ impl MessageHubOptions {
         DeviceConnection<Mqtt<SqliteStore>>,
     )> {
         // initialize the device options and mqtt config
-        let mut mqtt_config = MqttConfig::new(MqttArgs {
-            realm: self.realm.clone(),
-            device_id: self.device_id.clone(),
-            credential: self.credential.clone(),
-            pairing_url: self.pairing_url.clone(),
-        });
+        let mut mqtt_config = match &self.pairing {
+            Pairing::Fdo {
+                manufacturing_url,
+                device_id,
+            } => {
+                let fdo_dir = store_dir.get_fdo_dir().await?;
+                let storage = astarte_device_sdk::astarte_device_fdo::storage::FileStorage::open(
+                    fdo_dir.clone(),
+                )
+                .await?;
+                let crypto = astarte_device_sdk::astarte_device_fdo::crypto::software::SoftwareCrypto::create(storage).await?;
+
+                let tls = rustls::ClientConfig::with_platform_verifier()?;
+
+                let mut fdo = FdoConfig::build("fdo-test-message-hub", device_id)
+                    .set_storage(&fdo_dir)
+                    .set_manufacturing_url(manufacturing_url)
+                    .set_tls(&tls)
+                    .set_crypto(crypto)
+                    .build()?;
+
+                fdo.mqtt().await?
+            }
+            Pairing::Legacy {
+                realm,
+                device_id,
+                pairing_url,
+                credential,
+            } => MqttConfig::new(MqttArgs {
+                realm: realm.clone(),
+                device_id: device_id.clone(),
+                credential: credential.clone(),
+                pairing_url: pairing_url.clone(),
+            }),
+        };
 
         if self.astarte.ignore_ssl == Some(true) {
             mqtt_config = mqtt_config.ignore_ssl_errors();
