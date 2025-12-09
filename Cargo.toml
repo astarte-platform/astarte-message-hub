@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: CC0-1.0
 
 [workspace]
-resolver = "3"
+resolver = "2"
 members = ["e2e-test"]
 
 [workspace.package]
@@ -32,16 +32,19 @@ description = "A central service that runs on (Linux) devices for collecting and
 
 [features]
 vendored = ["dep:rusqlite", "rusqlite/bundled"]
+tpm = ["astarte-device-fdo/tpm", "astarte-device-fdo/bindgen"]
 bindgen = ["dep:aws-lc-rs", "aws-lc-rs/bindgen", "dep:rusqlite", "rusqlite/buildtime_bindgen"]
 # Feature to make it easier to cross compile the astarte message hub
 cross = ["vendored", "bindgen"]
 
 [dependencies]
+astarte-device-fdo = { workspace = true, default-features = false }
 astarte-device-sdk = { workspace = true, features = ["derive", "message-hub"] }
 astarte-interfaces = { workspace = true }
 astarte-message-hub-proto = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
+cfg-if = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 displaydoc = { workspace = true }
@@ -53,6 +56,7 @@ log = { workspace = true }
 pbjson-types = { workspace = true }
 prost = { workspace = true }
 rustls = { workspace = true }
+rustls-platform-verifier = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 stable-eyre = { workspace = true }
@@ -79,6 +83,7 @@ serial_test = { workspace = true }
 tempfile = { workspace = true }
 
 [workspace.dependencies]
+astarte-device-fdo = { default-features = false, git = "https://github.com/joshuachp/astarte-device-fdo-rust", branch = "push-xxnntorzvxmm" }
 astarte-device-sdk = "0.10.5"
 astarte-device-sdk-mock = "0.10.5"
 astarte-interfaces = "0.1.1"
@@ -86,6 +91,7 @@ astarte-message-hub-proto = "0.8.3"
 async-trait = "0.1.89"
 axum = "0.8.7"
 base64 = "0.22.1"
+cfg-if = "1.0.4"
 chrono = "0.4.42"
 clap = "4.5.53"
 color-eyre = "0.6.5"
@@ -100,6 +106,7 @@ pbjson-types = "0.7.0"
 prost = "0.14.1"
 reqwest = { version = "0.12.24", default-features = false }
 rustls = "0.23.35"
+rustls-platform-verifier = "0.6.2"
 serde = "1.0.228"
 serde_json = "1.0.145"
 serial_test = "3.2.0"
@@ -117,8 +124,6 @@ tracing = "0.1.43"
 tracing-subscriber = "0.3.22"
 uuid = "1.19.0"
 zbus = { version = "5.12.0", default-features = false }
-
-
 
 [profile.release]
 strip = true
