@@ -22,7 +22,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use astarte_device_sdk::builder::DeviceBuilder;
+use astarte_device_sdk::builder::{ConnectionConfig, DeviceBuilder};
 use astarte_device_sdk::pairing::api::PairingApi;
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Credential, Mqtt, MqttArgs, MqttConfig};
@@ -68,26 +68,59 @@ impl<T> Override for Option<T> {
     }
 }
 
+/// Pairing method to connect with Astarte
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Pairing {
+    /// Use FDO to pair with astarte
+    #[cfg(feature = "fdo")]
+    Fdo(Fdo),
+    /// Use the Astarte Pairing API via token
+    Legacy(Legacy),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// FIDO Device Onboard
+#[cfg(feature = "fdo")]
+pub struct Fdo {
+    pub(crate) manufacturing_url: Url,
+    pub(crate) device_id: String,
+}
+
+/// Register the device using the [`Credential`] and the Astarte paring API
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Legacy {
+    pub(crate) realm: String,
+    pub(crate) device_id: String,
+    pub(crate) pairing_url: Url,
+    pub(crate) credential: Credential,
+}
+
 /// Struct containing all the configuration options for the Astarte message hub.
 #[derive(Debug, PartialEq, Eq)]
 pub struct MessageHubOptions {
     /// The Astarte realm the device belongs to.
-    pub realm: String,
-    /// A unique ID for the device.
-    pub device_id: String,
-    /// The URL of the Astarte pairing API.
-    pub pairing_url: Url,
-    /// The credentials secret used to authenticate with Astarte.
-    pub credential: Credential,
     /// Directory containing the Astarte interfaces.
     pub interfaces_directory: Option<PathBuf>,
     /// The gRPC host to use bind.
     pub grpc_socket_host: IpAddr,
     /// The gRPC port to use.
     pub grpc_socket_port: u16,
+    /// Configuration on how to pair with Astarte
+    pub pairing: Pairing,
     /// Astarte device SDK options.
     pub astarte: DeviceSdkOptions,
 }
+
+type MqttPairing = Mqtt<SqliteStore, PairingApi>;
+#[cfg(feature = "fdo")]
+type MqttFdo = Mqtt<
+    SqliteStore,
+    astarte_device_sdk::pairing::fdo::FdoConfig<
+        astarte_device_sdk::astarte_device_fdo::crypto::software::SoftwareCrypto<
+            astarte_device_sdk::astarte_device_fdo::storage::FileStorage,
+        >,
+    >,
+>;
 
 impl MessageHubOptions {
     /// Returns the builder for the message hub options
@@ -98,17 +131,21 @@ impl MessageHubOptions {
     /// Initializes the Astarte Device client and connection
     pub async fn create_connection(
         &self,
+        pairing: &Legacy,
         store_dir: &StoreDir,
-    ) -> eyre::Result<(
-        DeviceClient<Mqtt<SqliteStore, PairingApi>>,
-        DeviceConnection<Mqtt<SqliteStore, PairingApi>>,
-    )> {
-        // initialize the device options and mqtt config
+    ) -> eyre::Result<(DeviceClient<MqttPairing>, DeviceConnection<MqttPairing>)> {
+        let Legacy {
+            realm,
+            device_id,
+            pairing_url,
+            credential,
+        } = pairing;
+
         let mut mqtt_config = MqttConfig::new(MqttArgs {
-            realm: self.realm.clone(),
-            device_id: self.device_id.clone(),
-            credential: self.credential.clone(),
-            pairing_url: self.pairing_url.clone(),
+            realm: realm.clone(),
+            device_id: device_id.clone(),
+            credential: credential.clone(),
+            pairing_url: pairing_url.clone(),
         });
 
         if self.astarte.ignore_ssl == Some(true) {
@@ -119,7 +156,59 @@ impl MessageHubOptions {
             mqtt_config = mqtt_config.keepalive(Duration::from_secs(keep_alive));
         }
 
+        self.connect(store_dir, mqtt_config).await
+    }
+
+    /// Pair with Astarte using FDO
+    #[cfg(feature = "fdo")]
+    pub async fn connection_fdo(
+        &self,
+        pairing: &Fdo,
+        store_dir: &StoreDir,
+    ) -> Result<(DeviceClient<MqttFdo>, DeviceConnection<MqttFdo>), eyre::Error> {
+        use astarte_device_sdk::pairing::fdo::FdoConfig;
+        use rustls_platform_verifier::ConfigVerifierExt;
+
+        let fdo_dir = store_dir.get_store_dir().await?;
+        let storage = astarte_device_sdk::astarte_device_fdo::storage::FileStorage::open(
+            fdo_dir.to_path_buf(),
+        )
+        .await?;
+        let crypto =
+            astarte_device_sdk::astarte_device_fdo::crypto::software::SoftwareCrypto::create(
+                storage,
+            )
+            .await?;
+
+        let tls = rustls::ClientConfig::with_platform_verifier()?;
+
+        let mut fdo = FdoConfig::build("fdo-test-message-hub", &pairing.device_id)
+            .set_manufacturing_url(&pairing.manufacturing_url)
+            .set_crypto(crypto);
+
+        if self.astarte.ignore_ssl == Some(true) {
+            fdo = fdo.set_insecure_ssl(true);
+        }
+
+        if let Some(keep_alive) = self.astarte.keep_alive_secs {
+            fdo = fdo.set_keepalive(Duration::from_secs(keep_alive));
+        }
+
+        let fdo = fdo.build()?.device_initialize(fdo_dir, tls).await?;
+
+        self.connect(store_dir, fdo).await
+    }
+
+    async fn connect<C>(
+        &self,
+        store_dir: &StoreDir,
+        conn_cfg: C,
+    ) -> eyre::Result<(DeviceClient<C::Conn>, DeviceConnection<C::Conn>)>
+    where
+        C: ConnectionConfig<SqliteStore>,
+    {
         let store_directory = store_dir.get_store_dir().await?;
+
         let mut builder = DeviceBuilder::new().writable_dir(store_directory);
 
         if let Some(timeout) = self.astarte.timeout_secs {
@@ -164,7 +253,6 @@ impl MessageHubOptions {
         } else {
             debug!("astarte max db size is not set, using default");
         }
-
         if let Some(s) = max_db_journal_size {
             debug!("setting astarte max db journal size to {s:?}");
             store = store.set_journal_size_limit(s);
@@ -178,11 +266,11 @@ impl MessageHubOptions {
 
         if let Some(max_stored_items) = max_retention_items {
             debug!("setting astarte max number of stored items to {max_stored_items}");
+
             builder = builder.max_stored_retention(max_stored_items);
         }
 
-        // create a device instance
-        let (client, connection) = builder.connection(mqtt_config).build().await?;
+        let (client, connection) = builder.connection(conn_cfg).build().await?;
 
         info!("Astarte device initialized");
 

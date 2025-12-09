@@ -85,6 +85,18 @@ impl StoreDir {
     }
 
     /// Returns the stored configs directory creating it if it doesn't exists
+    #[cfg(feature = "fdo")]
+    pub async fn get_fdo_dir(&self) -> eyre::Result<PathBuf> {
+        let fdo = self.store_dir.join("fdo");
+
+        tokio::fs::create_dir_all(&fdo)
+            .await
+            .wrap_err("couldn't create fdo directory")?;
+
+        Ok(fdo)
+    }
+
+    /// Returns the stored configs directory creating it if it doesn't exists
     pub async fn get_interfaces_cache_dir(&self) -> Option<PathBuf> {
         let interfaces = self.store_dir.join("interfaces");
 

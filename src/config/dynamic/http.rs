@@ -139,19 +139,14 @@ impl Default for ConfigResponse {
     }
 }
 
-#[derive(Debug)]
-struct ConfigServer<D> {
+struct ConfigServer {
     tx: mpsc::Sender<ConfigEntry>,
     store_dir: StoreDir,
-    validate: SharedValidate<D>,
+    validate: SharedValidate,
 }
 
-impl<D> ConfigServer<D> {
-    fn new(
-        tx: mpsc::Sender<ConfigEntry>,
-        store_dir: StoreDir,
-        validate: SharedValidate<D>,
-    ) -> Self {
+impl ConfigServer {
+    fn new(tx: mpsc::Sender<ConfigEntry>, store_dir: StoreDir, validate: SharedValidate) -> Self {
         Self {
             tx,
             store_dir,
@@ -220,17 +215,14 @@ impl TryFrom<ConfigPayload> for Config {
 }
 
 /// Start a new HTTP API Server to allow a third party to feed the Message Hub configurations
-pub async fn serve<D>(
+pub async fn serve(
     tasks: &mut JoinSet<eyre::Result<()>>,
     cancel: CancellationToken,
     address: &SocketAddr,
     tx: mpsc::Sender<ConfigEntry>,
     store_dir: StoreDir,
-    validate: SharedValidate<D>,
-) -> Result<SocketAddr, HttpError>
-where
-    D: astarte_device_sdk::client::ClientConnection + Send + Sync + 'static,
-{
+    validate: SharedValidate,
+) -> Result<SocketAddr, HttpError> {
     let cfg_server = ConfigServer::new(tx, store_dir, validate);
 
     let app = Router::new()
@@ -290,14 +282,11 @@ async fn root() -> (StatusCode, Json<ConfigResponse>) {
 }
 
 /// HTTP API endpoint that allows to set The Message Hub configurations
-async fn set_config<D>(
-    State(state): State<Arc<ConfigServer<D>>>,
+async fn set_config(
+    State(state): State<Arc<ConfigServer>>,
     Query(query): Query<UploadQuery>,
     Json(payload): Json<ConfigPayload>,
-) -> Result<(StatusCode, Json<ConfigResponse>), ErrorResponse>
-where
-    D: astarte_device_sdk::client::ClientConnection + Send + Sync + 'static,
-{
+) -> Result<(StatusCode, Json<ConfigResponse>), ErrorResponse> {
     let config = Config::try_from(payload)?;
 
     let invalid_config = state
@@ -323,15 +312,12 @@ where
     Ok((StatusCode::OK, Json(ConfigResponse::default())))
 }
 
-async fn upload_config<D>(
-    State(state): State<Arc<ConfigServer<D>>>,
+async fn upload_config(
+    State(state): State<Arc<ConfigServer>>,
     axum::extract::Path(file_name): axum::extract::Path<String>,
     Query(query): Query<UploadQuery>,
     Json(payload): Json<ConfigPayload>,
-) -> Result<StatusCode, ErrorResponse>
-where
-    D: astarte_device_sdk::client::ClientConnection + Send + Sync,
-{
+) -> Result<StatusCode, ErrorResponse> {
     let file_name = file_name.strip_suffix(".json").unwrap_or(&file_name);
     let file_name = file_name.strip_suffix(".toml").unwrap_or(file_name);
 
@@ -367,8 +353,6 @@ mod test {
     use serde_json::{Map, Number, Value};
     use tempfile::TempDir;
 
-    use crate::tests::MockClient;
-
     use super::*;
 
     struct TestServer {
@@ -389,7 +373,7 @@ mod test {
 
             let store_dir = StoreDir::create(dir.path().to_path_buf()).await.unwrap();
 
-            let address = serve::<MockClient>(
+            let address = serve(
                 &mut tasks,
                 cancel_token.clone(),
                 &"127.0.0.1:0".parse().unwrap(),
