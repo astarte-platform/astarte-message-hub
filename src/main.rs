@@ -23,6 +23,8 @@
 
 use astarte_message_hub::config::{Config, DEFAULT_HOST, DEFAULT_HTTP_PORT};
 use eyre::{Context, OptionExt};
+use rustls::ClientConfig;
+use rustls_platform_verifier::BuilderVerifierExt;
 use std::io::{IsTerminal, stdout};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -31,7 +33,7 @@ use tracing_subscriber::{EnvFilter, Layer};
 use astarte_message_hub::config::MessageHubOptions;
 use clap::Parser;
 use eyre::eyre;
-use log::warn;
+use log::{info, warn};
 
 use crate::cli::Cli;
 use crate::tasks::MessageHubTasks;
@@ -39,6 +41,8 @@ use crate::tasks::MessageHubTasks;
 mod cli;
 #[cfg(feature = "security-events")]
 mod events;
+#[cfg(feature = "fdo")]
+mod fdo;
 mod tasks;
 
 #[tokio::main]
@@ -60,7 +64,11 @@ async fn main() -> eyre::Result<()> {
         )
     }
 
-    let options = get_config_options(args).await?;
+    let tls = ClientConfig::builder()
+        .with_platform_verifier()?
+        .with_no_client_auth();
+
+    let options = get_config_options(args, tls).await?;
 
     // Directory to store the Nodes introspection
     let interfaces_dir = options.store_directory.join("interfaces");
@@ -77,7 +85,10 @@ async fn main() -> eyre::Result<()> {
     Ok(())
 }
 
-async fn get_config_options(args: Cli) -> eyre::Result<MessageHubOptions> {
+async fn get_config_options(
+    args: Cli,
+    tls: rustls::ClientConfig,
+) -> eyre::Result<MessageHubOptions> {
     let store_directory = args.device.store_dir.as_deref();
     let custom_config = args.config.as_deref().or(args.toml.as_deref());
 
@@ -85,8 +96,10 @@ async fn get_config_options(args: Cli) -> eyre::Result<MessageHubOptions> {
         Some(config) => config,
         None => {
             let store_directory = args.device.store_dir.as_deref().ok_or_eyre(
-                "no configuration file specified and store directory missing  to start dynamic configuration",
+                "no configuration file specified and store directory missing to start dynamic configuration",
             )?;
+
+            info!("No configuration found, starting dynamic configuration");
 
             let http = (
                 args.http.http_host.unwrap_or(DEFAULT_HOST),
@@ -100,6 +113,8 @@ async fn get_config_options(args: Cli) -> eyre::Result<MessageHubOptions> {
             )
                 .into();
 
+            info!("listening on http://${http} and grpc://${grpc}");
+
             Config::listen_dynamic_config(store_directory, http, grpc).await?
         }
     };
@@ -107,10 +122,32 @@ async fn get_config_options(args: Cli) -> eyre::Result<MessageHubOptions> {
     args.merge(&mut config);
 
     if config.device_id.is_none() {
+        info!("device id not configured, reading hardware id");
+
         // retrieve the device id
         config.device_id_from_hardware_id().await?;
     }
 
+    if let Some(fdo) = &config.fdo {
+        let store = config
+            .store_directory
+            .as_ref()
+            .ok_or_eyre("missing store directory for FDO protocol")?
+            .join("fdo");
+
+        let amod = self::fdo::fdo(
+            store,
+            tls,
+            fdo.manufactoring_url.parse()?,
+            "fdo-test-message-hub",
+            // TODO: this should be the device id but is unique to prevent errors
+            // &msg_hub_opts.device_id,
+            &uuid::Uuid::new_v4().to_string(),
+        )
+        .await?;
+
+        return config.with_fdo(amod).wrap_err("invalid FDO configuration");
+    }
     // Read the credentials secret, the store defaults to the current directory
     config.read_credential_secret().await?;
 
@@ -122,7 +159,7 @@ fn init_tracing() -> eyre::Result<()> {
         .with_ansi(stdout().is_terminal())
         .with_filter(
             EnvFilter::builder()
-                .with_default_directive("astarte_message_hub=info".parse()?)
+                .with_default_directive("INFO".parse()?)
                 .from_env_lossy(),
         );
 

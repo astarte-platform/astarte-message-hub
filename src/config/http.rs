@@ -227,6 +227,7 @@ async fn set_config(
             ignore_ssl: false,
             ..Default::default()
         },
+        fdo: None,
     };
 
     message_hub_options.validate()?;

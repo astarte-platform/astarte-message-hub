@@ -101,6 +101,7 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             grpc_socket_host: host,
             store_directory: Some(self.store_dir.clone()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         message_hub_options.validate().map_err(|err| {
