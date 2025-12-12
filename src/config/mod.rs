@@ -25,9 +25,10 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use astarte_device_fdo::srv_info::AstarteMod;
 use astarte_device_sdk::store::sqlite::Size;
 use astarte_device_sdk::transport::mqtt::Credential;
-use log::debug;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use tokio::{fs, sync::Notify};
 
@@ -84,6 +85,9 @@ pub struct Config {
     /// Astarte device SDK options.
     #[serde(skip_serializing_if = "DeviceSdkOptions::is_default", default)]
     pub astarte: DeviceSdkOptions,
+    /// FIDO Device Onboarding configuration.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub fdo: Option<FdoConfig>,
 }
 
 impl Config {
@@ -140,6 +144,30 @@ impl Config {
 
     /// Validate the values are present for the server configuration.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.store_directory.is_none() {
+            return Err(ConfigError::MissingField("store_directory"));
+        }
+
+        if self.fdo.as_ref().is_some_and(|fdo| fdo.enabled) {
+            info!("FDO is enabled");
+        } else {
+            self.validate_legacy_pairing()?;
+        }
+
+        if self
+            .interfaces_directory
+            .as_ref()
+            .is_some_and(|p| !p.is_dir())
+        {
+            return Err(ConfigError::InvalidInterfaceDirectory(
+                self.interfaces_directory.clone(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn validate_legacy_pairing(&self) -> Result<(), ConfigError> {
         if !self.realm.as_ref().is_some_and(|realm| !realm.is_empty()) {
             return Err(ConfigError::MissingField("realm"));
         }
@@ -172,20 +200,6 @@ impl Config {
             .is_some_and(|pairing_url| !pairing_url.is_empty())
         {
             return Err(ConfigError::MissingField("pairing_url"));
-        }
-
-        if self.store_directory.is_none() {
-            return Err(ConfigError::MissingField("store_directory"));
-        }
-
-        if self
-            .interfaces_directory
-            .as_ref()
-            .is_some_and(|p| !p.is_dir())
-        {
-            return Err(ConfigError::InvalidInterfaceDirectory(
-                self.interfaces_directory.clone(),
-            ));
         }
 
         Ok(())
@@ -299,6 +313,23 @@ impl Config {
         };
 
         Ok(config)
+    }
+
+    /// Merges the configuration with the one from FDO
+    pub fn with_fdo(mut self, amod: AstarteMod<'static>) -> Result<MessageHubOptions, ConfigError> {
+        let AstarteMod {
+            realm,
+            secret,
+            base_url,
+            device_id,
+        } = amod;
+
+        self.realm.replace(realm.into());
+        self.credentials_secret.replace(secret.into());
+        self.pairing_url.replace(format!("{base_url}/pairing"));
+        self.device_id.replace(device_id.into());
+
+        self.try_into()
     }
 }
 
@@ -469,6 +500,17 @@ impl DeviceSdkVolatileOptions {
     }
 }
 
+/// Options to setuop FIDO Device Onboarding
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename = "astarte")]
+pub struct FdoConfig {
+    /// Flag to enable the FDO protocol
+    #[serde(default)]
+    pub enabled: bool,
+    /// Manufacturing URL for Device Initialization.
+    pub manufactoring_url: String,
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -488,6 +530,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let res = expected_msg_hub_opts.validate();
@@ -511,6 +554,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let res = expected_msg_hub_opts.validate();
@@ -533,6 +577,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -553,6 +598,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         let res = expected_msg_hub_opts.validate();
         assert!(res.is_err());
@@ -574,6 +620,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -594,6 +641,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -614,6 +662,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -634,6 +683,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -654,6 +704,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -681,6 +732,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(dir.path().to_path_buf()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         opt.read_credential_secret().await.unwrap();
@@ -705,6 +757,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(dir.path().to_path_buf()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let res = opt.read_credential_secret().await;
@@ -733,6 +786,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let dir = tempfile::TempDir::new().unwrap();
@@ -770,6 +824,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(dir.path().to_path_buf()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let path = dir.path().join(CONFIG_FILE_NAME);
@@ -809,6 +864,7 @@ mod test {
             grpc_socket_port: Some(50051),
             store_directory: Some(PathBuf::from("/var/lib/message-hub")),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         assert_ne!(opts, expected);
@@ -836,6 +892,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(dir.path().to_path_buf()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         opt.device_id_from_hardware_id().await.unwrap();
@@ -865,6 +922,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(dir.path().to_path_buf()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let device_id = opt.device_id_from_hardware_id().await;
