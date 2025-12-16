@@ -24,9 +24,10 @@
 use std::io;
 use std::path::PathBuf;
 
-use astarte_device_sdk::interface::error::InterfaceError;
 use astarte_device_sdk::introspection::AddInterfaceError;
 use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
+use astarte_interfaces::error::Error as InterfaceError;
+use astarte_message_hub_proto::prost::UnknownEnumValue;
 use log::debug;
 use tonic::{Code, Status};
 use uuid::Uuid;
@@ -101,6 +102,19 @@ pub enum AstarteMessageHubError {
     /// Couldn't read the configuration
     #[error("coudln't read the configuration")]
     Config(#[from] ConfigError),
+
+    /// Received an invalid ownership enumeration field
+    #[error("received an invalid ownership enumeration field, {0}")]
+    InvalidProtoOwnership(#[source] UnknownEnumValue),
+
+    /// Interface not present in the node introspection
+    #[error("interface {interface} not present in the introspection of node {node_id}")]
+    MissingInterface {
+        /// The interface name
+        interface: String,
+        /// The node ID
+        node_id: Uuid,
+    },
 }
 
 impl From<AstarteMessageHubError> for Status {
@@ -123,7 +137,9 @@ impl From<AstarteMessageHubError> for Status {
             | AstarteMessageHubError::Timestamp(_)
             | AstarteMessageHubError::Proto(_)
             | AstarteMessageHubError::Uuid(_)
-            | AstarteMessageHubError::NodeId(_) => Code::InvalidArgument,
+            | AstarteMessageHubError::NodeId(_)
+            | AstarteMessageHubError::InvalidProtoOwnership(_)
+            | AstarteMessageHubError::MissingInterface { .. } => Code::InvalidArgument,
         };
 
         Status::new(code, value.to_string())

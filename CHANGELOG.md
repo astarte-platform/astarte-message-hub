@@ -5,11 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Bump Astarte Device SDK to 0.10.5.
+
 ## [0.7.6] - 2025-11-14
 
 ### Changed
 
 - Bump Astarte Device SDK to 0.9.10.
+
+## [0.8.2] - 2025-10-13
+
+### Fixed
+
+- Crypto provider install.
+
+## [0.8.1] - 2025-09-19
+
+### Changed
+
+- Forward port release v0.7.5.
+- Bump Astarte Device SDK to 0.10.4.
 
 ## [0.7.5] - 2025-09-19
 
@@ -17,12 +36,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Bump Astarte Device SDK to 0.9.9.
 
+## [0.8.0] - 2025-07-17
+
+### Added
+
+- Configure the size limit of the database used by the astarte device sdk
+  [#372](https://github.com/astarte-platform/astarte-message-hub/pull/372).
+
+### Changed
+
+- Reflect proto changes to retrieve the properties
+  [#336](https://github.com/astarte-platform/astarte-message-hub/pull/336).
+
+### Fixed
+
+- Let a node receive only the properties in its introspection
+  [#335](https://github.com/astarte-platform/astarte-message-hub/pull/335).
+
+
 ## [0.7.4] - 2025-07-02
 
 ### Added
 
 - Introduce feature `vendored`, `bindgen` and `cross` to vendor, use `aws_lc` as default crypto provider
   and cross compile [#363](https://github.com/astarte-platform/astarte-message-hub/pull/363).
+- Implement methods to retrieve Astarte properties
+  [#329](https://github.com/astarte-platform/astarte-message-hub/pull/329).
 
 ### Changed
 

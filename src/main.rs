@@ -24,16 +24,20 @@
 
 #![warn(missing_docs)]
 
-use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
+use astarte_device_sdk::builder::DeviceBuilder;
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Mqtt, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
 use astarte_message_hub::config::{Config, DEFAULT_HOST, DEFAULT_HTTP_PORT};
 use eyre::{Context, OptionExt};
 use std::convert::identity;
+use std::io::{stdout, IsTerminal};
 use std::path::Path;
 use std::time::Duration;
 use tokio::task::JoinSet;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 use astarte_message_hub::{
     astarte::handler::init_pub_sub, config::MessageHubOptions, AstarteMessageHub,
@@ -50,9 +54,10 @@ mod cli;
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     stable_eyre::install()?;
-    env_logger::try_init()?;
 
-    // Use aws_lc as default crypto provider
+    init_tracing()?;
+
+    // Set default crypto provider
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .map_err(|_| eyre!("failed to install default crypto provider"))?;
@@ -175,8 +180,8 @@ async fn initialize_astarte_device_sdk(
     msg_hub_opts: &MessageHubOptions,
     interfaces_dir: &Path,
 ) -> eyre::Result<(
-    DeviceClient<SqliteStore>,
-    DeviceConnection<SqliteStore, Mqtt<SqliteStore>>,
+    DeviceClient<Mqtt<SqliteStore>>,
+    DeviceConnection<Mqtt<SqliteStore>>,
 )> {
     tokio::fs::create_dir_all(&msg_hub_opts.store_directory)
         .await
@@ -217,21 +222,42 @@ async fn initialize_astarte_device_sdk(
 
     builder = builder.interface_directory(interfaces_dir)?;
 
+    if let Some(max_volatile_items) = msg_hub_opts.astarte.volatile.max_retention_items {
+        debug!("setting astarte max number of volatile items to {max_volatile_items}");
+        builder = builder.max_volatile_retention(max_volatile_items);
+    }
+
     let store_path = msg_hub_opts
         .store_directory
         .to_str()
         .map(|d| format!("{d}/database.db"))
         .ok_or_else(|| eyre!("non UTF-8 store directory option"))?;
 
-    let store = SqliteStore::connect_db(&store_path).await?;
+    let mut store = SqliteStore::connect_db(&store_path).await?;
+
+    if let Some(s) = msg_hub_opts.astarte.store.max_db_size {
+        debug!("setting astarte max db size to {s:?}");
+        store.set_db_max_size(s).await?;
+    } else {
+        debug!("astarte max db size is not set, using default");
+    }
+
+    if let Some(s) = msg_hub_opts.astarte.store.max_db_journal_size {
+        debug!("setting astarte max db journal size to {s:?}");
+        store.set_journal_size_limit(s).await?;
+    } else {
+        debug!("astarte max db journal size is not set, using default");
+    }
+
+    let mut builder = builder.store(store);
+
+    if let Some(max_stored_items) = msg_hub_opts.astarte.store.max_retention_items {
+        debug!("setting astarte max number of stored items to {max_stored_items}");
+        builder = builder.max_stored_retention(max_stored_items);
+    }
 
     // create a device instance
-    let (client, connection) = builder
-        .store(store)
-        .connect(mqtt_config)
-        .await?
-        .build()
-        .await;
+    let (client, connection) = builder.connection(mqtt_config).build().await?;
 
     Ok((client, connection))
 }
@@ -272,4 +298,19 @@ fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
             error!("couldn't receive SIGINT {err}");
         }
     }))
+}
+
+fn init_tracing() -> eyre::Result<()> {
+    let fmt = tracing_subscriber::fmt::layer().with_ansi(stdout().is_terminal());
+
+    tracing_subscriber::registry()
+        .with(fmt)
+        .with(
+            EnvFilter::builder()
+                .with_default_directive("astarte_message_hub=info".parse()?)
+                .from_env_lossy(),
+        )
+        .try_init()?;
+
+    Ok(())
 }

@@ -20,7 +20,7 @@
 
 //! Astarte Message Hub client example, will send the uptime every 3 seconds to Astarte.
 
-use astarte_device_sdk::builder::{DeviceBuilder, DeviceSdkBuild};
+use astarte_device_sdk::builder::DeviceBuilder;
 use astarte_device_sdk::client::{ClientDisconnect, RecvError};
 use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::transport::grpc::GrpcConfig;
@@ -31,6 +31,9 @@ use log::{error, info};
 use std::time;
 use tokio::signal::ctrl_c;
 use tokio::task::JoinSet;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
 const DEVICE_DATASTREAM: &str = include_str!(
@@ -66,21 +69,23 @@ type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 #[tokio::main]
 async fn main() -> Result<(), DynError> {
     stable_eyre::install()?;
-    env_logger::try_init()?;
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .try_init()?;
 
     let args = Cli::parse();
-    let node_id = Uuid::parse_str(&args.uuid)?;
+    let node_id: Uuid = Uuid::parse_str(&args.uuid)?;
 
     let grpc_cfg = GrpcConfig::from_url(node_id, args.endpoint)?;
 
-    let (client, connection) = DeviceBuilder::new()
+    let (mut client, connection) = DeviceBuilder::new()
         .store(MemoryStore::new())
         .interface_str(DEVICE_DATASTREAM)?
         .interface_str(SERVER_DATASTREAM)?
-        .connect(grpc_cfg)
-        .await?
+        .connection(grpc_cfg)
         .build()
-        .await;
+        .await?;
 
     let mut tasks = JoinSet::<Result<(), DynError>>::new();
 
@@ -105,7 +110,7 @@ async fn main() -> Result<(), DynError> {
 
     // Create a task to transmit
     tasks.spawn({
-        let client = client.clone();
+        let mut client = client.clone();
 
         async move {
             let now = time::SystemTime::now();
@@ -123,10 +128,10 @@ async fn main() -> Result<(), DynError> {
                 let elapsed_str = format!("Uptime for node {}: {}", args.uuid, elapsed);
 
                 client
-                    .send(
+                    .send_individual(
                         "org.astarte-platform.rust.examples.datastream.DeviceDatastream",
                         "/uptime",
-                        elapsed_str,
+                        elapsed_str.into(),
                     )
                     .await?;
 

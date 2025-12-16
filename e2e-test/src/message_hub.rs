@@ -69,6 +69,9 @@ pub async fn init_message_hub(
 
     let interfaces = path.join("interfaces");
 
+    // create the directory where the interfaces will be cached
+    tokio::fs::create_dir_all(&interfaces).await?;
+
     let path = path.to_str().ok_or_eyre("invalid_path")?;
 
     let db_path = format!("{path}/store.db");
@@ -76,10 +79,9 @@ pub async fn init_message_hub(
 
     let (client, connection) = DeviceBuilder::new()
         .store(store)
-        .connect(mqtt_config)
-        .await?
+        .connection(mqtt_config)
         .build()
-        .await;
+        .await?;
 
     let (publisher, mut subscriber) = init_pub_sub(client);
 
