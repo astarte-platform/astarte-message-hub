@@ -44,19 +44,21 @@ use crate::error::ConfigError;
 use super::{Config, DeviceSdkOptions};
 
 /// HTTP server error
-#[derive(thiserror::Error, Debug, displaydoc::Display)]
+#[derive(thiserror::Error, Debug)]
 pub enum HttpError {
     /// couldn't bind the address {addr}
+    #[error("couldn't bind the address {addr}")]
     Bind {
         /// address
         addr: SocketAddr,
         /// backtrace error
-        #[source]
-        backtrace: io::Error,
+        source: io::Error,
     },
     /// couldn't start the HTTP server
+    #[error("couldn't start the HTTP server")]
     Serve(#[source] io::Error),
     /// server panicked
+    #[error("server panicked")]
     Join(#[from] JoinError),
 }
 
@@ -175,7 +177,7 @@ impl HttpConfigProvider {
             .await
             .map_err(|e| HttpError::Bind {
                 addr: *address,
-                backtrace: e,
+                source: e,
             })?;
 
         let handle = tokio::spawn(async move {
