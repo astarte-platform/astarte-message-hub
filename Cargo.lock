@@ -123,9 +123,9 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 
 [[package]]
 name = "astarte-device-sdk"
-version = "0.10.4"
+version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea2c66d222fb4f60bc44c2da7c8bf6ab829ff7e889aa66f0be3cd0bdd539dccb"
+checksum = "fe09dea083d1cbbfea72c7d9f4f9814c4d02c2bc1217d34b824d85d1087f1925"
 dependencies = [
  "astarte-device-sdk-derive",
  "astarte-interfaces",
@@ -160,9 +160,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-derive"
-version = "0.10.4"
+version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfba49efd4b1133aaf5d01f4097cd01a2cc981f49313efee00fa59d90ae554ee"
+checksum = "567a2a982de6ece53803fc99e72c8a7d8aa359dbdd420a9ffedec2ec4c584592"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -171,9 +171,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-mock"
-version = "0.10.4"
+version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a9f1521a5abc0431a7655917d0be3ea5cf0190f42184499bc8240cd334ff17b"
+checksum = "2f0aee93a48ca074c8c4cb6c2c864f1590802377999411a1737cba3e226a370d"
 dependencies = [
  "astarte-device-sdk",
  "chrono",
@@ -196,7 +196,7 @@ dependencies = [
 
 [[package]]
 name = "astarte-message-hub"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "astarte-device-sdk",
  "astarte-device-sdk-mock",
@@ -943,7 +943,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "e2e-test"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "astarte-device-sdk",
  "astarte-interfaces",
@@ -2752,9 +2752,9 @@ dependencies = [
 
 [[package]]
 name = "rumqttc-dev-patched"
-version = "0.24.6-ack-notify"
+version = "0.24.9-ack-notify"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27aa48273c2956fb942154248a3d16c61c40123af33121796e3fcb5d319ec596"
+checksum = "8290dde8ebda083d31765a7ebaeffd84ae98cc311a4488645a18dc54e2046044"
 dependencies = [
  "bytes",
  "fixedbitset",

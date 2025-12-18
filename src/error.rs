@@ -28,7 +28,7 @@ use astarte_device_sdk::introspection::AddInterfaceError;
 use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
 use astarte_interfaces::error::Error as InterfaceError;
 use astarte_message_hub_proto::prost::UnknownEnumValue;
-use log::{debug, error};
+use log::debug;
 use tonic::{Code, Status};
 use uuid::Uuid;
 
