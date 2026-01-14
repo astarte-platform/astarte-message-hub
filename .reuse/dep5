@@ -10,6 +10,10 @@ Files: examples/message-hub-config.toml
 Copyright: SECO Mind Srl
 License: CC0-1.0
 
+Files: scripts/docker/message-hub-config.toml
+Copyright: SECO Mind Srl
+License: CC0-1.0
+
 Files: CHANGELOG.md
 Copyright: 2023 SECO Mind Srl
 License: CC0-1.0
