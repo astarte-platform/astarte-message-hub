@@ -236,7 +236,7 @@ dependencies = [
 
 [[package]]
 name = "astarte-message-hub"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "astarte-device-sdk",
  "astarte-device-sdk-mock",
@@ -1005,7 +1005,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "e2e-test"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "astarte-device-sdk",
  "astarte-interfaces",
