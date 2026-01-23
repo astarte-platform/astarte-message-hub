@@ -1024,6 +1024,7 @@ dependencies = [
  "stable-eyre",
  "tempfile",
  "tokio",
+ "tokio-util",
  "tonic",
  "tower 0.5.2",
  "tower-http",
