@@ -44,6 +44,7 @@ use itertools::Itertools;
 use log::{debug, error, info, trace};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tonic::{Code, Status};
 use uuid::Uuid;
 
@@ -108,17 +109,25 @@ impl DeviceSubscriber {
     }
 
     /// Handler responsible for receiving and managing [`DeviceEvent`].
-    pub async fn forward_events(&mut self) -> Result<(), DeviceError> {
+    pub async fn forward_events(&mut self, cancel: CancellationToken) -> Result<(), DeviceError> {
         loop {
-            match self.client.recv().await {
-                Err(RecvError::Disconnected) => return Err(DeviceError::Disconnected),
-                event => {
+            match cancel.run_until_cancelled(self.client.recv()).await {
+                Some(Err(RecvError::Disconnected)) => return Err(DeviceError::Disconnected),
+                Some(event) => {
                     if let Err(err) = self.on_event(event).await {
                         error!("error on event receive: {err}");
                     }
                 }
+                None => {
+                    break;
+                }
             }
         }
+
+        info!("event forwading cancelled, clearing subscribers");
+        self.subscribers.write().await.clear();
+
+        Ok(())
     }
 
     async fn on_event(&mut self, event: Result<DeviceEvent, RecvError>) -> Result<(), DeviceError> {
@@ -845,7 +854,8 @@ mod test {
 
         let (publisher, mut subscriber) = init_pub_sub(client);
 
-        let handle = tokio::spawn(async move { subscriber.forward_events().await });
+        let handle =
+            tokio::spawn(async move { subscriber.forward_events(CancellationToken::new()).await });
 
         let subscribe_result = publisher.subscribe(&astarte_node).await;
         assert!(subscribe_result.is_ok());
@@ -1018,7 +1028,7 @@ mod test {
 
         let (publisher, mut subscriber) = init_pub_sub(client);
 
-        tokio::spawn(async move { subscriber.forward_events().await });
+        tokio::spawn(async move { subscriber.forward_events(CancellationToken::new()).await });
 
         let subscribe_1_result = publisher.subscribe(&astarte_node_1).await;
         let subscribe_2_result = publisher.subscribe(&astarte_node_2).await;
@@ -1141,7 +1151,7 @@ mod test {
 
         let (publisher, mut subscriber) = init_pub_sub(client);
 
-        tokio::spawn(async move { subscriber.forward_events().await });
+        tokio::spawn(async move { subscriber.forward_events(CancellationToken::new()).await });
 
         let subscribe_1_result = publisher.subscribe(&astarte_node_1).await;
         let subscribe_2_result = publisher.subscribe(&astarte_node_2).await;
@@ -1184,7 +1194,10 @@ mod test {
 
         let (_publisher, mut subscriber) = init_pub_sub(client);
 
-        let err = subscriber.forward_events().await.unwrap_err();
+        let err = subscriber
+            .forward_events(CancellationToken::new())
+            .await
+            .unwrap_err();
         assert!(matches!(err, DeviceError::Disconnected));
     }
 
