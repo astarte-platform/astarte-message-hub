@@ -162,9 +162,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk"
-version = "0.11.0"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02f7015e821ec34a5b17470bfae1044e16545fa3188a5060120ae8dcb681db78"
+checksum = "1d57bc53bfd96828c43053acdf489df9ee9660f11f244a09b90104d6ab317dd5"
 dependencies = [
  "astarte-device-sdk-derive",
  "astarte-interfaces",
@@ -200,9 +200,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-derive"
-version = "0.11.0"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d88f68bbb04cc42c956738aae6993d6776dff94b36c94cd24a4a76942a32e255"
+checksum = "f1c10a3b41af892f2985c9442853d0e72d9a4b16efe2194b4512495fe7e74a21"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -211,9 +211,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-mock"
-version = "0.11.0"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca02bdae933360066cf0e9aa4a2a29c95edf9dad303351b5c7a6a32877d5b0ca"
+checksum = "77b37a9f09717dd1ea816817fe21d43c32aa6bc7c53884035781c0f1b31d1bd8"
 dependencies = [
  "astarte-device-sdk",
  "chrono",
@@ -236,7 +236,7 @@ dependencies = [
 
 [[package]]
 name = "astarte-message-hub"
-version = "0.8.3"
+version = "0.9.2"
 dependencies = [
  "astarte-device-sdk",
  "astarte-device-sdk-mock",
@@ -1005,7 +1005,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "e2e-test"
-version = "0.8.3"
+version = "0.9.2"
 dependencies = [
  "astarte-device-sdk",
  "astarte-interfaces",
@@ -1024,6 +1024,7 @@ dependencies = [
  "stable-eyre",
  "tempfile",
  "tokio",
+ "tokio-util",
  "tonic",
  "tower 0.5.2",
  "tower-http",

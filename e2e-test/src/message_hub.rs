@@ -29,6 +29,7 @@ use tokio::{
     sync::Barrier,
     task::{AbortHandle, JoinSet},
 };
+use tokio_util::sync::CancellationToken;
 use tower::{Layer, Service, ServiceBuilder};
 use tower_http::trace::TraceLayer;
 use tracing::{instrument, trace};
@@ -115,7 +116,8 @@ pub async fn init_message_hub(
     // Forward the astarte events to the subscribers
     let forwarder = tasks.spawn(async move {
         subscriber
-            .forward_events()
+            // NOTE the cancellation token is not needed since we abort the tasks
+            .forward_events(CancellationToken::new())
             .await
             .wrap_err("subscriber disconnected")
     });
