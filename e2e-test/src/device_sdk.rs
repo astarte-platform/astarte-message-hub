@@ -1,12 +1,12 @@
 // This file is part of Astarte.
 //
-// Copyright 2024 SECO Mind Srl
+// Copyright 2024, 2026 SECO Mind Srl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+//    http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,11 +19,11 @@
 use std::{sync::Arc, time::Duration};
 
 use astarte_device_sdk::{
+    DeviceClient, DeviceEvent,
     builder::DeviceBuilder,
     prelude::*,
     store::memory::MemoryStore,
     transport::grpc::{Grpc, GrpcConfig},
-    DeviceClient, DeviceEvent,
 };
 use eyre::Context;
 use tokio::{
@@ -33,7 +33,7 @@ use tokio::{
 };
 use tracing::{debug, info, instrument};
 
-use crate::{interfaces::INTERFACES, GRPC_PORT, UUID};
+use crate::{GRPC_PORT, UUID, interfaces::INTERFACES};
 
 pub struct Node {
     handle: AbortHandle,

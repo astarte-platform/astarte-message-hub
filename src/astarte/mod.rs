@@ -1,28 +1,25 @@
-/*
- * This file is part of Astarte.
- *
- * Copyright 2022 SECO Mind Srl
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-//! The Astarte message hub uses an independent handler to communicate with Astarte.
-//!
-//! This module contains all the required traits for such an handler.
+// This file is part of Astarte.
+//
+// Copyright 2022, 2026 SECO Mind Srl
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 
-use astarte_device_sdk::store::StoredProp;
+//! Connection with astarte for the Message Hub
+
 use astarte_device_sdk::AstarteData;
+use astarte_device_sdk::store::StoredProp;
 use astarte_interfaces::Interface;
 use astarte_message_hub_proto::{AstarteMessage, MessageHubEvent};
 use async_trait::async_trait;
@@ -45,7 +42,7 @@ pub trait AstartePublisher: Send + Sync {
     /// The `astarte_message` argument format is
     /// defined in `./proto/astarteplatform/msghub/astarte_message.proto`
     async fn publish(&self, astarte_message: &AstarteMessage)
-        -> Result<(), AstarteMessageHubError>;
+    -> Result<(), AstarteMessageHubError>;
 }
 
 /// A **trait** required for all Astarte handlers that want to subscribe and unsubscribe a
@@ -103,7 +100,7 @@ pub trait PropAccessExt {
         interface: &str,
         path: &str,
     ) -> impl std::future::Future<Output = Result<Option<AstarteData>, AstarteMessageHubError>>
-           + std::marker::Send;
+    + std::marker::Send;
 
     /// Get all the node properties of the given interface.
     fn interface_props(
@@ -111,26 +108,26 @@ pub trait PropAccessExt {
         node_id: NodeId,
         interface: &str,
     ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
-           + std::marker::Send;
+    + std::marker::Send;
 
     /// Get all the stored node properties, device or server owners.
     fn all_props(
         &self,
         node_id: NodeId,
     ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
-           + std::marker::Send;
+    + std::marker::Send;
 
     /// Get all the stored node device properties.
     fn device_props(
         &self,
         node_id: NodeId,
     ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
-           + std::marker::Send;
+    + std::marker::Send;
 
     /// Get all the stored node server properties.
     fn server_props(
         &self,
         node_id: NodeId,
     ) -> impl std::future::Future<Output = Result<Vec<StoredProp>, AstarteMessageHubError>>
-           + std::marker::Send;
+    + std::marker::Send;
 }

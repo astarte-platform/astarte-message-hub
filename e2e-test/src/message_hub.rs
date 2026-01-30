@@ -1,12 +1,12 @@
 // This file is part of Astarte.
 //
-// Copyright 2024 SECO Mind Srl
+// Copyright 2024, 2026 SECO Mind Srl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+//    http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,10 +21,10 @@ use std::{net::Ipv6Addr, path::Path, sync::Arc, time::Duration};
 use astarte_device_sdk::{
     builder::DeviceBuilder, prelude::*, store::SqliteStore, transport::mqtt::MqttConfig,
 };
-use astarte_message_hub::{astarte::handler::init_pub_sub, AstarteMessageHub};
+use astarte_message_hub::{AstarteMessageHub, astarte::handler::init_pub_sub};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use eyre::{Context, OptionExt};
-use futures::{future::BoxFuture, FutureExt};
+use futures::{FutureExt, future::BoxFuture};
 use tokio::{
     sync::Barrier,
     task::{AbortHandle, JoinSet},
@@ -34,7 +34,7 @@ use tower::{Layer, Service, ServiceBuilder};
 use tower_http::trace::TraceLayer;
 use tracing::{instrument, trace};
 
-use crate::{utils::read_env, GRPC_PORT};
+use crate::{GRPC_PORT, utils::read_env};
 
 pub struct MsgHub {
     server: AbortHandle,

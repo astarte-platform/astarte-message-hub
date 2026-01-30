@@ -1,22 +1,20 @@
-/*
- * This file is part of Astarte.
- *
- * Copyright 2026 SECO Mind Srl
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+// This file is part of Astarte.
+//
+// Copyright 2026 SECO Mind Srl
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 
 use std::{
     net::SocketAddr,
@@ -25,19 +23,19 @@ use std::{
 };
 
 use astarte_device_sdk::{
+    DeviceClient, DeviceConnection, EventLoop,
     builder::DeviceBuilder,
     client::ClientDisconnect,
     store::SqliteStore,
     transport::mqtt::{Mqtt, MqttConfig},
-    DeviceClient, DeviceConnection, EventLoop,
 };
 use astarte_message_hub::{
-    astarte::handler::{init_pub_sub, DevicePublisher, DeviceSubscriber},
-    config::MessageHubOptions,
     AstarteMessageHub,
+    astarte::handler::{DevicePublisher, DeviceSubscriber, init_pub_sub},
+    config::MessageHubOptions,
 };
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
-use eyre::{eyre, WrapErr};
+use eyre::{WrapErr, eyre};
 use log::{debug, error, info};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;

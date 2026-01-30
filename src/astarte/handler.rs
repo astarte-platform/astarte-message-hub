@@ -1,22 +1,20 @@
-/*
- * This file is part of Astarte.
- *
- * Copyright 2022 SECO Mind Srl
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+// This file is part of Astarte.
+//
+// Copyright 2022, 2026 SECO Mind Srl
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 
 //! Contains an implementation of an Astarte handler.
 
@@ -25,25 +23,25 @@ use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use astarte_device_sdk::AstarteData;
 use astarte_device_sdk::aggregate::AstarteObject;
 use astarte_device_sdk::store::StoredProp;
 use astarte_device_sdk::transport::mqtt::Mqtt;
-use astarte_device_sdk::AstarteData;
 use astarte_device_sdk::{
-    client::RecvError, properties::PropAccess, store::SqliteStore,
-    transport::grpc::convert::MessageHubProtoError, DeviceEvent, Error as AstarteError, Value,
+    DeviceEvent, Error as AstarteError, Value, client::RecvError, properties::PropAccess,
+    store::SqliteStore,
 };
-use astarte_interfaces::{error::Error as InterfaceError, Interface};
+use astarte_interfaces::{Interface, error::Error as InterfaceError};
 use astarte_message_hub_proto::{
-    astarte_message::Payload, AstarteDatastreamIndividual, AstarteDatastreamObject, AstarteMessage,
-    AstartePropertyIndividual, MessageHubEvent,
+    AstarteDatastreamIndividual, AstarteDatastreamObject, AstarteMessage,
+    AstartePropertyIndividual, MessageHubEvent, astarte_message::Payload,
 };
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use log::{debug, error, info, trace};
-use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::RwLock;
+use tokio::sync::mpsc::{Sender, channel};
 use tokio_util::sync::CancellationToken;
 use tonic::{Code, Status};
 use uuid::Uuid;
@@ -51,6 +49,9 @@ use uuid::Uuid;
 use super::sdk::{Client, DeviceClient, DynamicIntrospection};
 use super::{AstartePublisher, AstarteSubscriber, PropAccessExt, Subscription};
 use crate::error::AstarteMessageHubError;
+use crate::messages::{
+    convert_event_to_message, convert_proto_into_data, convert_timestamp_to_chrono,
+};
 use crate::server::{AstarteNode, NodeId};
 
 type SubscribersMap = Arc<RwLock<HashMap<Uuid, Subscriber>>>;
@@ -61,8 +62,6 @@ pub enum DeviceError {
     /// received error from Astarte
     // TODO: remove Box when updating the Astarte SDK
     Astarte(#[source] Box<AstarteError>),
-    /// couldn't convert the astarte event into a proto message
-    Convert(#[from] MessageHubProtoError),
     /// subscriber already disconnected
     Disconnected,
     /// invalid interface json in node introspection
@@ -74,7 +73,7 @@ impl From<&DeviceError> for Code {
         match value {
             DeviceError::Astarte(_) => Code::Aborted,
             DeviceError::Disconnected => Code::Internal,
-            DeviceError::Convert(_) | DeviceError::Interface(_) => Code::InvalidArgument,
+            DeviceError::Interface(_) => Code::InvalidArgument,
         }
     }
 }
@@ -124,7 +123,7 @@ impl DeviceSubscriber {
             }
         }
 
-        info!("event forwading cancelled, clearing subscribers");
+        info!("event forwarding cancelled, clearing subscribers");
         self.subscribers.write().await.clear();
 
         Ok(())
@@ -138,7 +137,7 @@ impl DeviceSubscriber {
             Ok(event) => {
                 let iface_name = event.interface.clone();
 
-                let msghub_event = MessageHubEvent::from(AstarteMessage::from(event));
+                let msghub_event = MessageHubEvent::from(convert_event_to_message(event));
 
                 trace!("message hub event: {msghub_event:?}");
 
@@ -239,17 +238,17 @@ impl DevicePublisher {
     ) -> Result<(), AstarteMessageHubError> {
         let astarte_data = data
             .data
+            .map(convert_proto_into_data)
+            .transpose()?
             .ok_or_else(|| {
                 AstarteMessageHubError::AstarteInvalidData("Invalid individual data".to_string())
-            })?
-            .try_into()?;
+            })?;
 
         let mut client = self.client.clone();
 
         if let Some(timestamp) = data.timestamp {
-            let timestamp = timestamp
-                .try_into()
-                .map_err(AstarteMessageHubError::Timestamp)?;
+            let timestamp = convert_timestamp_to_chrono(timestamp)?;
+
             client
                 .send_individual_with_timestamp(interface_name, path, astarte_data, timestamp)
                 .await
@@ -269,14 +268,17 @@ impl DevicePublisher {
         path: &str,
     ) -> Result<(), AstarteMessageHubError> {
         let timestamp = object_data.timestamp;
-        let aggr = AstarteObject::try_from(object_data)?;
+        let aggr = object_data
+            .data
+            .into_iter()
+            .map(|(k, v)| convert_proto_into_data(v).map(|v| (k, v)))
+            .collect::<Result<AstarteObject, AstarteMessageHubError>>()?;
 
         let mut client = self.client.clone();
 
         if let Some(timestamp) = timestamp {
-            let timestamp = timestamp
-                .try_into()
-                .map_err(AstarteMessageHubError::Timestamp)?;
+            let timestamp = convert_timestamp_to_chrono(timestamp)?;
+
             client
                 .send_object_with_timestamp(interface_name, path, aggr, timestamp)
                 .await
@@ -297,7 +299,8 @@ impl DevicePublisher {
 
         match data.data {
             Some(data) => {
-                let data = AstarteData::try_from(data)?;
+                let data = convert_proto_into_data(data)?;
+
                 client
                     .set_property(interface_name, path, data)
                     .await
@@ -332,7 +335,7 @@ impl DevicePublisher {
                         data: Value::Property(Some(prop.value)),
                     };
 
-                    MessageHubEvent::from(AstarteMessage::from(event))
+                    MessageHubEvent::from(convert_event_to_message(event))
                 })
             });
 
@@ -656,15 +659,17 @@ impl PropAccessExt for DevicePublisher {
 
 #[cfg(test)]
 mod test {
+    use crate::messages::convert_chrono_to_timestamp;
+
     use super::*;
 
     use std::error::Error;
     use std::str::FromStr;
 
     use astarte_device_sdk::Value;
-    use astarte_device_sdk::{error::Error as AstarteSdkError, AstarteData as AstarteDataSdk};
-    use astarte_device_sdk_mock::mockall::Sequence;
+    use astarte_device_sdk::error::Error as AstarteSdkError;
     use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
+    use astarte_device_sdk_mock::mockall::Sequence;
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::{AstarteData, InterfacesJson, MessageHubError};
     use chrono::{DateTime, Utc};
@@ -1043,16 +1048,20 @@ mod test {
 
         let message_hub_err = recv_proto_error(&mut subscription_1).await.unwrap();
 
-        assert!(message_hub_err
-            .description
-            .contains("couldn't find mapping test in interface"));
+        assert!(
+            message_hub_err
+                .description
+                .contains("couldn't find mapping test in interface")
+        );
 
         // check that also the second node received this message
         let message_hub_err = recv_proto_error(&mut subscription_2).await.unwrap();
 
-        assert!(message_hub_err
-            .description
-            .contains("couldn't find mapping test in interface"));
+        assert!(
+            message_hub_err
+                .description
+                .contains("couldn't find mapping test in interface")
+        );
 
         // the third node should not receive the error since it has different interfaces in its
         // introspection
@@ -1163,14 +1172,18 @@ mod test {
 
         // check that all the nodes received the error message
         let message_hub_err = recv_proto_error(&mut subscription_1).await.unwrap();
-        assert!(message_hub_err
-            .description
-            .contains("couldn't find interface"));
+        assert!(
+            message_hub_err
+                .description
+                .contains("couldn't find interface")
+        );
 
         let message_hub_err = recv_proto_error(&mut subscription_2).await.unwrap();
-        assert!(message_hub_err
-            .description
-            .contains("couldn't find interface"));
+        assert!(
+            message_hub_err
+                .description
+                .contains("couldn't find interface")
+        );
     }
 
     #[tokio::test]
@@ -1284,7 +1297,7 @@ mod test {
                     .with(
                         predicate::eq(expected_interface_name),
                         predicate::eq(expected_path),
-                        predicate::eq(AstarteDataSdk::try_from(expected_data).unwrap()),
+                        predicate::eq(convert_proto_into_data(expected_data).unwrap()),
                     )
                     .returning(|_, _, _| Ok(()));
                 client
@@ -1303,7 +1316,7 @@ mod test {
     async fn publish_individual_with_timestamp_success() {
         let expected_interface_name = "io.demo.Properties";
         let expected_path = "/test";
-        let expected_timestamp = Utc::now().into();
+        let expected_timestamp = convert_chrono_to_timestamp(Utc::now());
         let expected_data = AstarteData {
             astarte_data: Some(ProtoData::Integer(5)),
         };
@@ -1331,10 +1344,8 @@ mod test {
                     .with(
                         predicate::eq(expected_interface_name),
                         predicate::eq(expected_path),
-                        predicate::eq(AstarteDataSdk::try_from(expected_data).unwrap()),
-                        predicate::eq::<chrono::DateTime<Utc>>(
-                            expected_timestamp.try_into().unwrap(),
-                        ),
+                        predicate::eq(convert_proto_into_data(expected_data).unwrap()),
+                        predicate::eq(convert_timestamp_to_chrono(expected_timestamp).unwrap()),
                     )
                     .returning(|_, _, _, _| Ok(()));
 
@@ -1380,7 +1391,7 @@ mod test {
                     .with(
                         predicate::eq(expected_interface_name),
                         predicate::eq(expected_path),
-                        predicate::eq(AstarteDataSdk::try_from(expected_data).unwrap()),
+                        predicate::eq(convert_proto_into_data(expected_data).unwrap()),
                     )
                     .returning(|_, _, _| {
                         Err(AstarteSdkError::MappingNotFound {
@@ -1413,7 +1424,7 @@ mod test {
     async fn publish_individual_with_timestamp_failed() {
         let expected_interface_name = "io.demo.Properties";
         let expected_path = "/test";
-        let expected_timestamp = Utc::now().into();
+        let expected_timestamp = convert_chrono_to_timestamp(Utc::now());
         let expected_data = AstarteData {
             astarte_data: Some(ProtoData::Integer(5)),
         };
@@ -1441,10 +1452,8 @@ mod test {
                     .with(
                         predicate::eq(expected_interface_name),
                         predicate::eq(expected_path),
-                        predicate::eq(AstarteDataSdk::try_from(expected_data).unwrap()),
-                        predicate::eq::<chrono::DateTime<Utc>>(
-                            expected_timestamp.try_into().unwrap(),
-                        ),
+                        predicate::eq(convert_proto_into_data(expected_data).unwrap()),
+                        predicate::eq(convert_timestamp_to_chrono(expected_timestamp).unwrap()),
                     )
                     .returning(|_, _, _, _| {
                         Err(AstarteSdkError::MappingNotFound {
@@ -1496,7 +1505,7 @@ mod test {
         let exp_object = AstarteObject::from_iter(
             data.clone()
                 .into_iter()
-                .map(|(k, v)| (k, AstarteDataSdk::try_from(v).unwrap())),
+                .map(|(k, v)| (k, convert_proto_into_data(v).unwrap())),
         );
 
         let astarte_message = create_astarte_message(
@@ -1559,17 +1568,17 @@ mod test {
         let exp_object = AstarteObject::from_iter(
             data.clone()
                 .into_iter()
-                .map(|(k, v)| (k, AstarteDataSdk::try_from(v).unwrap())),
+                .map(|(k, v)| (k, convert_proto_into_data(v).unwrap())),
         );
 
-        let expected_timestamp = Utc::now().into();
+        let expected_timestamp = Utc::now();
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
             Some(Payload::DatastreamObject(AstarteDatastreamObject {
                 data,
-                timestamp: Some(expected_timestamp),
+                timestamp: Some(convert_chrono_to_timestamp(expected_timestamp)),
             })),
         );
 
@@ -1586,9 +1595,7 @@ mod test {
                         predicate::eq(expected_interface_name),
                         predicate::eq("/test"),
                         predicate::eq(exp_object),
-                        predicate::eq::<chrono::DateTime<Utc>>(
-                            expected_timestamp.try_into().unwrap(),
-                        ),
+                        predicate::eq(expected_timestamp),
                     )
                     .returning(|_, _, _, _| Ok(()));
 
@@ -1626,7 +1633,7 @@ mod test {
         let exp_object = AstarteObject::from_iter(
             data.clone()
                 .into_iter()
-                .map(|(k, v)| (k, AstarteDataSdk::try_from(v).unwrap())),
+                .map(|(k, v)| (k, convert_proto_into_data(v).unwrap())),
         );
 
         let astarte_message = create_astarte_message(
@@ -1702,17 +1709,17 @@ mod test {
         let exp_object = AstarteObject::from_iter(
             data.clone()
                 .into_iter()
-                .map(|(k, v)| (k, AstarteDataSdk::try_from(v).unwrap())),
+                .map(|(k, v)| (k, convert_proto_into_data(v).unwrap())),
         );
 
-        let expected_timestamp = Utc::now().into();
+        let expected_timestamp = Utc::now();
 
         let astarte_message = create_astarte_message(
             expected_interface_name,
             "/test",
             Some(Payload::DatastreamObject(AstarteDatastreamObject {
                 data,
-                timestamp: Some(expected_timestamp),
+                timestamp: Some(convert_chrono_to_timestamp(expected_timestamp)),
             })),
         );
 
@@ -1729,9 +1736,7 @@ mod test {
                         predicate::eq(expected_interface_name),
                         predicate::eq("/test"),
                         predicate::eq(exp_object),
-                        predicate::eq::<chrono::DateTime<Utc>>(
-                            expected_timestamp.try_into().unwrap(),
-                        ),
+                        predicate::eq(expected_timestamp),
                     )
                     .returning(|_, _, _, _| {
                         Err(AstarteSdkError::MappingNotFound {

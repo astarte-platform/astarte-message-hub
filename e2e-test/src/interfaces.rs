@@ -1,12 +1,12 @@
 // This file is part of Astarte.
 //
-// Copyright 2024 SECO Mind Srl
+// Copyright 2024, 2026 SECO Mind Srl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+//    http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,10 +16,10 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use astarte_device_sdk::{aggregate::AstarteObject, IntoAstarteObject};
+use astarte_device_sdk::{IntoAstarteObject, aggregate::AstarteObject};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{base64_decode, timestamp_from_rfc3339, Timestamp};
+use crate::utils::{Timestamp, base64_decode, timestamp_from_rfc3339};
 
 /// List of all the interfaces
 pub static INTERFACES: &[&str] = &[

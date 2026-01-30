@@ -1,12 +1,12 @@
 // This file is part of Astarte.
 //
-// Copyright 2024 SECO Mind Srl
+// Copyright 2024, 2026 SECO Mind Srl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+//    http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,16 +18,16 @@
 
 use std::{collections::HashMap, fmt::Debug, str::FromStr};
 
-use astarte_device_sdk::{aggregate::AstarteObject, AstarteData};
-use color_eyre::{owo_colors::OwoColorize, Section, SectionExt};
+use astarte_device_sdk::{AstarteData, aggregate::AstarteObject};
+use color_eyre::{Section, SectionExt, owo_colors::OwoColorize};
 use eyre::{ensure, eyre};
 use itertools::Itertools;
 use reqwest::{Response, Url};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use tracing::{debug, instrument, trace};
 
-use crate::utils::{base64_decode, base64_encode, read_env, Timestamp};
+use crate::utils::{Timestamp, base64_decode, base64_encode, read_env};
 
 #[derive(Clone)]
 pub struct Api {
