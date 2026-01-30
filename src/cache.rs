@@ -1,12 +1,12 @@
 // This file is part of Astarte.
 //
-// Copyright 2024 SECO Mind Srl
+// Copyright 2024, 2026 SECO Mind Srl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+//    http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,18 +21,24 @@
 use std::path::PathBuf;
 
 use astarte_interfaces::Interface;
-use log::{debug, error};
+use eyre::Context;
+use tracing::{debug, error};
 
 /// Caching for the device introspection.
-pub(crate) struct Introspection {
+pub struct Introspection {
     interface_dir: PathBuf,
 }
 
 impl Introspection {
-    pub(crate) fn new(interface_dir: impl Into<PathBuf>) -> Self {
-        Self {
-            interface_dir: interface_dir.into(),
-        }
+    /// Uses the given directory to cache the node's introspeciton.
+    pub async fn create(interface_dir: impl Into<PathBuf>) -> eyre::Result<Self> {
+        let interface_dir = interface_dir.into();
+
+        tokio::fs::create_dir_all(&interface_dir)
+            .await
+            .wrap_err("couldn't create interface cache directory")?;
+
+        Ok(Self { interface_dir })
     }
 
     pub(crate) async fn store(&self, interface: &Interface) {
@@ -95,8 +101,10 @@ impl Introspection {
 
 #[cfg(test)]
 mod tests {
-    use std::{io, path::Path, str::FromStr};
+    use std::io;
+    use std::str::FromStr;
 
+    use rstest::{fixture, rstest};
     use tempfile::TempDir;
     use tokio::fs;
 
@@ -109,11 +117,18 @@ mod tests {
         "../e2e-test/interfaces/org.astarte-platform.rust.e2etest.DeviceAggregate.json"
     );
 
+    #[fixture]
+    fn error_instrospeciton() -> Introspection {
+        Introspection {
+            interface_dir: "/dev/null".into(),
+        }
+    }
+
     #[tokio::test]
     async fn should_store() {
         let dir = TempDir::new().unwrap();
 
-        let intro = Introspection::new(dir.path());
+        let intro = Introspection::create(dir.path()).await.unwrap();
 
         let interface = Interface::from_str(DEVICE_PROPERTY).unwrap();
 
@@ -131,22 +146,23 @@ mod tests {
         assert_eq!(res, interface);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn store_should_not_error() {
-        let dir = Path::new("/foo/bar/none-existing");
+    async fn store_should_not_error(error_instrospeciton: Introspection) {
+        let interface = Interface::from_str(DEVICE_PROPERTY).unwrap();
 
-        let intro = Introspection::new(dir);
+        error_instrospeciton.store(&interface).await;
 
         let interface = Interface::from_str(DEVICE_PROPERTY).unwrap();
 
-        intro.store(&interface).await;
+        error_instrospeciton.store(&interface).await;
     }
 
     #[tokio::test]
     async fn should_store_many() {
         let dir = TempDir::new().unwrap();
 
-        let intro = Introspection::new(dir.path());
+        let intro = Introspection::create(dir.path()).await.unwrap();
 
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
@@ -178,25 +194,22 @@ mod tests {
         assert_eq!(res, agg);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn store_many_should_not_error() {
-        let dir = Path::new("/foo/bar/none-existing");
-
-        let intro = Introspection::new(dir);
-
+    async fn store_many_should_not_error(error_instrospeciton: Introspection) {
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
 
         let exp = [prop.clone(), agg.clone()];
 
-        intro.store_many(&exp).await;
+        error_instrospeciton.store_many(&exp).await;
     }
 
     #[tokio::test]
     async fn should_remove() {
         let dir = TempDir::new().unwrap();
 
-        let intro = Introspection::new(dir.path());
+        let intro = Introspection::create(dir.path()).await.unwrap();
 
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
@@ -218,25 +231,22 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn remove_should_not_error() {
-        let dir = Path::new("/foo/bar/none-existing");
-
-        let intro = Introspection::new(dir);
-
+    async fn remove_should_not_error(error_instrospeciton: Introspection) {
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
 
         let exp = [prop.clone(), agg.clone()];
 
-        intro.store_many(&exp).await;
+        error_instrospeciton.store_many(&exp).await;
     }
 
     #[tokio::test]
     async fn should_remove_many() {
         let dir = TempDir::new().unwrap();
 
-        let intro = Introspection::new(dir.path());
+        let intro = Introspection::create(dir.path()).await.unwrap();
 
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
@@ -258,19 +268,18 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn remove_many_should_not_error() {
-        let dir = Path::new("/foo/bar/none-existing");
-
-        let intro = Introspection::new(dir);
-
+    async fn remove_many_should_not_error(error_instrospeciton: Introspection) {
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
 
         let exp = [prop.clone(), agg.clone()];
 
-        intro.store_many(&exp).await;
+        error_instrospeciton.store_many(&exp).await;
 
-        intro.remove_many(&[prop.interface_name()]).await;
+        error_instrospeciton
+            .remove_many(&[prop.interface_name()])
+            .await;
     }
 }

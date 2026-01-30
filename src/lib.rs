@@ -21,9 +21,8 @@
 pub use crate::server::AstarteMessageHub;
 
 pub mod astarte;
-pub(crate) mod cache;
+pub mod cache;
 pub mod config;
-mod device;
 pub mod error;
 mod messages;
 mod server;

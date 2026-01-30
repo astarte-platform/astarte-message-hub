@@ -25,10 +25,10 @@ use astarte_device_sdk::transport::grpc::GrpcConfig;
 use astarte_device_sdk::{Client, EventLoop};
 
 use clap::Parser;
-use log::{error, info};
 use std::time;
 use tokio::signal::ctrl_c;
 use tokio::task::JoinSet;
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;

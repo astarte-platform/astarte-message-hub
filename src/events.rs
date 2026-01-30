@@ -24,7 +24,7 @@ use astarte_device_sdk::{
     transport::mqtt::Mqtt,
 };
 use chrono::Utc;
-use log::debug;
+use tracing::debug;
 
 pub(crate) async fn check_cert_expiry<S>(client: DeviceClient<Mqtt<S>>) -> Result<(), eyre::Report>
 where

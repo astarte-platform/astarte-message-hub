@@ -24,13 +24,12 @@ use std::path::PathBuf;
 use astarte_device_sdk::introspection::AddInterfaceError;
 use astarte_interfaces::error::Error as InterfaceError;
 use astarte_message_hub_proto::prost::UnknownEnumValue;
-use log::debug;
 use tonic::{Code, Status};
+use tracing::debug;
 use uuid::Uuid;
 
 use crate::astarte::handler::DeviceError;
 use crate::config::http::HttpError;
-use crate::config::protobuf::ProtobufConfigError;
 
 /// A list specifying general categories of Astarte Message Hub error.
 #[derive(thiserror::Error, Debug)]
@@ -62,10 +61,6 @@ pub enum AstarteMessageHubError {
     /// Http server error
     #[error("HTTP server error, {0}")]
     HttpServer(#[from] HttpError),
-
-    /// Protobuf server error
-    #[error("Protobuf config error, {0}")]
-    ProtobufConfig(#[from] ProtobufConfigError),
 
     /// Wrapper for integer conversion errors
     #[error("couldn't convert timestamp, {0}")]
@@ -128,7 +123,6 @@ impl From<AstarteMessageHubError> for Status {
             | AstarteMessageHubError::Transport(_)
             | AstarteMessageHubError::Zbus(_)
             | AstarteMessageHubError::HttpServer(_)
-            | AstarteMessageHubError::ProtobufConfig(_)
             | AstarteMessageHubError::ParseInterface(_)
             | AstarteMessageHubError::AddInterface(_) => Code::Internal,
             AstarteMessageHubError::Device(ref err) => err.into(),
