@@ -16,86 +16,102 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    time::{Duration, Instant},
-};
+use std::{net::SocketAddr, time::Duration};
 
-use astarte_device_sdk::{
-    DeviceClient, DeviceConnection, EventLoop,
-    builder::DeviceBuilder,
-    client::ClientDisconnect,
-    store::SqliteStore,
-    transport::mqtt::{Mqtt, MqttConfig},
-};
+use astarte_device_sdk::{EventLoop, client::ClientDisconnect};
 use astarte_message_hub::{
     AstarteMessageHub,
-    astarte::handler::{DevicePublisher, DeviceSubscriber, init_pub_sub},
-    config::MessageHubOptions,
+    astarte::handler::init_pub_sub,
+    cache::Introspection,
+    config::{MessageHubOptions, MessageHubOptionsBuilder},
 };
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
-use eyre::{WrapErr, eyre};
-use log::{debug, error, info};
+use eyre::{OptionExt, WrapErr, eyre};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+use tracing::{error, info};
 
 pub(crate) struct MessageHubTasks {
-    client: DeviceClient<Mqtt<SqliteStore>>,
-    connection: DeviceConnection<Mqtt<SqliteStore>>,
-    publisher: DevicePublisher,
-    subscriber: DeviceSubscriber,
-    interfaces_dir: PathBuf,
-    address: SocketAddr,
+    tasks: JoinSet<eyre::Result<()>>,
+    options: MessageHubOptions,
+    cancel: CancellationToken,
 }
 
 impl MessageHubTasks {
     const TASK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
-    pub(crate) async fn with_options(
-        options: MessageHubOptions,
-        interfaces_dir: PathBuf,
-    ) -> eyre::Result<Self> {
-        // Initialize an Astarte device
-        let (client, connection) = initialize_astarte_device_sdk(&options, &interfaces_dir).await?;
-        info!("astarte device initialized");
+    pub(crate) async fn create<'a>(
+        options: MessageHubOptionsBuilder<'a>,
+    ) -> eyre::Result<Option<Self>> {
+        let mut tasks = JoinSet::new();
+        let cancel = CancellationToken::new();
 
-        let (publisher, subscriber) = init_pub_sub(client.clone());
+        // wait for a shutdown signal and cancel other tasks
+        tasks.spawn({
+            let cancel = cancel.clone();
 
-        let address = (options.grpc_socket_host, options.grpc_socket_port).into();
+            async move {
+                info!("waiting for shutdown");
 
-        Ok(Self {
-            client,
-            connection,
-            publisher,
-            subscriber,
-            interfaces_dir,
-            address,
-        })
+                if cancel.run_until_cancelled(shutdown()?).await.is_some() {
+                    info!("cancelling tasks");
+
+                    cancel.cancel();
+                };
+
+                Ok(())
+            }
+        });
+
+        let Some(options) = options.build(&mut tasks, cancel.child_token()).await? else {
+            Self::join_tasks(tasks, cancel).await?;
+
+            return Ok(None);
+        };
+
+        Ok(Some(Self {
+            tasks,
+            options,
+            cancel,
+        }))
     }
 
-    pub(crate) async fn run(self) -> eyre::Result<()> {
-        let Self {
-            client,
-            connection,
-            publisher,
-            mut subscriber,
-            interfaces_dir,
-            address,
-        } = self;
+    pub(crate) async fn run(mut self) -> eyre::Result<()> {
+        // Initialize an Astarte device
+        let (client, connection) = self.options.create_connection().await?;
 
-        let cancel = CancellationToken::new();
-        let mut tasks = JoinSet::new();
+        let (publisher, mut subscriber) = init_pub_sub(client.clone());
+
+        let address =
+            SocketAddr::from((self.options.grpc_socket_host, self.options.grpc_socket_port));
+
+        info!("starting MessageHub on http://{address}");
+
+        // disconnect from astarte
+        self.tasks.spawn({
+            let cancel = self.cancel.child_token();
+            let mut client = client.clone();
+
+            async move {
+                cancel.cancelled().await;
+
+                client.disconnect().await?;
+
+                info!("Astarte client disconnected");
+
+                Ok(())
+            }
+        });
 
         // check the astarte check expiry
         #[cfg(feature = "security-events")]
-        tasks.spawn({
+        self.tasks.spawn({
             use futures::FutureExt;
 
             use crate::events::check_cert_expiry;
 
             let client = client.clone();
-            let cancel = cancel.child_token();
+            let cancel = self.cancel.child_token();
 
             cancel
                 .run_until_cancelled_owned(async move { check_cert_expiry(client).await })
@@ -104,7 +120,7 @@ impl MessageHubTasks {
 
         // Event loop for the astarte device sdk
         // NOTE the disconnect called on the client exits the handle_events() event loop
-        tasks.spawn(async move {
+        self.tasks.spawn(async move {
             connection
                 .handle_events()
                 .await
@@ -113,8 +129,8 @@ impl MessageHubTasks {
 
         // Forward the astarte events to the subscribers
         // NOTE the cancellation token is used to stop the task in the subscriber
-        tasks.spawn({
-            let cancel = cancel.child_token();
+        self.tasks.spawn({
+            let cancel = self.cancel.child_token();
 
             async move {
                 subscriber
@@ -128,18 +144,21 @@ impl MessageHubTasks {
             }
         });
 
+        let introspection = Introspection::create(self.options.introspection_cache).await?;
+
         // Handles the Message Hub gRPC server
-        tasks.spawn({
-            let cancel = cancel.child_token();
+        self.tasks.spawn({
+            let cancel = self.cancel.child_token();
 
             async move {
                 // Create a new message hub service
-                let message_hub = AstarteMessageHub::new(publisher, interfaces_dir);
+                let message_hub = AstarteMessageHub::new(publisher, introspection);
 
                 info!("Starting the server on grpc://{address}");
 
                 // Run the proto-buff server
                 tonic::transport::Server::builder()
+                    .layer(tower_http::trace::TraceLayer::new_for_grpc())
                     .layer(message_hub.make_interceptor_layer())
                     .add_service(MessageHubServer::new(message_hub))
                     .serve_with_shutdown(address, cancel.cancelled())
@@ -148,26 +167,7 @@ impl MessageHubTasks {
             }
         });
 
-        // wait for a shutdown signal and cancel other tasks
-        tasks.spawn({
-            let cancel = cancel.clone();
-            let mut client = client.clone();
-
-            async move {
-                info!("waiting for shutdown");
-
-                cancel
-                    .run_until_cancelled(shutdown()?)
-                    .await
-                    .inspect(|_| cancel.cancel());
-
-                client.disconnect().await?;
-
-                Ok(())
-            }
-        });
-
-        Self::join_tasks(tasks, cancel).await
+        Self::join_tasks(self.tasks, self.cancel).await
     }
 
     async fn join_tasks(
@@ -208,16 +208,13 @@ impl MessageHubTasks {
         );
 
         // join all tasks with a global timeout
-        let deadline = Instant::now()
+        let deadline = tokio::time::Instant::now()
             .checked_add(Self::TASK_SHUTDOWN_TIMEOUT)
-            .unwrap_or(Instant::now());
+            .ok_or_eyre("incorrect instant now")?;
 
-        while let Some(join_res) = tokio::time::timeout(
-            deadline.saturating_duration_since(Instant::now()),
-            tasks.join_next(),
-        )
-        .await
-        .wrap_err("timeout reached while waiting for tasks to shutdown cleanly")?
+        while let Some(join_res) = tokio::time::timeout_at(deadline, tasks.join_next())
+            .await
+            .wrap_err("timeout reached while waiting for tasks to shutdown cleanly")?
         {
             match join_res {
                 Ok(Err(e)) => {
@@ -238,92 +235,6 @@ impl MessageHubTasks {
             Err(eyre!("one or more task failed"))
         }
     }
-}
-
-async fn initialize_astarte_device_sdk(
-    msg_hub_opts: &MessageHubOptions,
-    interfaces_dir: &Path,
-) -> eyre::Result<(
-    DeviceClient<Mqtt<SqliteStore>>,
-    DeviceConnection<Mqtt<SqliteStore>>,
-)> {
-    tokio::fs::create_dir_all(&msg_hub_opts.store_directory)
-        .await
-        .wrap_err_with(|| {
-            format!(
-                "couldn't create store directory {}",
-                msg_hub_opts.store_directory.display()
-            )
-        })?;
-
-    // initialize the device options and mqtt config
-    let mut mqtt_config = MqttConfig::new(
-        &msg_hub_opts.realm,
-        &msg_hub_opts.device_id,
-        msg_hub_opts.credential.clone(),
-        &msg_hub_opts.pairing_url,
-    );
-
-    if msg_hub_opts.astarte.ignore_ssl {
-        mqtt_config.ignore_ssl_errors();
-    }
-
-    if let Some(keep_alive) = msg_hub_opts.astarte.keep_alive_secs {
-        mqtt_config.keepalive(Duration::from_secs(keep_alive));
-    }
-
-    let mut builder = DeviceBuilder::new().writable_dir(&msg_hub_opts.store_directory)?;
-
-    if let Some(timeout) = msg_hub_opts.astarte.timeout_secs {
-        builder = builder.connection_timeout(Duration::from_secs(timeout))
-    }
-
-    if let Some(ref int_dir) = msg_hub_opts.interfaces_directory {
-        debug!("reading interfaces from {}", int_dir.display());
-
-        builder = builder.interface_directory(int_dir)?;
-    }
-
-    builder = builder.interface_directory(interfaces_dir)?;
-
-    if let Some(max_volatile_items) = msg_hub_opts.astarte.volatile.max_retention_items {
-        debug!("setting astarte max number of volatile items to {max_volatile_items}");
-        builder = builder.max_volatile_retention(max_volatile_items);
-    }
-
-    let store_path = msg_hub_opts
-        .store_directory
-        .to_str()
-        .map(|d| format!("{d}/database.db"))
-        .ok_or_else(|| eyre!("non UTF-8 store directory option"))?;
-
-    let mut store = SqliteStore::connect_db(&store_path).await?;
-
-    if let Some(s) = msg_hub_opts.astarte.store.max_db_size {
-        debug!("setting astarte max db size to {s:?}");
-        store.set_db_max_size(s).await?;
-    } else {
-        debug!("astarte max db size is not set, using default");
-    }
-
-    if let Some(s) = msg_hub_opts.astarte.store.max_db_journal_size {
-        debug!("setting astarte max db journal size to {s:?}");
-        store.set_journal_size_limit(s).await?;
-    } else {
-        debug!("astarte max db journal size is not set, using default");
-    }
-
-    let mut builder = builder.store(store);
-
-    if let Some(max_stored_items) = msg_hub_opts.astarte.store.max_retention_items {
-        debug!("setting astarte max number of stored items to {max_stored_items}");
-        builder = builder.max_stored_retention(max_stored_items);
-    }
-
-    // create a device instance
-    let (client, connection) = builder.connection(mqtt_config).build().await?;
-
-    Ok((client, connection))
 }
 
 #[cfg(unix)]

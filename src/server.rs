@@ -20,7 +20,6 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -33,13 +32,13 @@ use astarte_message_hub_proto::{
 };
 use axum::http::{self, Uri};
 use itertools::Itertools;
-use log::{debug, error, info, trace};
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::metadata::MetadataMap;
 use tonic::metadata::errors::InvalidMetadataValueBytes;
 use tonic::{Request, Response, Status};
 use tower::{Layer, Service};
+use tracing::{debug, error, info, trace};
 use uuid::Uuid;
 
 use crate::astarte::handler::DeviceError;
@@ -66,14 +65,11 @@ where
     /// Instantiate a new Astarte message hub.
     ///
     /// The `astarte_handler` should satisfy the required traits for an Astarte handler.
-    pub fn new<P>(astarte_handler: T, interfaces_dir: P) -> Self
-    where
-        P: Into<PathBuf>,
-    {
+    pub fn new(astarte_handler: T, introspection: Introspection) -> Self {
         AstarteMessageHub {
             nodes: Arc::new(RwLock::new(HashMap::new())),
             astarte_handler,
-            introspection: Introspection::new(interfaces_dir),
+            introspection,
         }
     }
 
@@ -716,6 +712,7 @@ mod test {
     use std::io::ErrorKind;
     use std::ops::Deref;
     use std::sync::Arc;
+    use tempfile::TempDir;
     use tokio::sync::RwLock;
     use tokio::sync::mpsc;
     use tonic::body::Body;
@@ -838,9 +835,16 @@ mod test {
         }
         "#;
 
-    fn mock_msg_hub(mock_astarte: MockAstarteHandler) -> AstarteMessageHub<MockAstarteHandler> {
-        let tmp = tempfile::tempdir().unwrap();
-        AstarteMessageHub::new(mock_astarte, tmp.path())
+    async fn mock_msg_hub(
+        mock_astarte: MockAstarteHandler,
+    ) -> (AstarteMessageHub<MockAstarteHandler>, TempDir) {
+        let tmp = TempDir::new().unwrap();
+
+        let introspection = Introspection::create(tmp.path().join("interfaces"))
+            .await
+            .unwrap();
+
+        (AstarteMessageHub::new(mock_astarte, introspection), tmp)
     }
 
     fn add_metadata_node_id<T>(uuid: Uuid, req: &mut Request<T>) {
@@ -878,7 +882,7 @@ mod test {
             .expect_clone()
             .returning(MockAstarteHandler::new);
 
-        let msg_hub = mock_msg_hub(mock_astarte);
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
         let attach_result = attach(TEST_UUID, &msg_hub).await;
 
         assert!(
@@ -903,7 +907,7 @@ mod test {
             .expect_clone()
             .returning(MockAstarteHandler::new);
 
-        let msg_hub = mock_msg_hub(mock_astarte);
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
         let attach_result = attach(TEST_UUID, &msg_hub).await;
 
         // send a custom error to the Node
@@ -929,15 +933,13 @@ mod test {
             .expect_clone()
             .returning(MockAstarteHandler::new);
 
-        let tmp = tempfile::tempdir().unwrap();
-        let astarte_message: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, tmp.path());
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
         let node = Node::new(vec![]);
 
         // avoid inserting the node id
         let req_node = Request::new(node);
-        let attach_result = astarte_message.attach(req_node).await;
+        let attach_result = msg_hub.attach(req_node).await;
 
         assert!(attach_result.is_err());
         let err: Status = attach_result.err().unwrap();
@@ -956,16 +958,14 @@ mod test {
             .expect_clone()
             .returning(MockAstarteHandler::new);
 
-        let tmp = tempfile::tempdir().unwrap();
-        let astarte_message: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, tmp.path());
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
         let interfaces = [SERV_PROPS_IFACE];
 
         let node = Node::from_interfaces(interfaces).unwrap();
 
         let req_node = Request::new(node);
-        let attach_result = astarte_message.attach(req_node).await;
+        let attach_result = msg_hub.attach(req_node).await;
 
         assert!(attach_result.is_err());
         let err: Status = attach_result.err().unwrap();
@@ -980,8 +980,7 @@ mod test {
             .expect_clone()
             .returning(MockAstarteHandler::new);
 
-        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, "");
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
         let interface_name = "io.demo.Values".to_owned();
         let astarte_data = AstarteData {
@@ -1004,7 +1003,7 @@ mod test {
             .extensions_mut()
             .insert(NodeId(TEST_UUID));
 
-        let send_result = astarte_message_hub.send(req_astarte_message).await;
+        let send_result = msg_hub.send(req_astarte_message).await;
 
         assert!(send_result.is_ok())
     }
@@ -1022,8 +1021,7 @@ mod test {
             .expect_clone()
             .returning(MockAstarteHandler::new);
 
-        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, "");
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
         let interface_name = "io.demo.Values".to_owned();
         let astarte_data = AstarteData {
@@ -1044,7 +1042,7 @@ mod test {
         req_astarte_message
             .extensions_mut()
             .insert(NodeId(TEST_UUID));
-        let send_result = astarte_message_hub.send(req_astarte_message).await;
+        let send_result = msg_hub.send(req_astarte_message).await;
 
         assert!(send_result.is_err());
         let err: Status = send_result.err().unwrap();
@@ -1069,15 +1067,14 @@ mod test {
         mock_astarte
             .expect_unsubscribe()
             .returning(|_, _| Ok(vec!["org.astarte-platform.test.test".to_string()]));
-        let tmp = tempfile::tempdir().unwrap();
-        let astarte_message: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        assert!(attach(TEST_UUID, &astarte_message).await.is_ok());
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
+
+        assert!(attach(TEST_UUID, &msg_hub).await.is_ok());
 
         let mut req_node_detach = Request::new(());
         add_metadata_node_id(TEST_UUID, &mut req_node_detach);
-        let detach_result = astarte_message.detach(req_node_detach).await;
+        let detach_result = msg_hub.detach(req_node_detach).await;
 
         assert!(detach_result.is_ok())
     }
@@ -1094,16 +1091,14 @@ mod test {
             .expect_clone()
             .returning(MockAstarteHandler::new);
 
-        let tmp = tempfile::tempdir().unwrap();
-        let astarte_message: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, tmp.path());
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
         let mut req_node = Request::new(());
 
         // it is necessary to add the NodeId extensions otherwise sending is not allowed
         req_node.extensions_mut().insert(NodeId(TEST_UUID));
 
-        let detach_result = astarte_message.detach(req_node).await;
+        let detach_result = msg_hub.detach(req_node).await;
 
         assert!(detach_result.is_err());
         let err: Status = detach_result.err().unwrap();
@@ -1131,19 +1126,18 @@ mod test {
             ))
         });
 
-        let tmp = tempfile::tempdir().unwrap();
-        let astarte_message = AstarteMessageHub::new(mock_astarte, tmp.path());
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
         let interfaces = vec![SERV_PROPS_IFACE.to_string()];
         let node = Node::new(interfaces);
 
         let mut req_node_attach = Request::new(node);
         req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
-        assert!(astarte_message.attach(req_node_attach).await.is_ok());
+        assert!(msg_hub.attach(req_node_attach).await.is_ok());
 
         let mut req_node_detach = Request::new(());
         req_node_detach.extensions_mut().insert(NodeId(TEST_UUID));
-        let detach_result = astarte_message.detach(req_node_detach).await;
+        let detach_result = msg_hub.detach(req_node_detach).await;
 
         assert!(detach_result.is_err());
         let err: Status = detach_result.err().unwrap();
@@ -1169,8 +1163,7 @@ mod test {
             .once()
             .returning(|_, _, _| Ok(Some(AstarteDataSdk::Boolean(true))));
 
-        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, "");
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
         let interface_name = "io.demo.Values".to_owned();
 
@@ -1186,7 +1179,7 @@ mod test {
             .extensions_mut()
             .insert(NodeId(TEST_UUID));
 
-        let res = astarte_message_hub.get_property(req_astarte_message).await;
+        let res = msg_hub.get_property(req_astarte_message).await;
         assert!(res.is_ok());
 
         let prop_res = res.unwrap().into_inner();
@@ -1199,7 +1192,7 @@ mod test {
             .extensions_mut()
             .insert(NodeId(TEST_UUID));
 
-        let res = astarte_message_hub.get_property(req_astarte_message).await;
+        let res = msg_hub.get_property(req_astarte_message).await;
         let prop_value_res = res.unwrap().into_inner().data.unwrap();
         let exp = astarte_message_hub_proto::AstarteData {
             astarte_data: Some(astarte_message_hub_proto::astarte_data::AstarteData::Boolean(true)),
@@ -1263,8 +1256,7 @@ mod test {
             .once()
             .return_once(|_| Ok(serv_props_cl));
 
-        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, "");
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
         // get all properties when no values are available
         let prop_filter = PropertyFilter { ownership: None };
@@ -1275,9 +1267,7 @@ mod test {
             .extensions_mut()
             .insert(NodeId(TEST_UUID));
 
-        let res = astarte_message_hub
-            .get_all_properties(req_astarte_message)
-            .await;
+        let res = msg_hub.get_all_properties(req_astarte_message).await;
         let prop_res = res.unwrap().into_inner().properties;
         assert!(prop_res.is_empty());
 
@@ -1288,9 +1278,7 @@ mod test {
             .extensions_mut()
             .insert(NodeId(TEST_UUID));
 
-        let res = astarte_message_hub
-            .get_all_properties(req_astarte_message)
-            .await;
+        let res = msg_hub.get_all_properties(req_astarte_message).await;
 
         assert_eq!(res.unwrap().into_inner().properties.len(), 3);
 
@@ -1305,9 +1293,7 @@ mod test {
             .extensions_mut()
             .insert(NodeId(TEST_UUID));
 
-        let res = astarte_message_hub
-            .get_all_properties(req_astarte_message)
-            .await;
+        let res = msg_hub.get_all_properties(req_astarte_message).await;
 
         let len = res
             .unwrap()
@@ -1331,9 +1317,7 @@ mod test {
             .extensions_mut()
             .insert(NodeId(TEST_UUID));
 
-        let res = astarte_message_hub
-            .get_all_properties(req_astarte_message)
-            .await;
+        let res = msg_hub.get_all_properties(req_astarte_message).await;
 
         let len = res
             .unwrap()
@@ -1386,8 +1370,7 @@ mod test {
             .once()
             .return_once(|_, _| Ok(props));
 
-        let astarte_message_hub: AstarteMessageHub<MockAstarteHandler> =
-            AstarteMessageHub::new(mock_astarte, "");
+        let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
         // get_properties with unknown interface
         let iface_name = InterfaceName {
@@ -1400,9 +1383,7 @@ mod test {
             .extensions_mut()
             .insert(NodeId(TEST_UUID));
 
-        let res = astarte_message_hub
-            .get_properties(req_astarte_message)
-            .await;
+        let res = msg_hub.get_properties(req_astarte_message).await;
 
         assert_eq!(res.err().unwrap().code(), Code::Internal);
 
@@ -1417,9 +1398,7 @@ mod test {
             .extensions_mut()
             .insert(NodeId(TEST_UUID));
 
-        let res = astarte_message_hub
-            .get_properties(req_astarte_message)
-            .await;
+        let res = msg_hub.get_properties(req_astarte_message).await;
 
         let props = res.unwrap().into_inner().properties;
 

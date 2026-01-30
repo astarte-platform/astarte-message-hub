@@ -39,11 +39,11 @@ use astarte_message_hub_proto::{
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
-use log::{debug, error, info, trace};
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Sender, channel};
 use tokio_util::sync::CancellationToken;
 use tonic::{Code, Status};
+use tracing::{debug, error, info, trace};
 use uuid::Uuid;
 
 use super::sdk::{Client, DeviceClient, DynamicIntrospection};

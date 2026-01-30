@@ -21,7 +21,9 @@ use std::{net::Ipv6Addr, path::Path, sync::Arc, time::Duration};
 use astarte_device_sdk::{
     builder::DeviceBuilder, prelude::*, store::SqliteStore, transport::mqtt::MqttConfig,
 };
-use astarte_message_hub::{AstarteMessageHub, astarte::handler::init_pub_sub};
+use astarte_message_hub::{
+    AstarteMessageHub, astarte::handler::init_pub_sub, cache::Introspection,
+};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use eyre::{Context, OptionExt};
 use futures::{FutureExt, future::BoxFuture};
@@ -68,10 +70,7 @@ pub async fn init_message_hub(
         mqtt_config.ignore_ssl_errors();
     }
 
-    let interfaces = path.join("interfaces");
-
-    // create the directory where the interfaces will be cached
-    tokio::fs::create_dir_all(&interfaces).await?;
+    let cache = Introspection::create(path.join("interfaces")).await?;
 
     let path = path.to_str().ok_or_eyre("invalid_path")?;
 
@@ -86,7 +85,7 @@ pub async fn init_message_hub(
 
     let (publisher, mut subscriber) = init_pub_sub(client);
 
-    let message_hub = AstarteMessageHub::new(publisher, interfaces);
+    let message_hub = AstarteMessageHub::new(publisher, cache);
 
     let server = tasks.spawn(async move {
         let layer = ServiceBuilder::new()

@@ -1,12 +1,12 @@
 // This file is part of Astarte.
 //
-// Copyright 2024 SECO Mind Srl
+// Copyright 2024, 2026 SECO Mind Srl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+//    http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,7 +18,9 @@
 
 use std::{net::IpAddr, path::PathBuf};
 
-use astarte_message_hub::config::{Config, DeviceSdkOptions};
+use astarte_message_hub::config::file::Config;
+use astarte_message_hub::config::file::dynamic::DynamicConfig;
+use astarte_message_hub::config::file::sdk::DeviceSdkOptions;
 use clap::{Args, Parser};
 
 /// A central service that runs on (Linux) devices for collecting and delivering messages from N
@@ -34,15 +36,18 @@ pub struct Cli {
     /// Path to a valid .toml file containing the message hub configuration.
     #[arg(short, long)]
     pub toml: Option<PathBuf>,
-    /// Path to the Astarte Message Hub configuration file.
+    /// Path to a custom Astarte Message Hub configuration file.
     #[arg(short, long)]
     pub config: Option<PathBuf>,
+    /// Path to a custom the Astarte Message Hub configuration directory.
+    #[arg(long)]
+    pub config_dir: Option<PathBuf>,
     /// Options for the gRPC connection.
     #[command(flatten)]
     pub grpc: GrpcOptions,
     /// Options for the HTTP connection.
     #[command(flatten)]
-    pub http: HttpOptions,
+    pub dynamic: DynamicOptions,
     /// Options for the device configuration and credentials.
     #[command(flatten)]
     pub device: DeviceOptions,
@@ -51,26 +56,93 @@ pub struct Cli {
     pub astarte: AstarteOptions,
 }
 
-impl Cli {
-    pub fn merge(self, config: &mut Config) {
-        self.grpc.merge(config);
-        self.device.merge(config);
-        self.astarte.merge(&mut config.astarte);
+impl From<Cli> for Config {
+    fn from(value: Cli) -> Self {
+        let Cli {
+            // The configs will be read afterwards
+            toml: _,
+            config: _,
+            config_dir: _,
+            grpc,
+            device,
+            astarte,
+            dynamic,
+        } = value;
+
+        let DeviceOptions {
+            realm,
+            device_id,
+            pairing_url,
+            credentials_secret,
+            pairing_token,
+            interfaces_dir,
+            store_dir,
+        } = device;
+
+        let GrpcOptions { host, port } = grpc;
+
+        let dynamic_config = Option::<DynamicConfig>::from(dynamic).map(|mut c| {
+            c.grpc_host = host;
+            c.grpc_port = port;
+            c
+        });
+
+        Config {
+            realm,
+            device_id,
+            pairing_url,
+            credentials_secret,
+            pairing_token,
+            interfaces_directory: interfaces_dir,
+            astarte_ignore_ssl: None,
+            grpc_socket_host: host,
+            grpc_socket_port: port,
+            store_directory: store_dir,
+            dynamic_config,
+            astarte: astarte.into(),
+        }
     }
 }
 
-/// Options for the HTTP connection.
+/// Options for the dynamic configuration.
 ///
-/// It's used for the dynamic configuration.
+/// Configures the HTTP and gRPC dynamic configuration services.
 #[derive(Args, Debug)]
-#[command(next_help_heading = "HTTP Options")]
-pub struct HttpOptions {
+#[command(next_help_heading = "Dynamic Configuration Options")]
+pub struct DynamicOptions {
+    /// Enables the dynamic configuration.
+    #[arg(long, env = "MSGHUB_DYNAMIC_CONFIG")]
+    pub dynamic_config: Option<bool>,
     /// Address the HTTP connection will bind to (e.g. 127.0.0.1).
     #[arg(long, env = "MSGHUB_HTTP_HOST")]
     pub http_host: Option<IpAddr>,
     /// Port the HTTP connection will bind to (e.g 40041)
     #[arg(long, env = "MSGHUB_HTTP_PORT")]
     pub http_port: Option<u16>,
+}
+
+impl From<DynamicOptions> for Option<DynamicConfig> {
+    fn from(value: DynamicOptions) -> Self {
+        let DynamicOptions {
+            dynamic_config,
+            http_host,
+            http_port,
+        } = value;
+
+        let has_value = dynamic_config.is_some() || http_host.is_some() || http_port.is_some();
+
+        if has_value {
+            Some(DynamicConfig {
+                enabled: dynamic_config,
+                http_host,
+                http_port,
+                grpc_host: None,
+                grpc_port: None,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 /// Options for the gRPC connection.
@@ -85,15 +157,8 @@ pub struct GrpcOptions {
     pub port: Option<u16>,
 }
 
-impl GrpcOptions {
-    fn merge(self, config: &mut Config) {
-        config.grpc_socket_host.merge(self.host);
-        config.grpc_socket_port.merge(self.port);
-    }
-}
-
 /// Options for the device configuration and credentials.
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Default)]
 #[command(next_help_heading = "Device Options")]
 pub struct DeviceOptions {
     /// The Astarte realm the device belongs to.
@@ -127,18 +192,6 @@ pub struct DeviceOptions {
     pub store_dir: Option<PathBuf>,
 }
 
-impl DeviceOptions {
-    pub fn merge(self, config: &mut Config) {
-        config.realm.merge(self.realm);
-        config.device_id.merge(self.device_id);
-        config.pairing_url.merge(self.pairing_url);
-        config.credentials_secret.merge(self.credentials_secret);
-        config.pairing_token.merge(self.pairing_token);
-        config.interfaces_directory.merge(self.interfaces_dir);
-        config.store_directory.merge(self.store_dir);
-    }
-}
-
 /// Options to pass to the [Astarte device SDK](`astarte_device_sdk`).
 #[derive(Args, Debug)]
 #[command(next_help_heading = "Astarte Options")]
@@ -164,22 +217,26 @@ pub struct AstarteOptions {
     pub ignore_ssl: Option<bool>,
 }
 
-impl AstarteOptions {
-    pub fn merge(self, config: &mut DeviceSdkOptions) {
-        config.keep_alive_secs.merge(self.keep_alive_secs);
-        config.timeout_secs.merge(self.timeout_secs);
-        config.ignore_ssl = self.ignore_ssl.unwrap_or(config.ignore_ssl);
-    }
-}
+impl From<AstarteOptions> for Option<DeviceSdkOptions> {
+    fn from(value: AstarteOptions) -> Self {
+        let AstarteOptions {
+            keep_alive_secs,
+            timeout_secs,
+            ignore_ssl,
+        } = value;
 
-trait OverrideOption {
-    fn merge(&mut self, value: Self);
-}
+        let has_value = keep_alive_secs.is_some() || timeout_secs.is_some() || ignore_ssl.is_some();
 
-impl<T> OverrideOption for Option<T> {
-    fn merge(&mut self, value: Self) {
-        if value.is_some() {
-            *self = value;
+        if !has_value {
+            None
+        } else {
+            Some(DeviceSdkOptions {
+                keep_alive_secs,
+                timeout_secs,
+                ignore_ssl,
+                volatile: None,
+                store: None,
+            })
         }
     }
 }
