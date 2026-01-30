@@ -16,19 +16,24 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-name: REUSE Compliance Check
-on:
-  workflow_call:
-  workflow_dispatch:
-permissions:
-  contents: read
-defaults:
-  run:
-    shell: bash
-jobs:
-  test:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-      - name: REUSE Compliance Check
-        uses: fsfe/reuse-action@v5
+version = 1
+SPDX-PackageName = "Embedded repo templates"
+SPDX-PackageDownloadLocation = "https://github.com/secomind/embedded-repo-templates"
+
+[[annotations]]
+path = "e2e-test/interfaces/*.json"
+precedence = "override"
+SPDX-FileCopyrightText = "SECO Mind Srl"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "e2e-test/interfaces/additional/*.json"
+precedence = "override"
+SPDX-FileCopyrightText = "SECO Mind Srl"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "examples/client/interfaces/*.json"
+precedence = "override"
+SPDX-FileCopyrightText = "SECO Mind Srl"
+SPDX-License-Identifier = "Apache-2.0"

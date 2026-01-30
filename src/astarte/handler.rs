@@ -1,22 +1,20 @@
-/*
- * This file is part of Astarte.
- *
- * Copyright 2022 SECO Mind Srl
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+// This file is part of Astarte.
+//
+// Copyright 2022, 2026 SECO Mind Srl
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 
 //! Contains an implementation of an Astarte handler.
 
@@ -31,7 +29,7 @@ use astarte_device_sdk::store::StoredProp;
 use astarte_device_sdk::transport::mqtt::Mqtt;
 use astarte_device_sdk::{
     DeviceEvent, Error as AstarteError, Value, client::RecvError, properties::PropAccess,
-    store::SqliteStore, transport::grpc::convert::MessageHubProtoError,
+    store::SqliteStore,
 };
 use astarte_interfaces::{Interface, error::Error as InterfaceError};
 use astarte_message_hub_proto::{
@@ -64,8 +62,6 @@ pub enum DeviceError {
     /// received error from Astarte
     // TODO: remove Box when updating the Astarte SDK
     Astarte(#[source] Box<AstarteError>),
-    /// couldn't convert the astarte event into a proto message
-    Convert(#[from] MessageHubProtoError),
     /// subscriber already disconnected
     Disconnected,
     /// invalid interface json in node introspection
@@ -77,7 +73,7 @@ impl From<&DeviceError> for Code {
         match value {
             DeviceError::Astarte(_) => Code::Aborted,
             DeviceError::Disconnected => Code::Internal,
-            DeviceError::Convert(_) | DeviceError::Interface(_) => Code::InvalidArgument,
+            DeviceError::Interface(_) => Code::InvalidArgument,
         }
     }
 }
@@ -127,7 +123,7 @@ impl DeviceSubscriber {
             }
         }
 
-        info!("event forwading cancelled, clearing subscribers");
+        info!("event forwarding cancelled, clearing subscribers");
         self.subscribers.write().await.clear();
 
         Ok(())
