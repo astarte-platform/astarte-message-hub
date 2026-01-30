@@ -890,6 +890,7 @@ dependencies = [
  "futures",
  "itertools 0.14.0",
  "reqwest 0.13.1",
+ "rustls",
  "serde",
  "serde_json",
  "tempfile",

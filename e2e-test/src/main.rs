@@ -1,12 +1,12 @@
 // This file is part of Astarte.
 //
-// Copyright 2024 SECO Mind Srl
+// Copyright 2024, 2026 SECO Mind Srl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+//    http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -74,6 +74,10 @@ async fn main() -> eyre::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .with(filter)
         .try_init()?;
+
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .map_err(|_| eyre!("couldn't install default crypto provider"))?;
 
     let dir = tempdir()?;
 
@@ -353,7 +357,7 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
 
     retry(10, || async move {
         let data = api.property(DeviceProperty::name()).await?;
-        ensure!(data.is_empty(), "property not unsetted {data:?}");
+        ensure!(data.is_empty(), "property not unset {data:?}");
 
         Ok(())
     })
