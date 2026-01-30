@@ -1,4 +1,4 @@
-# Copyright 2025 SECO Mind Srl
+# Copyright 2026 SECO Mind Srl
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,15 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-[toolchain]
-channel = "1.93.0"
-components = ["rust-analyzer", "llvm-tools"]
-profile = "default"
+[project]
+name = "@MAIN_CRATE@"
+version = "0.1.0"
+description = "Python dependencies for scripts and tools"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "reuse>=6.2.0",
+]
