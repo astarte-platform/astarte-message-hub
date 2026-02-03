@@ -1,22 +1,20 @@
-/*
- * This file is part of Astarte.
- *
- * Copyright 2022 SECO Mind Srl
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+// This file is part of Astarte.
+//
+// Copyright 2022, 2026 SECO Mind Srl
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 
 //! Provides a Protobuf API to set The Message Hub configurations
 
@@ -26,14 +24,14 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use astarte_message_hub_proto::ConfigMessage;
 use astarte_message_hub_proto::message_hub_config_server::{
     MessageHubConfig, MessageHubConfigServer,
 };
-use astarte_message_hub_proto::ConfigMessage;
 use log::error;
-use tokio::sync::mpsc::error::SendError;
-use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::Notify;
+use tokio::sync::mpsc::error::SendError;
+use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::{JoinError, JoinHandle};
 use tonic::transport::Server;
 use tonic::{Code, Request, Response, Status};
@@ -70,10 +68,7 @@ pub struct ProtobufConfigProvider {
 #[tonic::async_trait]
 impl MessageHubConfig for AstarteMessageHubConfig {
     /// Protobuf API that allows to set The Message Hub configurations
-    async fn set_config(
-        &self,
-        request: Request<ConfigMessage>,
-    ) -> Result<Response<pbjson_types::Empty>, Status> {
+    async fn set_config(&self, request: Request<ConfigMessage>) -> Result<Response<()>, Status> {
         let req = request.into_inner();
 
         let host = req
@@ -121,7 +116,7 @@ impl MessageHubConfig for AstarteMessageHubConfig {
 
         self.configuration_ready_channel.notify_one();
 
-        Ok(Response::new(pbjson_types::Empty {}))
+        Ok(Response::new(()))
     }
 }
 
@@ -258,8 +253,10 @@ mod test {
         assert!(response.is_ok());
         notify.notified().await;
         server.stop().await.expect("failed to stop the server");
-        assert!(MessageHubConfigClient::connect("http://localhost:1400")
-            .await
-            .is_err());
+        assert!(
+            MessageHubConfigClient::connect("http://localhost:1400")
+                .await
+                .is_err()
+        );
     }
 }

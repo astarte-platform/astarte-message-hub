@@ -1,23 +1,22 @@
-/*
- * This file is part of Astarte.
- *
- * Copyright 2022 SECO Mind Srl
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-//! Helper module to retrieve the configuration of the Astarte message hub.
+// This file is part of Astarte.
+//
+// Copyright 2022, 2026 SECO Mind Srl
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
+
+//! Configuration for the Message Hub.
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -140,14 +139,14 @@ impl Config {
 
     /// Validate the values are present for the server configuration.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        if !self.realm.as_ref().is_some_and(|realm| !realm.is_empty()) {
+        if self.realm.as_ref().is_none_or(|realm| realm.is_empty()) {
             return Err(ConfigError::MissingField("realm"));
         }
 
-        if !self
+        if self
             .device_id
             .as_ref()
-            .is_some_and(|device_id| !device_id.is_empty())
+            .is_none_or(|device_id| device_id.is_empty())
         {
             return Err(ConfigError::MissingField("device_id"));
         }
@@ -166,10 +165,10 @@ impl Config {
             return Err(ConfigError::Credentials);
         }
 
-        if !self
+        if self
             .pairing_url
             .as_ref()
-            .is_some_and(|pairing_url| !pairing_url.is_empty())
+            .is_none_or(|pairing_url| pairing_url.is_empty())
         {
             return Err(ConfigError::MissingField("pairing_url"));
         }
@@ -255,7 +254,7 @@ impl Config {
                     "failed to read {}: {}",
                     path.to_string_lossy(),
                     err
-                )))
+                )));
             }
         };
 
@@ -421,7 +420,7 @@ pub struct DeviceSdkOptions {
     /// Astarte device SDK volatile store options.
     #[serde(skip_serializing_if = "DeviceSdkVolatileOptions::is_default", default)]
     pub volatile: DeviceSdkVolatileOptions,
-    /// Astarte device SDK peristent store options.
+    /// Astarte device SDK persistent store options.
     #[serde(skip_serializing_if = "DeviceSdkStoreOptions::is_default", default)]
     pub store: DeviceSdkStoreOptions,
 }
