@@ -36,14 +36,14 @@ jobs:
   fmt:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1.14.0
       - name: Check formatting
         run: cargo fmt --check --all
   clippy:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/install-deps
       - uses: actions-rust-lang/setup-rust-toolchain@v1.14.0
       - uses: mozilla-actions/sccache-action@v0.0.9
@@ -52,7 +52,7 @@ jobs:
   doc:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/install-deps
       - uses: actions-rust-lang/setup-rust-toolchain@v1.14.0
         with:
@@ -65,7 +65,7 @@ jobs:
   features:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/install-deps
       - uses: actions-rust-lang/setup-rust-toolchain@v1.14.0
       - uses: mozilla-actions/sccache-action@v0.0.9
@@ -78,7 +78,7 @@ jobs:
   minimal-versions:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/install-deps
       - name: install rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1.14.0
@@ -100,7 +100,7 @@ jobs:
         msrv: [1.86]
     name: msrv / ${{ matrix.msrv }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/install-deps
       - uses: actions-rust-lang/setup-rust-toolchain@v1.14.0
         with:
@@ -114,7 +114,7 @@ jobs:
     name: stable / for-publish
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/install-deps
       - uses: actions-rust-lang/setup-rust-toolchain@v1.14.0
       - uses: mozilla-actions/sccache-action@v0.0.9

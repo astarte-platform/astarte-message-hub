@@ -35,7 +35,7 @@ jobs:
         uses: astarte-platform/astarte-cluster-action@v1
         with:
           astarte_version: "1.1.1"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install dependencies
         run: sudo apt-get -y install libsqlite3-dev libssl-dev
       - name: Install interface
