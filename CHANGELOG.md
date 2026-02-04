@@ -38,6 +38,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Update the MSRV to 1.86 and edition 2024
   [#430](https://github.com/astarte-platform/astarte-message-hub/pull/430)
 - The dynamic configuration needs to be enable manually via config, cli or env [#436]
+- You can start the HTTP or gRPC config server separately [#436]
 - The default store directory is no longer the current working directory but the user data directory
   [#463]
 

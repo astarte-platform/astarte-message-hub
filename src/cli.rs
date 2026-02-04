@@ -19,7 +19,7 @@
 use std::{net::IpAddr, path::PathBuf};
 
 use astarte_message_hub::config::file::Config;
-use astarte_message_hub::config::file::dynamic::DynamicConfig;
+use astarte_message_hub::config::file::dynamic::{DynamicConfig, Grpc, Http};
 use astarte_message_hub::config::file::sdk::DeviceSdkOptions;
 use clap::{Args, Parser};
 
@@ -37,10 +37,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub toml: Option<PathBuf>,
     /// Path to a custom Astarte Message Hub configuration file.
-    #[arg(short, long)]
+    #[arg(short, long, conflicts_with = "config_dir")]
     pub config: Option<PathBuf>,
     /// Path to a custom the Astarte Message Hub configuration directory.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "config")]
     pub config_dir: Option<PathBuf>,
     /// Options for the gRPC connection.
     #[command(flatten)]
@@ -81,12 +81,6 @@ impl From<Cli> for Config {
 
         let GrpcOptions { host, port } = grpc;
 
-        let dynamic_config = Option::<DynamicConfig>::from(dynamic).map(|mut c| {
-            c.grpc_host = host;
-            c.grpc_port = port;
-            c
-        });
-
         Config {
             realm,
             device_id,
@@ -98,7 +92,7 @@ impl From<Cli> for Config {
             grpc_socket_host: host,
             grpc_socket_port: port,
             store_directory: store_dir,
-            dynamic_config,
+            dynamic_config: dynamic.into(),
             astarte: astarte.into(),
         }
     }
@@ -110,34 +104,56 @@ impl From<Cli> for Config {
 #[derive(Args, Debug)]
 #[command(next_help_heading = "Dynamic Configuration Options")]
 pub struct DynamicOptions {
-    /// Enables the dynamic configuration.
-    #[arg(long, env = "MSGHUB_DYNAMIC_CONFIG")]
-    pub dynamic_config: Option<bool>,
+    /// Enables the HTTP dynamic configuration.
+    #[arg(long, env = "MSGHUB_HTTP_CONFIG")]
+    pub http_config: Option<bool>,
     /// Address the HTTP connection will bind to (e.g. 127.0.0.1).
     #[arg(long, env = "MSGHUB_HTTP_HOST")]
     pub http_host: Option<IpAddr>,
     /// Port the HTTP connection will bind to (e.g 40041)
     #[arg(long, env = "MSGHUB_HTTP_PORT")]
     pub http_port: Option<u16>,
+    /// Enables the gRPC dynamic configuration.
+    #[arg(long, env = "MSGHUB_GRPC_CONFIG")]
+    pub grpc_config: Option<bool>,
+    /// Address the HTTP connection will bind to (e.g. 127.0.0.1).
+    #[arg(long, env = "MSGHUB_GRPC_CONFIG_HOST")]
+    pub grpc_config_host: Option<IpAddr>,
+    /// Port the HTTP connection will bind to (e.g 40041)
+    #[arg(long, env = "MSGHUB_GRPC_CONFIG_PORT")]
+    pub grpc_config_port: Option<u16>,
 }
 
 impl From<DynamicOptions> for Option<DynamicConfig> {
     fn from(value: DynamicOptions) -> Self {
         let DynamicOptions {
-            dynamic_config,
+            http_config: http_config_enabled,
             http_host,
             http_port,
+            grpc_config: grpc_config_enabled,
+            grpc_config_host,
+            grpc_config_port,
         } = value;
 
-        let has_value = dynamic_config.is_some() || http_host.is_some() || http_port.is_some();
+        let has_value = http_config_enabled.is_some()
+            || http_host.is_some()
+            || http_port.is_some()
+            || grpc_config_enabled.is_some()
+            || grpc_config_host.is_some()
+            || grpc_config_port.is_some();
 
         if has_value {
             Some(DynamicConfig {
-                enabled: dynamic_config,
-                http_host,
-                http_port,
-                grpc_host: None,
-                grpc_port: None,
+                http: Some(Http {
+                    enabled: http_config_enabled,
+                    host: http_host,
+                    port: http_port,
+                }),
+                grpc: Some(Grpc {
+                    enabled: grpc_config_enabled,
+                    host: grpc_config_host,
+                    port: grpc_config_port,
+                }),
             })
         } else {
             None

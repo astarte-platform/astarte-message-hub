@@ -24,13 +24,12 @@ use std::path::{Path, PathBuf};
 
 use astarte_device_sdk::transport::mqtt::Credential;
 use color_eyre::Section;
-use eyre::{Context, Report};
-use futures::TryStreamExt;
+use eyre::{Report, WrapErr, eyre};
 use serde::{Deserialize, Serialize};
-use tokio_stream::wrappers::ReadDirStream;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::error::ConfigError;
+use crate::store::StoreDir;
 
 pub mod dynamic;
 pub mod sdk;
@@ -40,16 +39,19 @@ use self::sdk::DeviceSdkOptions;
 
 use super::{DEFAULT_GRPC_PORT, DEFAULT_HOST, MessageHubOptions, Override};
 
-/// Default configuration file name
-pub const CONFIG_FILE_NAME: &str = "message-hub-config.toml";
+/// Default configuration file name for the dynamic config
+pub const CONFIG_FILE_NAME_NO_EXT: &str = "50-message-hub-config";
+/// Config file name for the dynamic config
+pub const CONFIG_FILE_NAME: &str = "50-message-hub-config.toml";
 
+/// Old configuration file name in the root of the config directory
+///
+/// This is now moved to the store `config/` directory.
+pub const LEGACY_CONFIG_FILE_NAME: &str = "message-hub-config.toml";
 /// Credential secret after the device is registered.
 ///
 /// Legacy file, currently the pairing is handled directly from the [`astarte_device_sdk`].
 const LEGACY_CREDENTIAL_FILE: &str = "credentials_secret";
-
-const CONFIG_FILE: &str = "config.toml";
-const CONFIG_D: &str = "config.d";
 
 /// Struct to deserialize the configuration options for the Astarte message hub.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -94,6 +96,27 @@ pub struct Config {
 }
 
 impl Config {
+    pub(crate) fn default_storage_dir() -> PathBuf {
+        match dirs::data_dir() {
+            Some(mut p) => {
+                p.push("message-hub");
+
+                p
+            }
+            None => {
+                warn!("couldn't get store_directory, using CWD");
+
+                PathBuf::from("./")
+            }
+        }
+    }
+
+    pub(crate) fn has_device_id(&self) -> bool {
+        self.device_id
+            .as_ref()
+            .is_some_and(|device_id| !device_id.is_empty())
+    }
+
     /// Reads a configuration file.
     pub async fn read(path: impl AsRef<Path>) -> eyre::Result<Option<Self>> {
         let path = path.as_ref();
@@ -112,73 +135,13 @@ impl Config {
             .wrap_err_with(|| format!("couldn't decode config file {}", path.display()))
     }
 
-    /// Reads the configurations files.
-    ///
-    /// The order of the configurations files is as follows:
-    ///
-    /// 1. System default configuration file (e.g. /etc/message-hub/config.toml)
-    /// 2. User default configuration file (e.g. $HOME/.config/message-hub/config.toml)
-    /// 3. All the drop-ins configuration from various locations sorted alphabetical with the
-    ///    following stable order:
-    ///    1. System directory: /etc/message-hub/config.d/*.toml
-    ///    1. User directory:  $HOME/.config/message-hub/config.d/*.toml
-    ///    2. Storage directory: /var/lib/message-hub/config/*.toml
-    ///
-    pub async fn read_files(
-        config_dir: Option<&Path>,
-        store_dir: Option<&Path>,
-    ) -> eyre::Result<Config> {
-        let mut config = Config::default();
-        let mut config_d = Vec::new();
-
-        // Reads either the config dir or the directory
-        if let Some(config_dir) = config_dir {
-            info!(dir = %config_dir.display(), "using custom directory");
-
-            config.read_config_dir(config_dir, &mut config_d).await?;
-        } else {
-            // TODO: window support
-            #[cfg(unix)]
-            {
-                const SYSTEM_CONFIG: &str = "/etc/message-hub/";
-
-                config
-                    .read_config_dir(Path::new(SYSTEM_CONFIG), &mut config_d)
-                    .await?;
-            }
-
-            if let Some(user_config_dir) = dirs::config_dir() {
-                // $HOME/.config/message-hub
-                let user_config_dir = user_config_dir.join("message-hub");
-
-                config
-                    .read_config_dir(&user_config_dir, &mut config_d)
-                    .await?;
-            }
-        }
-
-        if let Some(store_dir) = store_dir {
-            info!("searching configs in storage directory");
-
-            Self::append_config_d(&mut config_d, &store_dir.join("config")).await?;
-        }
-
-        Self::sort_config_d(&mut config_d);
-
-        for file in config_d {
-            config.read_and_merge(file).await?;
-        }
-
-        Ok(config)
-    }
-
-    // TODO: use lexicographical sorting
-    fn sort_config_d(config_d: &mut [PathBuf]) {
-        // Important to be a stable sort
-        config_d.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
-    }
-
     /// Reads a config file and merges it into this one
+    ///
+    /// # Errors
+    ///
+    /// If the config exists but couldn't be read, or is invalid.
+    ///
+    /// Doesn't error if the file doesn't exists.
     pub async fn read_and_merge(&mut self, path: impl AsRef<Path>) -> eyre::Result<()> {
         let path = path.as_ref();
 
@@ -186,65 +149,36 @@ impl Config {
             info!(path = %path.display(), "config red");
 
             self.merge(config);
+        } else {
+            debug!(path = %path.display(), "config file missing");
         }
 
         Ok(())
     }
 
-    /// Reads a config.toml and config.d files in the directory.
-    async fn read_config_dir(
-        &mut self,
-        config_dir: &Path,
-        config_d: &mut Vec<PathBuf>,
-    ) -> eyre::Result<()> {
-        self.read_and_merge(config_dir.join(CONFIG_FILE)).await?;
+    /// Attempts to read a config file and merges it into this one
+    ///
+    /// # Errors
+    ///
+    /// If the config file couldn't be read or is invalid. Errors if the file doesn't exist
+    pub async fn try_read_and_merge(&mut self, path: impl AsRef<Path>) -> eyre::Result<()> {
+        let path = path.as_ref();
 
-        Self::append_config_d(config_d, &config_dir.join(CONFIG_D)).await?;
+        if let Some(config) = Self::read(path).await? {
+            info!(path = %path.display(), "config red");
 
-        Ok(())
-    }
+            self.merge(config);
 
-    /// Appends the configuration files to the vector
-    async fn append_config_d(config_d: &mut Vec<PathBuf>, path: &Path) -> eyre::Result<()> {
-        let dir = match tokio::fs::read_dir(path).await {
-            Ok(dir) => dir,
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(err) => {
-                return Err(eyre::Report::new(err).wrap_err("couldn't read config.d directory"));
-            }
-        };
+            Ok(())
+        } else {
+            error!(path = %path.display(), "configuration file doesn't exists");
 
-        ReadDirStream::new(dir)
-            .map_err(|error| {
-                eyre::Report::new(error).wrap_err("couldn't read configuration directory")
-            })
-            .try_filter_map(|entry| async move {
-                let path = entry.path();
-
-                if path.extension().is_none_or(|ext| ext != "toml") {
-                    return Ok(None);
-                }
-
-                let file_type = entry.file_type().await.wrap_err("couldn't get file type")?;
-
-                if !file_type.is_file() {
-                    return Ok(None);
-                }
-
-                Ok(Some(path))
-            })
-            .try_for_each(|p| {
-                config_d.push(p);
-
-                futures::future::ok(())
-            })
-            .await?;
-
-        Ok(())
+            Err(eyre!("couldn't read configuration file"))
+        }
     }
 
     /// Obtains the credential secret from the stored path or by registering the device.
-    pub async fn legacy_credential_secret(&mut self) -> eyre::Result<()> {
+    pub async fn legacy_credential_secret(&mut self, storage_dir: &StoreDir) -> eyre::Result<()> {
         if self
             .credentials_secret
             .as_ref()
@@ -255,12 +189,7 @@ impl Config {
             return Ok(());
         }
 
-        // Load the credential fiele for backwards compatibility
-        let Some(store_dir) = &self.store_directory else {
-            debug!("no storage dir set");
-
-            return Ok(());
-        };
+        let store_dir = storage_dir.get_store_dir().await?;
 
         let legacy_cred_file = store_dir.join(LEGACY_CREDENTIAL_FILE);
 
@@ -412,22 +341,11 @@ impl TryFrom<Config> for MessageHubOptions {
         let grpc_socket_host = value.grpc_socket_host.unwrap_or(DEFAULT_HOST);
         let grpc_socket_port = value.grpc_socket_port.unwrap_or(DEFAULT_GRPC_PORT);
 
-        let store_directory = value
-            .store_directory
-            .unwrap_or_else(MessageHubOptions::default_store_directory);
-
-        info!(
-            store_directory = %store_directory.display(),
-            "storage directory configured"
-        );
-
         let mut astarte = value.astarte.unwrap_or_default();
 
         if let Some(astarte_ignore_ssl) = value.astarte_ignore_ssl {
             astarte.ignore_ssl = Some(astarte_ignore_ssl);
         }
-
-        let introspection_cache = store_directory.join("interfaces");
 
         Ok(MessageHubOptions {
             realm,
@@ -437,18 +355,25 @@ impl TryFrom<Config> for MessageHubOptions {
             interfaces_directory: value.interfaces_directory,
             grpc_socket_host,
             grpc_socket_port,
-            store_directory,
             astarte,
-            introspection_cache,
         })
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::net::Ipv4Addr;
+    use std::num::NonZero;
+
+    use astarte_device_sdk::store::sqlite::Size;
+    use insta::assert_toml_snapshot;
     use pretty_assertions::assert_eq;
-    use rstest::rstest;
-    use tempfile::TempDir;
+    use rstest::{Context, rstest};
+
+    use crate::config::file::dynamic::{Grpc, Http};
+    use crate::config::file::sdk::{DeviceSdkStoreOptions, DeviceSdkVolatileOptions};
+    use crate::config::{DEFAULT_GRPC_CONFIG_PORT, DEFAULT_HTTP_PORT};
+    use crate::tests::with_settings;
 
     use super::*;
 
@@ -529,45 +454,6 @@ mod test {
     }
 
     #[tokio::test]
-    async fn list_config_files() -> eyre::Result<()> {
-        let dir = TempDir::with_prefix("list_config_files")?;
-
-        tokio::fs::write(dir.path().join("config.toml"), "").await?;
-
-        let config_d = dir.path().join("config.d");
-        tokio::fs::create_dir(&config_d).await?;
-
-        tokio::fs::write(dir.path().join("config.toml"), "").await?;
-        tokio::fs::write(config_d.join("10-low.toml"), "").await?;
-        tokio::fs::write(config_d.join("50-medium.toml"), "").await?;
-        tokio::fs::write(config_d.join("99-high.toml"), "").await?;
-
-        let store = dir.path().join("storage");
-        let storage_config = store.join("config");
-
-        tokio::fs::create_dir_all(&storage_config).await?;
-
-        tokio::fs::write(storage_config.join("60-dynamic.toml"), "").await?;
-
-        let mut files = Vec::new();
-        Config::append_config_d(&mut files, &config_d).await?;
-        Config::append_config_d(&mut files, &storage_config).await?;
-        Config::sort_config_d(&mut files);
-
-        let exp = [
-            "config.d/10-low.toml",
-            "config.d/50-medium.toml",
-            "storage/config/60-dynamic.toml",
-            "config.d/99-high.toml",
-        ]
-        .map(|path| dir.path().join(path));
-
-        assert_eq!(files, exp);
-
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn legacy_stored_credential() {
         let expected = "32".to_string();
 
@@ -584,310 +470,160 @@ mod test {
             ..Default::default()
         };
 
-        opt.legacy_credential_secret().await.unwrap();
+        let store_dir = StoreDir::create(dir.path().to_path_buf()).await.unwrap();
+
+        opt.legacy_credential_secret(&store_dir).await.unwrap();
 
         assert_eq!(opt.credentials_secret.unwrap(), expected);
     }
 
-    // TODO: add cargo insta for snapshot testing for encode and decode
-    // #[tokio::test]
-    // async fn load_toml_config() {
-    //     let expected = Config {
-    //         realm: Some("1".to_string()),
-    //         device_id: Some("2".to_string()),
-    //         pairing_url: Some("3".to_string()),
-    //         pairing_token: Some("42".to_string()),
-    //         ..Default::default()
-    //     };
+    #[tokio::test]
+    async fn load_toml_config() {
+        let expected = Config {
+            realm: Some("1".to_string()),
+            device_id: Some("2".to_string()),
+            pairing_url: Some("3".to_string()),
+            pairing_token: Some("42".to_string()),
+            ..Default::default()
+        };
 
-    //     let dir = tempfile::TempDir::new().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
 
-    //     let path = dir.path().join(CONFIG_FILES[0]);
+        let path = dir.path().join(CONFIG_FILE_NAME);
 
-    //     fs::write(&path, toml::to_string(&expected).unwrap())
-    //         .await
-    //         .unwrap();
+        tokio::fs::write(&path, toml::to_string(&expected).unwrap())
+            .await
+            .unwrap();
 
-    //     let path = Some(path);
+        let options = Config::read(path).await.unwrap().unwrap();
 
-    //     let options = Config::find_config(path.as_deref(), None)
-    //         .await
-    //         .unwrap()
-    //         .unwrap();
+        assert_eq!(options, expected);
+    }
 
-    //     assert_eq!(options, expected);
-    // }
+    #[tokio::test]
+    async fn load_from_store_path() {
+        let dir = tempfile::TempDir::new().unwrap();
 
-    // #[tokio::test]
-    // async fn load_from_store_path() {
-    //     let dir = tempfile::TempDir::new().unwrap();
+        let expected = Config {
+            realm: Some("1".to_string()),
+            device_id: Some("2".to_string()),
+            pairing_url: Some("3".to_string()),
+            pairing_token: Some("42".to_string()),
+            store_directory: Some(dir.path().to_path_buf()),
+            ..Default::default()
+        };
 
-    //     #[allow(deprecated)]
-    //     let expected = Config {
-    //         realm: Some("1".to_string()),
-    //         device_id: Some("2".to_string()),
-    //         pairing_url: Some("3".to_string()),
-    //         pairing_token: Some("42".to_string()),
-    //         store_directory: Some(dir.path().to_path_buf()),
-    //         ..Default::default()
-    //     };
+        let path = dir.path().join(CONFIG_FILE_NAME);
 
-    //     let path = dir.path().join(CONFIG_FILE_NAME);
+        tokio::fs::write(&path, toml::to_string(&expected).unwrap())
+            .await
+            .unwrap();
 
-    //     fs::write(&path, toml::to_string(&expected).unwrap())
-    //         .await
-    //         .unwrap();
+        let opt = Config::read(path).await.unwrap().unwrap();
 
-    //     let opt = Config::find_config(None, Some(dir.path()))
-    //         .await
-    //         .unwrap()
-    //         .unwrap();
+        assert_eq!(opt, expected);
+    }
 
-    //     assert_eq!(opt, expected);
-    // }
+    /// Make sure the example config is keep in sync with the code
+    #[test]
+    fn deserialize_example_config() {
+        let config = include_str!("../../../examples/message-hub-config.toml");
 
-    // /// Make sure the example config is keep in sync with the code
-    // #[test]
-    // fn deserialize_example_config() {
-    //     let config = include_str!("../../examples/message-hub-config.toml");
+        let config = toml::from_str::<Config>(config).unwrap();
 
-    //     let opts = toml::from_str::<Config>(config);
+        let expected = Config {
+            realm: Some("example_realm".to_string()),
+            device_id: Some("YOUR_UNIQUE_DEVICE_ID".to_string()),
+            pairing_url: Some("https://api.astarte.EXAMPLE.COM/pairing".to_string()),
+            pairing_token: Some("YOUR_PAIRING_TOKEN".to_string()),
+            interfaces_directory: Some(PathBuf::from("/usr/share/message-hub/astarte-interfaces/")),
+            grpc_socket_port: Some(50051),
+            store_directory: Some(PathBuf::from("/var/lib/message-hub")),
+            astarte: Some(DeviceSdkOptions {
+                ignore_ssl: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
 
-    //     assert!(opts.is_ok(), "error deserializing config: {opts:?}");
-    //     let opts = opts.unwrap();
+        assert_eq!(config, expected);
+    }
 
-    //     let expected = Config {
-    //         realm: Some("example_realm".to_string()),
-    //         device_id: Some("YOUR_UNIQUE_DEVICE_ID".to_string()),
-    //         pairing_url: Some("https://api.astarte.EXAMPLE.COM".to_string()),
-    //         pairing_token: Some("YOUR_PAIRING_TOKEN".to_string()),
-    //         interfaces_directory: Some(PathBuf::from("/usr/share/message-hub/astarte-interfaces/")),
-    //         grpc_socket_port: Some(50051),
-    //         store_directory: Some(PathBuf::from("/var/lib/message-hub")),
-    //         ..Default::default()
-    //     };
+    #[rstest]
+    #[case(Config {
+        realm: Some("1".to_string()),
+        device_id: Some("2".to_string()),
+        pairing_url: Some("3".to_string()),
+        pairing_token: Some("4".to_string()),
+        astarte_ignore_ssl: Some(true),
+        grpc_socket_port: Some(5),
+        astarte: Some(DeviceSdkOptions {
+            ignore_ssl: Some(true),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })]
+    #[case(Config {
+        realm: Some("1".to_string()),
+        device_id: Some("2".to_string()),
+        pairing_url: Some("3".to_string()),
+        credentials_secret: Some("4".to_string()),
+        pairing_token: Some("5".to_string()),
+        astarte_ignore_ssl: Some(true),
+        grpc_socket_port: Some(6),
+        astarte: Some(DeviceSdkOptions {
+            ignore_ssl: Some(true),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })]
+    #[case(Config {
+        realm: Some("1".to_string()),
+        device_id: Some("2".to_string()),
+        pairing_url: Some("3".to_string()),
+        credentials_secret: Some("4".to_string()),
+        pairing_token: Some("5".to_string()),
+        astarte_ignore_ssl: Some(true),
+        grpc_socket_host: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+        grpc_socket_port: Some(6),
+        interfaces_directory: Some(PathBuf::from("/foo")),
+        store_directory: Some(PathBuf::from("/bar")),
+        astarte: Some(DeviceSdkOptions {
+            ignore_ssl:Some(true),
+            keep_alive_secs: Some(30),
+            timeout_secs: Some(10),
+            volatile:Some(DeviceSdkVolatileOptions{
+                max_retention_items: Some(NonZero::<usize>::new(10).unwrap())
+            }),
+            store: Some(DeviceSdkStoreOptions{
+                max_db_size: Some(Size::MiB(NonZero::<u64>::new(1000).unwrap())),
+                max_db_journal_size: Some(Size::MiB(NonZero::<u64>::new(2000).unwrap())),
+                max_retention_items: NonZero::<usize>::new(10),
+            }),
+        }),
+        dynamic_config: Some(DynamicConfig {
+            http: Some(Http{
+                enabled: Some(false),
+                host: Some(DEFAULT_HOST),
+                port: Some(DEFAULT_HTTP_PORT),
+            }),
+            grpc: Some(Grpc{
+                enabled: Some(true),
+                host: Some(DEFAULT_HOST),
+                port: Some(DEFAULT_GRPC_CONFIG_PORT),
+            })
+        })
+    })]
+    #[test]
+    fn ser_and_de_config(#[context] ctx: Context, #[case] config: Config) {
+        let ser = toml::to_string_pretty(&config).unwrap();
 
-    //     assert_eq!(opts, expected);
-    // }
+        let res: Config = toml::from_str(&ser).unwrap();
 
-    // #[tokio::test]
-    // async fn obtain_device_id_configured_none() {
-    //     let expected = "mock-id".to_string();
+        assert_eq!(res, config);
 
-    //     let dir = tempfile::TempDir::new().unwrap();
-    //     fs::write(dir.path().join(CREDENTIAL_FILE), &expected)
-    //         .await
-    //         .unwrap();
-
-    //     let mut opt = Config {
-    //         realm: Some("1".to_string()),
-    //         pairing_url: Some("3".to_string()),
-    //         store_directory: Some(dir.path().to_path_buf()),
-    //         ..Default::default()
-    //     };
-
-    //     opt.device_id_from_hardware_id().await.unwrap();
-
-    //     assert_eq!(opt.device_id.unwrap(), expected);
-    // }
-
-    // #[tokio::test]
-    // async fn obtain_device_id_configured_some_but_empty() {
-    //     let expected = "mock-id".to_string();
-
-    //     let dir = tempfile::TempDir::new().unwrap();
-    //     fs::write(dir.path().join(CREDENTIAL_FILE), &expected)
-    //         .await
-    //         .unwrap();
-
-    //     #[allow(deprecated)]
-    //     let mut opt = Config {
-    //         realm: Some("1".to_string()),
-    //         device_id: Some("".to_string()),
-    //         pairing_url: Some("3".to_string()),
-    //         store_directory: Some(dir.path().to_path_buf()),
-    //         ..Default::default()
-    //     };
-
-    //     let device_id = opt.device_id_from_hardware_id().await;
-
-    //     assert!(
-    //         device_id.is_ok(),
-    //         "error obtaining stored credential {device_id:?}"
-    //     );
-    //     assert_eq!(opt.device_id.unwrap(), expected);
-    // }
-
-    // #[tokio::test]
-    // async fn test_read_options_from_toml_cred_secred_ok() {
-    //     const TOML_FILE: &str = r#"
-    //         realm = "1"
-    //         device_id = "2"
-    //         pairing_url = "3"
-    //         credentials_secret = "4"
-    //         astarte_ignore_ssl = false
-    //         grpc_socket_port = 5
-
-    //         [astarte]
-    //         ignore_ssl = false
-    //     "#;
-
-    //     let res = toml::from_str::<Config>(TOML_FILE);
-    //     let config = res.expect("Parsing of TOML file failed");
-
-    //     let exp = Config {
-    //         realm: Some("1".to_string()),
-    //         device_id: Some("2".to_string()),
-    //         pairing_url: Some("3".to_string()),
-    //         credentials_secret: Some("4".to_string()),
-    //         astarte_ignore_ssl: Some(false),
-    //         grpc_socket_port: Some(5),
-    //         ..Default::default()
-    //     };
-
-    //     assert_eq!(config, exp)
-    // }
-
-    // #[test]
-    // fn test_read_options_from_toml_pairing_token_ok() {
-    //     const TOML_FILE: &str = r#"
-    //         realm = "1"
-    //         device_id = "2"
-    //         pairing_url = "3"
-    //         pairing_token = "4"
-    //         astarte_ignore_ssl = true
-    //         grpc_socket_port = 5
-    //         [astarte]
-    //         ignore_ssl = true
-    //     "#;
-
-    //     let res = toml::from_str::<Config>(TOML_FILE);
-    //     let options = res.expect("Parsing of TOML file failed");
-    //     assert_eq!(options.realm.unwrap(), "1");
-    //     assert_eq!(options.device_id, Some("2".to_string()));
-    //     assert_eq!(options.pairing_url.unwrap(), "3");
-    //     assert_eq!(options.credentials_secret, None);
-    //     assert_eq!(options.pairing_token, Some("4".to_string()));
-    //     #[allow(deprecated)]
-    //     let ignore_ssl = options.astarte_ignore_ssl;
-    //     assert!(ignore_ssl);
-    //     assert!(options.astarte.volatile.max_retention_items.is_none());
-    //     assert!(options.astarte.store.max_db_size.is_none());
-    //     assert!(options.astarte.store.max_db_journal_size.is_none());
-    //     assert!(options.astarte.store.max_retention_items.is_none());
-    //     assert_eq!(options.grpc_socket_port, Some(5));
-    // }
-
-    // #[test]
-    // fn test_read_options_from_toml_both_pairing_and_cred_sec_ok() {
-    //     const TOML_FILE: &str = r#"
-    //         realm = "1"
-    //         device_id = "2"
-    //         pairing_url = "3"
-    //         credentials_secret = "4"
-    //         pairing_token = "5"
-    //         astarte_ignore_ssl = true
-    //         grpc_socket_port = 6
-    //         [astarte]
-    //         ignore_ssl = true
-    //     "#;
-
-    //     let res = toml::from_str::<Config>(TOML_FILE);
-    //     let options = res.expect("Parsing of TOML file failed");
-    //     assert_eq!(options.realm.unwrap(), "1");
-    //     assert_eq!(options.device_id.unwrap(), "2");
-    //     assert_eq!(options.pairing_url.unwrap(), "3");
-    //     assert_eq!(options.credentials_secret, Some("4".to_string()));
-    //     assert_eq!(options.pairing_token, Some("5".to_string()));
-    //     #[allow(deprecated)]
-    //     let ignore_ssl = options.astarte_ignore_ssl;
-    //     assert!(ignore_ssl);
-    //     assert!(options.astarte.ignore_ssl);
-    //     assert!(options.astarte.volatile.max_retention_items.is_none());
-    //     assert!(options.astarte.store.max_db_size.is_none());
-    //     assert!(options.astarte.store.max_db_journal_size.is_none());
-    //     assert!(options.astarte.store.max_retention_items.is_none());
-    //     assert_eq!(options.grpc_socket_port, Some(6));
-    // }
-
-    // #[test]
-    // fn test_read_options_from_toml_missing_pairing_and_cred_sec_err() {
-    //     const TOML_FILE: &str = r#"
-    //         realm = "1"
-    //         device_id = "2"
-    //         pairing_url = "3"
-    //         astarte_ignore_ssl = true
-    //         grpc_socket_port = 4
-    //         [astarte]
-    //         ignore_ssl = true
-    //     "#;
-
-    //     let config = toml::from_str::<Config>(TOML_FILE).unwrap();
-    //     assert!(config.validate().is_err());
-    //     MessageHubOptions::try_from(config).unwrap_err();
-    // }
-
-    // #[test]
-    // fn test_read_options_from_toml_missing_realm_err() {
-    //     const TOML_FILE: &str = r#"
-    //         device_id = "1"
-    //         pairing_url = "2"
-    //         credentials_secret = "3"
-    //         pairing_token = "4"
-    //         astarte_ignore_ssl = true
-    //         grpc_socket_port = 5
-    //         [astarte]
-    //         ignore_ssl = true
-    //     "#;
-
-    //     let config = toml::from_str::<Config>(TOML_FILE).unwrap();
-    //     assert!(config.validate().is_err());
-    //     MessageHubOptions::try_from(config).unwrap_err();
-    // }
-
-    // #[test]
-    // fn test_read_options_from_toml_both_ok_with_size() {
-    //     const TOML_FILE: &str = r#"
-    //         realm = "1"
-    //         device_id = "2"
-    //         pairing_url = "3"
-    //         credentials_secret = "4"
-    //         pairing_token = "5"
-    //         astarte_ignore_ssl = true
-    //         grpc_socket_port = 6
-    //         [astarte]
-    //         ignore_ssl = true
-    //         [astarte.volatile]
-    //         max_retention_items = 10
-    //         [astarte.store]
-    //         max_db_size = { value = 5, unit = "mb" }
-    //         max_retention_items = 10
-    //     "#;
-
-    //     let res = toml::from_str::<Config>(TOML_FILE);
-    //     let options = res.expect("Parsing of TOML file failed");
-    //     assert_eq!(options.realm.unwrap(), "1");
-    //     assert_eq!(options.device_id.unwrap(), "2");
-    //     assert_eq!(options.pairing_url.unwrap(), "3");
-    //     assert_eq!(options.credentials_secret, Some("4".to_string()));
-    //     assert_eq!(options.pairing_token, Some("5".to_string()));
-    //     #[allow(deprecated)]
-    //     let ignore_ssl = options.astarte_ignore_ssl;
-    //     assert!(ignore_ssl);
-    //     assert!(options.astarte.ignore_ssl);
-    //     assert_eq!(options.grpc_socket_port, Some(6));
-    //     assert_eq!(
-    //         options.astarte.volatile.max_retention_items,
-    //         Some(10.try_into().unwrap())
-    //     );
-    //     assert!(options.astarte.store.max_db_journal_size.is_none());
-    //     assert_eq!(
-    //         options.astarte.store.max_db_size,
-    //         Some(Size::Mb(5.try_into().unwrap()))
-    //     );
-    //     assert_eq!(
-    //         options.astarte.store.max_retention_items,
-    //         Some(10.try_into().unwrap())
-    //     )
-    // }
+        with_settings!({
+            assert_toml_snapshot!(format!("{}", ctx.case.unwrap()), config);
+        });
+    }
 }

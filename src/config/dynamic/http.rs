@@ -20,14 +20,13 @@
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use eyre::Context;
 use serde::{Deserialize, Serialize};
@@ -38,9 +37,12 @@ use tokio_util::sync::CancellationToken;
 use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 
+use crate::config::loader::ConfigEntry;
 use crate::error::ConfigError;
+use crate::store::StoreDir;
 
 use super::Config;
+use crate::config::file::CONFIG_FILE_NAME_NO_EXT;
 
 /// HTTP server error
 #[derive(thiserror::Error, Debug)]
@@ -69,6 +71,10 @@ pub enum ErrorResponse {
     Write(#[from] io::Error),
     /// failed to send over channel
     Channel,
+    /// invalid configuration file format
+    MediaType,
+    /// invalid configuration file
+    Deserialize,
 }
 
 impl IntoResponse for ErrorResponse {
@@ -89,6 +95,14 @@ impl IntoResponse for ErrorResponse {
             ErrorResponse::Channel => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Channel error".to_string(),
+            ),
+            ErrorResponse::MediaType => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "Config files must be either JSON or TOML".to_string(),
+            ),
+            ErrorResponse::Deserialize => (
+                StatusCode::BAD_REQUEST,
+                "Invalid configuration file".to_string(),
             ),
         };
 
@@ -121,13 +135,30 @@ impl Default for ConfigResponse {
 
 #[derive(Debug)]
 struct ConfigServer {
-    tx: mpsc::Sender<Config>,
-    config_file: Option<PathBuf>,
+    tx: mpsc::Sender<ConfigEntry>,
+    store_dir: StoreDir,
 }
 
 impl ConfigServer {
-    fn new(tx: mpsc::Sender<Config>, config_file: Option<PathBuf>) -> Self {
-        Self { tx, config_file }
+    fn new(tx: mpsc::Sender<ConfigEntry>, store_dir: StoreDir) -> Self {
+        Self { tx, store_dir }
+    }
+
+    async fn send_config(&self, config: Config, file_name: &str) -> Result<(), ErrorResponse> {
+        let path = self.store_dir.dynamic_config_file(file_name);
+
+        let entry = ConfigEntry::new(path, config);
+
+        self.tx
+            .send_timeout(entry, Duration::from_secs(10))
+            .await
+            .map_err(|error| {
+                error!(%error, "couldn't send configuration");
+
+                ErrorResponse::Channel
+            })?;
+
+        Ok(())
     }
 }
 
@@ -142,19 +173,51 @@ struct ConfigPayload {
     grpc_socket_port: Option<u16>,
 }
 
+impl TryFrom<ConfigPayload> for Config {
+    type Error = ErrorResponse;
+
+    fn try_from(value: ConfigPayload) -> Result<Self, Self::Error> {
+        let ConfigPayload {
+            realm,
+            device_id,
+            credentials_secret,
+            pairing_url,
+            pairing_token,
+            grpc_socket_host,
+            grpc_socket_port,
+        } = value;
+
+        let config = Self {
+            realm: Some(realm),
+            device_id,
+            credentials_secret,
+            pairing_url: Some(pairing_url),
+            pairing_token,
+            grpc_socket_host,
+            grpc_socket_port,
+            ..Default::default()
+        };
+
+        config.validate()?;
+
+        Ok(config)
+    }
+}
+
 /// Start a new HTTP API Server to allow a third party to feed the Message Hub configurations
 pub async fn serve(
     tasks: &mut JoinSet<eyre::Result<()>>,
     cancel: CancellationToken,
     address: &SocketAddr,
-    tx: mpsc::Sender<Config>,
-    config_file: Option<PathBuf>,
+    tx: mpsc::Sender<ConfigEntry>,
+    store_dir: StoreDir,
 ) -> Result<SocketAddr, HttpError> {
-    let cfg_server = ConfigServer::new(tx, config_file);
+    let cfg_server = ConfigServer::new(tx, store_dir);
 
     let app = Router::new()
         .route("/", get(root))
         .route("/config", post(set_config))
+        .route("/config/upload/{file_name}", put(upload_config))
         .layer(TraceLayer::new_for_http())
         .with_state(Arc::new(cfg_server));
 
@@ -190,6 +253,18 @@ pub async fn serve(
     Ok(local_addr)
 }
 
+#[derive(Debug, Deserialize)]
+struct UploadQuery {
+    #[serde(default = "UploadQuery::default_store")]
+    store: bool,
+}
+
+impl UploadQuery {
+    fn default_store() -> bool {
+        true
+    }
+}
+
 /// HTTP API endpoint that respond on a request done on the root (used for test purposes)
 async fn root() -> (StatusCode, Json<ConfigResponse>) {
     (StatusCode::OK, Json(ConfigResponse::default()))
@@ -198,40 +273,41 @@ async fn root() -> (StatusCode, Json<ConfigResponse>) {
 /// HTTP API endpoint that allows to set The Message Hub configurations
 async fn set_config(
     State(state): State<Arc<ConfigServer>>,
+    Query(query): Query<UploadQuery>,
     Json(payload): Json<ConfigPayload>,
 ) -> Result<(StatusCode, Json<ConfigResponse>), ErrorResponse> {
-    let config = Config {
-        realm: Some(payload.realm),
-        device_id: payload.device_id,
-        credentials_secret: payload.credentials_secret,
-        pairing_url: Some(payload.pairing_url),
-        pairing_token: payload.pairing_token,
-        grpc_socket_host: payload.grpc_socket_host,
-        grpc_socket_port: payload.grpc_socket_port,
-        ..Default::default()
-    };
+    let config = Config::try_from(payload)?;
 
-    config.validate()?;
-
-    if let Some(config_file) = &state.config_file {
-        let cfg = toml::to_string(&config)?;
-
-        if let Err(error) = tokio::fs::write(config_file, cfg).await {
-            error!(%error, config = %config_file.display(), "coulnd't write configuration file");
-        }
+    if query.store {
+        state
+            .store_dir
+            .store_config(&config, CONFIG_FILE_NAME_NO_EXT)
+            .await;
     }
 
-    state
-        .tx
-        .send_timeout(config, Duration::from_secs(10))
-        .await
-        .map_err(|error| {
-            error!(%error, "couldn't send configuration");
-
-            ErrorResponse::Channel
-        })?;
+    state.send_config(config, CONFIG_FILE_NAME_NO_EXT).await?;
 
     Ok((StatusCode::OK, Json(ConfigResponse::default())))
+}
+
+async fn upload_config(
+    State(state): State<Arc<ConfigServer>>,
+    axum::extract::Path(file_name): axum::extract::Path<String>,
+    Query(query): Query<UploadQuery>,
+    Json(payload): Json<ConfigPayload>,
+) -> Result<StatusCode, ErrorResponse> {
+    let file_name = file_name.strip_suffix(".json").unwrap_or(&file_name);
+    let file_name = file_name.strip_suffix(".toml").unwrap_or(file_name);
+
+    let config = Config::try_from(payload)?;
+
+    if query.store {
+        state.store_dir.store_config(&config, file_name).await;
+    }
+
+    state.send_config(config, file_name).await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
@@ -244,35 +320,32 @@ mod test {
     use serde_json::{Map, Number, Value};
     use tempfile::TempDir;
 
-    use crate::config::CONFIG_FILE_NAME;
-
     use super::*;
 
     struct TestServer {
         tasks: JoinSet<eyre::Result<()>>,
         cancel_token: CancellationToken,
-        config_file: PathBuf,
-        rx: mpsc::Receiver<Config>,
+        rx: mpsc::Receiver<ConfigEntry>,
         address: SocketAddr,
-        _dir: TempDir,
+        dir: TempDir,
     }
 
     impl TestServer {
         async fn serve() -> Self {
             let dir = TempDir::new().unwrap();
 
-            let toml_file = dir.path().join(CONFIG_FILE_NAME);
-
             let mut tasks = JoinSet::new();
             let cancel_token = CancellationToken::new();
             let (tx, rx) = tokio::sync::mpsc::channel(1);
+
+            let store_dir = StoreDir::create(dir.path().to_path_buf()).await.unwrap();
 
             let address = serve(
                 &mut tasks,
                 cancel_token.clone(),
                 &"127.0.0.1:0".parse().unwrap(),
                 tx,
-                Some(toml_file.clone()),
+                store_dir,
             )
             .await
             .expect("failed to create server");
@@ -280,10 +353,9 @@ mod test {
             Self {
                 tasks,
                 cancel_token,
-                config_file: toml_file,
                 rx,
                 address,
-                _dir: dir,
+                dir,
             }
         }
     }
@@ -320,14 +392,68 @@ mod test {
 
         let config = server.rx.try_recv().unwrap();
 
-        assert_eq!(config, exp);
+        assert_eq!(config.config, exp);
 
         server.cancel_token.cancel();
 
         server.tasks.join_next().await.unwrap().unwrap().unwrap();
 
-        let config: Config =
-            toml::from_str(&tokio::fs::read_to_string(server.config_file).await.unwrap()).unwrap();
+        let config: Config = toml::from_str(
+            &tokio::fs::read_to_string(server.dir.path().join("config/50-message-hub-config.toml"))
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(config, exp);
+    }
+
+    #[rstest]
+    #[timeout(Duration::from_secs(2))]
+    #[tokio::test]
+    async fn server_upload_test() {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+        let mut server = TestServer::serve().await;
+
+        let exp = Config {
+            realm: Some("realm".to_string()),
+            device_id: Some("device_id".to_string()),
+            pairing_url: Some("pairing_url".to_string()),
+            credentials_secret: Some("credentials_secret".to_string()),
+            ..Default::default()
+        };
+
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .put(format!(
+                "http://{}/config/upload/99-custom.toml",
+                server.address
+            ))
+            .json(&exp)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        let config = server.rx.try_recv().unwrap();
+
+        assert_eq!(config.config, exp);
+
+        server.cancel_token.cancel();
+
+        server.tasks.join_next().await.unwrap().unwrap().unwrap();
+
+        let config: Config = toml::from_str(
+            &tokio::fs::read_to_string(server.dir.path().join("config/99-custom.toml"))
+                .await
+                .unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(config, exp);
     }

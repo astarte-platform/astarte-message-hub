@@ -22,7 +22,7 @@ use astarte_device_sdk::{
     builder::DeviceBuilder, prelude::*, store::SqliteStore, transport::mqtt::MqttConfig,
 };
 use astarte_message_hub::{
-    AstarteMessageHub, astarte::handler::init_pub_sub, cache::Introspection,
+    AstarteMessageHub, astarte::handler::init_pub_sub, cache::Introspection, store::StoreDir,
 };
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use eyre::{Context, OptionExt};
@@ -63,6 +63,8 @@ pub async fn init_message_hub(
     let credentials_secret = read_env("E2E_CREDENTIAL_SECRET")?;
     let pairing_url = read_env("E2E_PAIRING_URL")?;
 
+    let store_dir = StoreDir::create(path.to_path_buf()).await?;
+
     let mut mqtt_config =
         MqttConfig::with_credential_secret(realm, device_id, credentials_secret, pairing_url);
 
@@ -70,7 +72,7 @@ pub async fn init_message_hub(
         mqtt_config.ignore_ssl_errors();
     }
 
-    let cache = Introspection::create(path.join("interfaces")).await?;
+    let cache = Introspection::new(store_dir);
 
     let path = path.to_str().ok_or_eyre("invalid_path")?;
 

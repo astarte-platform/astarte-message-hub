@@ -16,38 +16,56 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use std::ops::ControlFlow;
 use std::{net::SocketAddr, time::Duration};
 
 use astarte_device_sdk::{EventLoop, client::ClientDisconnect};
-use astarte_message_hub::{
-    AstarteMessageHub,
-    astarte::handler::init_pub_sub,
-    cache::Introspection,
-    config::{MessageHubOptions, MessageHubOptionsBuilder},
-};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
-use eyre::{OptionExt, WrapErr, eyre};
-use tokio::task::JoinSet;
+use clap::error::Result;
+use eyre::{ContextCompat, OptionExt, WrapErr, eyre};
+use tokio::select;
+use tokio::sync::mpsc;
+use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, trace, warn};
+
+use astarte_message_hub::AstarteMessageHub;
+use astarte_message_hub::astarte::handler::init_pub_sub;
+use astarte_message_hub::cache::Introspection;
+use astarte_message_hub::config::ConfigBuilder;
+use astarte_message_hub::config::dynamic::listen_dynamic_config;
+use astarte_message_hub::config::loader::{ConfigEntry, ConfigRepository};
+use astarte_message_hub::store::StoreDir;
 
 pub(crate) struct MessageHubTasks {
     tasks: JoinSet<eyre::Result<()>>,
-    options: MessageHubOptions,
-    cancel: CancellationToken,
+    config: ConfigRepository,
+    store_dir: StoreDir,
+    config_rx: Option<mpsc::Receiver<ConfigEntry>>,
 }
 
 impl MessageHubTasks {
     const TASK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
-    pub(crate) async fn create<'a>(
-        options: MessageHubOptionsBuilder<'a>,
-    ) -> eyre::Result<Option<Self>> {
-        let mut tasks = JoinSet::new();
+    pub(crate) async fn create(builder: ConfigBuilder) -> eyre::Result<Self> {
+        let tasks = JoinSet::new();
+
+        let (config, store_dir) = builder.build().await?;
+
+        Ok(Self {
+            tasks,
+            config,
+            store_dir,
+            config_rx: None,
+        })
+    }
+
+    pub(crate) async fn run(&mut self) -> eyre::Result<ControlFlow<()>> {
+        // Cancel token for the run.
         let cancel = CancellationToken::new();
 
         // wait for a shutdown signal and cancel other tasks
-        tasks.spawn({
+        self.tasks.spawn({
             let cancel = cancel.clone();
 
             async move {
@@ -63,33 +81,22 @@ impl MessageHubTasks {
             }
         });
 
-        let Some(options) = options.build(&mut tasks, cancel.child_token()).await? else {
-            Self::join_tasks(tasks, cancel).await?;
+        if self.wait_for_dynamic(&cancel).await?.is_break() {
+            return Ok(ControlFlow::Break(()));
+        }
 
-            return Ok(None);
-        };
+        let options = self.config.try_into_options(&self.store_dir).await?;
 
-        Ok(Some(Self {
-            tasks,
-            options,
-            cancel,
-        }))
-    }
-
-    pub(crate) async fn run(mut self) -> eyre::Result<()> {
         // Initialize an Astarte device
-        let (client, connection) = self.options.create_connection().await?;
+        let (client, connection) = options.create_connection(&self.store_dir).await?;
 
         let (publisher, mut subscriber) = init_pub_sub(client.clone());
 
-        let address =
-            SocketAddr::from((self.options.grpc_socket_host, self.options.grpc_socket_port));
-
-        info!("starting MessageHub on http://{address}");
+        let address = SocketAddr::from((options.grpc_socket_host, options.grpc_socket_port));
 
         // disconnect from astarte
         self.tasks.spawn({
-            let cancel = self.cancel.child_token();
+            let cancel = cancel.child_token();
             let mut client = client.clone();
 
             async move {
@@ -105,32 +112,39 @@ impl MessageHubTasks {
 
         // check the astarte check expiry
         #[cfg(feature = "security-events")]
-        self.tasks.spawn({
-            use futures::FutureExt;
-
-            use crate::events::check_cert_expiry;
+        {
+            use astarte_message_hub::events::check_cert_expiry;
 
             let client = client.clone();
-            let cancel = self.cancel.child_token();
+            let cancel = cancel.child_token();
 
-            cancel
-                .run_until_cancelled_owned(async move { check_cert_expiry(client).await })
-                .map(|r| r.unwrap_or(Ok(())))
-        });
+            self.tasks.spawn(async move {
+                cancel
+                    .run_until_cancelled_owned(check_cert_expiry(client))
+                    .await
+                    .unwrap_or(Ok(()))
+            });
+        }
 
         // Event loop for the astarte device sdk
-        // NOTE the disconnect called on the client exits the handle_events() event loop
-        self.tasks.spawn(async move {
-            connection
-                .handle_events()
-                .await
-                .wrap_err("Astarte disconnected")
+        self.tasks.spawn({
+            let cancel = cancel.child_token();
+
+            async move {
+                // NOTE: this is not optimal since the task is aborted, but we need to pass the
+                //       cancellation token to the Astarte device Sdk to be cancel safe.
+                let Some(res) = cancel.run_until_cancelled(connection.handle_events()).await else {
+                    return Ok(());
+                };
+
+                res.wrap_err("Astarte disconnected")
+            }
         });
 
         // Forward the astarte events to the subscribers
         // NOTE the cancellation token is used to stop the task in the subscriber
         self.tasks.spawn({
-            let cancel = self.cancel.child_token();
+            let cancel = cancel.child_token();
 
             async move {
                 subscriber
@@ -144,11 +158,11 @@ impl MessageHubTasks {
             }
         });
 
-        let introspection = Introspection::create(self.options.introspection_cache).await?;
+        let introspection = Introspection::new(self.store_dir.clone());
 
         // Handles the Message Hub gRPC server
         self.tasks.spawn({
-            let cancel = self.cancel.child_token();
+            let cancel = cancel.child_token();
 
             async move {
                 // Create a new message hub service
@@ -167,44 +181,130 @@ impl MessageHubTasks {
             }
         });
 
-        Self::join_tasks(self.tasks, self.cancel).await
+        self.join_tasks(cancel).await
     }
 
-    async fn join_tasks(
-        mut tasks: JoinSet<eyre::Result<()>>,
-        cancel: CancellationToken,
-    ) -> eyre::Result<()> {
-        let mut task_errors = false;
+    async fn wait_for_dynamic(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> eyre::Result<ControlFlow<()>> {
+        let Some(dynamic) = self.config.get_dynamic_config() else {
+            return Ok(ControlFlow::Continue(()));
+        };
 
-        info!("running tasks until shutdown is called");
+        if !dynamic.is_enabled() {
+            return Ok(ControlFlow::Continue(()));
+        }
 
-        // run until we have to shutdown the tasks or until the first task exits with an error
-        while let Some(join_res) = cancel
-            .run_until_cancelled(tasks.join_next())
-            .await
-            .flatten()
-        {
-            match join_res {
-                Ok(Err(e)) => {
-                    error!("error in first tasks joined: {e}");
-                    task_errors = true;
-                    break;
+        let rx = listen_dynamic_config(
+            &mut self.tasks,
+            cancel.child_token(),
+            dynamic,
+            self.store_dir.clone(),
+        )
+        .await?;
+        let rx = self.config_rx.insert(rx);
+
+        // Wait for fist dynamic config
+        if !self.config.has_dynamic() {
+            // Wait until cancel
+            let Some(res) = cancel.run_until_cancelled(rx.recv()).await else {
+                return Ok(ControlFlow::Break(()));
+            };
+
+            let entry = res.wrap_err("couldn't receive dynamic config")?;
+
+            self.config.add_dynamic(entry);
+        }
+
+        Ok(ControlFlow::Continue(()))
+    }
+
+    async fn join_tasks(&mut self, cancel: CancellationToken) -> eyre::Result<ControlFlow<()>> {
+        while let Some(event) = self.select_next(&cancel).await {
+            match event {
+                Event::Task(Ok(())) => {
+                    trace!("task joined");
                 }
-                Err(e) => {
-                    error!("error while joining first task: {e}");
-                    task_errors = true;
-                    break;
+                Event::Config(Some(entry)) => {
+                    info!("dynamic config received");
+
+                    self.config.add_dynamic(*entry);
+
+                    cancel.cancel();
+
+                    self.wait_exit().await?;
+
+                    return Ok(ControlFlow::Continue(()));
                 }
-                _ => {}
+                Event::Config(None) => {
+                    warn!("dynamic config closed");
+                }
+                Event::Task(Err(error)) => {
+                    error!(%error, "task exited with error");
+
+                    cancel.cancel();
+
+                    self.wait_exit().await?;
+
+                    return Err(eyre::eyre!("task exited with error"));
+                }
+
+                Event::JoinErr(error) => {
+                    error!(%error, "couldn't join a task");
+
+                    cancel.cancel();
+
+                    self.wait_exit().await?;
+
+                    return Err(eyre::eyre!("task exited with error"));
+                }
+                Event::Cancel => {
+                    info!("cancel called");
+
+                    self.wait_exit().await?;
+
+                    return Ok(ControlFlow::Break(()));
+                }
             }
         }
 
-        // shutdown everything
-        cancel.cancel();
+        info!("all task exited");
 
+        Ok(ControlFlow::Break(()))
+    }
+
+    /// Gets the next event
+    async fn select_next(&mut self, cancel: &CancellationToken) -> Option<Event> {
+        // Futures here are cancel safe
+        if let Some(config_rx) = &mut self.config_rx {
+            select! {
+                opt_res = self.tasks.join_next() => {
+                    opt_res.map(Event::from)
+                },
+                () = cancel.cancelled() => {
+                    Some(Event::Cancel)
+                },
+                opt_config = config_rx.recv() => {
+                    Some(Event::Config(opt_config.map(Box::new)))
+                },
+            }
+        } else {
+            select! {
+                opt_res = self.tasks.join_next() => {
+                    opt_res.map(Event::from)
+                },
+                _ = cancel.cancelled() => {
+                    Some(Event::Cancel)
+                },
+            }
+        }
+    }
+
+    async fn wait_exit(&mut self) -> eyre::Result<()> {
         info!(
-            "waiting for tasks to join cleanly with a '{}' second timeout",
-            Self::TASK_SHUTDOWN_TIMEOUT.as_secs()
+            timeout_secs = Self::TASK_SHUTDOWN_TIMEOUT.as_secs(),
+            "waiting for tasks to join cleanly ",
         );
 
         // join all tasks with a global timeout
@@ -212,20 +312,26 @@ impl MessageHubTasks {
             .checked_add(Self::TASK_SHUTDOWN_TIMEOUT)
             .ok_or_eyre("incorrect instant now")?;
 
-        while let Some(join_res) = tokio::time::timeout_at(deadline, tasks.join_next())
+        let mut task_errors = false;
+
+        while let Some(join_res) = tokio::time::timeout_at(deadline, self.tasks.join_next())
             .await
             .wrap_err("timeout reached while waiting for tasks to shutdown cleanly")?
         {
             match join_res {
-                Ok(Err(e)) => {
-                    error!("error in one of the tasks: {e}");
+                Ok(Ok(())) => {
+                    trace!("task joined");
+                }
+                Ok(Err(error)) => {
+                    error!(%error, "task exited with an error");
+
                     task_errors = true;
                 }
-                Err(e) => {
-                    error!("error while joining the tasks: {e}");
+                Err(error) => {
+                    error!(%error, "couldn't join a task");
+
                     task_errors = true;
                 }
-                _ => {}
             }
         }
 
@@ -273,4 +379,21 @@ fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
             error!("couldn't receive SIGINT {err}");
         }
     }))
+}
+
+#[derive(Debug)]
+enum Event {
+    Cancel,
+    Task(eyre::Result<()>),
+    JoinErr(JoinError),
+    Config(Option<Box<ConfigEntry>>),
+}
+
+impl From<Result<eyre::Result<()>, JoinError>> for Event {
+    fn from(value: Result<eyre::Result<()>, JoinError>) -> Self {
+        match value {
+            Ok(res) => Event::Task(res),
+            Err(err) => Event::JoinErr(err),
+        }
+    }
 }

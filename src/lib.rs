@@ -24,5 +24,30 @@ pub mod astarte;
 pub mod cache;
 pub mod config;
 pub mod error;
+#[cfg(feature = "security-events")]
+pub mod events;
 mod messages;
 mod server;
+pub mod store;
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use insta::assert_snapshot;
+
+    macro_rules! with_settings {
+        ($asserts:block) => {
+            ::insta::with_settings!({
+                snapshot_path => concat!(env!("CARGO_MANIFEST_DIR"), "/snapshots")
+            }, $asserts);
+        };
+    }
+
+    pub(crate) use with_settings;
+
+    #[test]
+    fn use_macro() {
+        self::with_settings!({
+            assert_snapshot!("using the macro");
+        });
+    }
+}

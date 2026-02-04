@@ -1,0 +1,13 @@
+---
+source: src/config/file/mod.rs
+expression: config
+---
+realm = '1'
+device_id = '2'
+pairing_url = '3'
+pairing_token = '4'
+astarte_ignore_ssl = true
+grpc_socket_port = 5
+
+[astarte]
+ignore_ssl = true

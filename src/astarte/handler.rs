@@ -109,21 +109,22 @@ impl DeviceSubscriber {
 
     /// Handler responsible for receiving and managing [`DeviceEvent`].
     pub async fn forward_events(&mut self, cancel: CancellationToken) -> Result<(), DeviceError> {
-        loop {
-            match cancel.run_until_cancelled(self.client.recv()).await {
-                Some(Err(RecvError::Disconnected)) => return Err(DeviceError::Disconnected),
-                Some(event) => {
+        while let Some(res) = cancel.run_until_cancelled(self.client.recv()).await {
+            match res {
+                Err(RecvError::Disconnected) => {
+                    info!("disconnected from astarte");
+
+                    break;
+                }
+                event => {
                     if let Err(err) = self.on_event(event).await {
                         error!("error on event receive: {err}");
                     }
                 }
-                None => {
-                    break;
-                }
             }
         }
 
-        info!("event forwarding cancelled, clearing subscribers");
+        info!("event forwarding exiting, clearing subscribers");
         self.subscribers.write().await.clear();
 
         Ok(())
@@ -896,9 +897,7 @@ mod test {
             }
         }
 
-        let err = handle.await.unwrap().unwrap_err();
-
-        assert!(matches!(err, DeviceError::Disconnected));
+        handle.await.unwrap().unwrap();
     }
 
     async fn recv_proto_error(sub: &mut Subscription) -> Option<MessageHubError> {
@@ -1044,7 +1043,7 @@ mod test {
 
         let mut subscription_1 = subscribe_1_result.unwrap();
         let mut subscription_2 = subscribe_2_result.unwrap();
-        let mut subscription_3 = subscribe_3_result.unwrap();
+        let subscription_3 = subscribe_3_result.unwrap();
 
         let message_hub_err = recv_proto_error(&mut subscription_1).await.unwrap();
 
@@ -1065,9 +1064,7 @@ mod test {
 
         // the third node should not receive the error since it has different interfaces in its
         // introspection
-        let message_hub_err = recv_proto_error(&mut subscription_3).await;
-
-        assert!(message_hub_err.is_none());
+        assert!(subscription_3.receiver.is_empty());
     }
 
     #[tokio::test]
@@ -1196,7 +1193,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(DeviceClient::<Mqtt<SqliteStore>>::default);
+            .returning(DeviceClient::<Mqtt<SqliteStore>>::new);
 
         // Simulate disconnect
         client
@@ -1207,11 +1204,10 @@ mod test {
 
         let (_publisher, mut subscriber) = init_pub_sub(client);
 
-        let err = subscriber
+        subscriber
             .forward_events(CancellationToken::new())
             .await
-            .unwrap_err();
-        assert!(matches!(err, DeviceError::Disconnected));
+            .unwrap()
     }
 
     #[tokio::test]

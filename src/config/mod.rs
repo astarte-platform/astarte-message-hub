@@ -27,24 +27,26 @@ use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Credential, Mqtt, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection};
 use eyre::{Context, OptionExt};
-use tokio::task::JoinSet;
-use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
+
+use crate::store::StoreDir;
 
 use self::dbus::DbusConfig;
-use self::file::dynamic::DynamicConfig;
+use self::file::Config;
 use self::file::sdk::{DeviceSdkOptions, DeviceSdkStoreOptions, DeviceSdkVolatileOptions};
-use self::file::{CONFIG_FILE_NAME, Config};
+use self::loader::ConfigRepository;
 
 pub mod dbus;
+pub mod dynamic;
 pub mod file;
-pub mod grpc;
-pub mod http;
+pub mod loader;
 
 /// Default host to bind the HTTP/gRPC server to.
 pub const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 /// Default port to bind the gRPC server to.
 pub const DEFAULT_GRPC_PORT: u16 = 50051;
+/// Default port to bind the gRPC dynamic config server to.
+pub const DEFAULT_GRPC_CONFIG_PORT: u16 = 50049;
 /// Default port to bind for the dynamic configuration over HTTP.
 pub const DEFAULT_HTTP_PORT: u16 = 40041;
 
@@ -77,51 +79,28 @@ pub struct MessageHubOptions {
     pub credential: Credential,
     /// Directory containing the Astarte interfaces.
     pub interfaces_directory: Option<PathBuf>,
-    /// Directory to cache the nodes introspection.
-    pub introspection_cache: PathBuf,
     /// The gRPC host to use bind.
     pub grpc_socket_host: IpAddr,
     /// The gRPC port to use.
     pub grpc_socket_port: u16,
-    /// Directory used by Astarte-Message-Hub to retain configuration and other persistent data.
-    pub store_directory: PathBuf,
     /// Astarte device SDK options.
     pub astarte: DeviceSdkOptions,
 }
 
 impl MessageHubOptions {
     /// Returns the builder for the message hub options
-    pub fn builder() -> MessageHubOptionsBuilder<'static> {
-        MessageHubOptionsBuilder::default()
-    }
-
-    /// Default the store directory to the current working directory.
-    fn default_store_directory() -> PathBuf {
-        dirs::data_dir()
-            .map(|p| p.join("message-hub"))
-            .unwrap_or_else(|| {
-                warn!("couldn't get data directory, using current working directory");
-
-                PathBuf::from(".")
-            })
+    pub fn builder() -> ConfigBuilder {
+        ConfigBuilder::default()
     }
 
     /// Initializes the Astarte Device client and connection
     pub async fn create_connection(
         &self,
+        store_dir: &StoreDir,
     ) -> eyre::Result<(
         DeviceClient<Mqtt<SqliteStore>>,
         DeviceConnection<Mqtt<SqliteStore>>,
     )> {
-        tokio::fs::create_dir_all(&self.store_directory)
-            .await
-            .wrap_err_with(|| {
-                format!(
-                    "couldn't create store directory {}",
-                    self.store_directory.display()
-                )
-            })?;
-
         // initialize the device options and mqtt config
         let mut mqtt_config = MqttConfig::new(
             &self.realm,
@@ -138,7 +117,8 @@ impl MessageHubOptions {
             mqtt_config.keepalive(Duration::from_secs(keep_alive));
         }
 
-        let mut builder = DeviceBuilder::new().writable_dir(&self.store_directory)?;
+        let store_directory = store_dir.get_store_dir().await?;
+        let mut builder = DeviceBuilder::new().writable_dir(store_directory)?;
 
         if let Some(timeout) = self.astarte.timeout_secs {
             builder = builder.connection_timeout(Duration::from_secs(timeout))
@@ -150,7 +130,9 @@ impl MessageHubOptions {
             builder = builder.interface_directory(int_dir)?;
         }
 
-        builder = builder.interface_directory(&self.introspection_cache)?;
+        if let Some(interface_cache) = store_dir.get_interfaces_cache_dir().await {
+            builder = builder.interface_directory(interface_cache)?;
+        }
 
         let DeviceSdkVolatileOptions {
             max_retention_items,
@@ -161,13 +143,12 @@ impl MessageHubOptions {
             builder = builder.max_volatile_retention(max_volatile_items);
         }
 
-        let store_path = self
-            .store_directory
+        let db_path = store_directory
             .to_str()
             .map(|d| format!("{d}/database.db"))
             .ok_or_eyre("non UTF-8 store directory option")?;
 
-        let mut store = SqliteStore::connect_db(&store_path).await?;
+        let mut store = SqliteStore::connect_db(&db_path).await?;
 
         let DeviceSdkStoreOptions {
             max_db_size,
@@ -205,164 +186,64 @@ impl MessageHubOptions {
     }
 }
 
-/// Builder for the [`MessageHubOptions`].
-#[derive(Debug, Default)]
-pub struct MessageHubOptionsBuilder<'a> {
-    overrides: Config,
-    custom_config: Option<&'a Path>,
-    config_dir: Option<&'a Path>,
-    storage_dir: Option<&'a Path>,
+/// Custom config argument
+#[derive(Debug)]
+pub enum CustomConfig {
+    /// A path to ta TOML file
+    File(PathBuf),
+    /// A path to ta a directory
+    Dir(PathBuf),
 }
 
-impl<'a> MessageHubOptionsBuilder<'a> {
+/// Builder for the [`MessageHubOptions`].
+#[derive(Debug, Default)]
+pub struct ConfigBuilder {
+    overrides: Config,
+    custom: Option<CustomConfig>,
+}
+
+impl ConfigBuilder {
     /// Sets the custom overrides
-    pub fn set_overrides(mut self, config: Config) -> Self {
+    pub fn set_overrides(&mut self, config: Config) -> &mut Self {
         self.overrides = config;
 
         self
     }
 
     /// Sets the configuration directory
-    pub fn set_config_dir(&mut self, config_dir: &'a Path) -> &mut Self {
-        self.config_dir = Some(config_dir);
-
-        self
-    }
-
-    /// Sets the storage directory
-    pub fn set_storage_dir(&mut self, storage_dir: &'a Path) -> &mut Self {
-        self.storage_dir = Some(storage_dir);
-
-        self
-    }
-
-    /// Set custom config
-    pub fn set_custom_config(&mut self, custom_config: &'a Path) -> &mut Self {
-        self.custom_config = Some(custom_config);
+    pub fn set_custom(&mut self, custom: CustomConfig) -> &mut Self {
+        self.custom = Some(custom);
 
         self
     }
 
     /// Builds the message hub options
-    pub async fn build(
-        self,
-        tasks: &mut JoinSet<eyre::Result<()>>,
-        cancel_token: CancellationToken,
-    ) -> eyre::Result<Option<MessageHubOptions>> {
-        let mut config = Config::read_files(self.config_dir, self.storage_dir).await?;
+    pub async fn build(self) -> eyre::Result<(ConfigRepository, StoreDir)> {
+        let mut config = ConfigRepository::with_overrides(self.overrides);
 
-        if let Some(custom) = self.custom_config {
-            config.read_and_merge(custom).await?;
-        }
+        config.read_configs(&self.custom).await?;
 
-        config.merge(self.overrides);
+        let store_dir = config
+            .get_store_directory()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(Config::default_storage_dir);
 
-        if let Some(dynamic) = &config.dynamic_config {
-            if dynamic.enabled == Some(true) {
-                let res = listen_dynamic_config(
-                    tasks,
-                    cancel_token,
-                    dynamic,
-                    config.store_directory.as_deref(),
-                )
-                .await?;
+        info!(path = %store_dir.display(), "using store directory");
 
-                let Some(dyn_config) = res else {
-                    info!("tasks cancelled, exiting");
+        let store_dir = StoreDir::create(store_dir).await?;
 
-                    return Ok(None);
-                };
+        config.read_dynamic(&store_dir).await?;
 
-                config.merge(dyn_config);
-            }
-        }
-
-        config.legacy_credential_secret().await?;
-
-        if config
-            .device_id
-            .as_ref()
-            .is_none_or(|device_id| device_id.is_empty())
-        {
-            let device_id = hardware_id().await?;
-
-            config.device_id = Some(device_id);
-        }
-
-        MessageHubOptions::try_from(config)
-            .map(Some)
-            .wrap_err("couldn't get Message Hub options")
+        Ok((config, store_dir))
     }
 }
 
-async fn hardware_id() -> eyre::Result<String> {
-    let connection = zbus::Connection::system().await?;
+pub(crate) async fn hardware_id() -> eyre::Result<String> {
+    let connection = zbus::Connection::system()
+        .await
+        .wrap_err("couldn't connect to dbus")?;
 
     let dbus = DbusConfig::connect(&connection).await?;
 
     dbus.device_id_from_hardware_id().await
-}
-
-/// Function that get the configurations needed by the Message Hub.
-/// The configuration file is first retrieved from one of two default base locations.
-/// If no valid configuration file is found in either of these locations, or if the content
-/// of the first found file is not valid HTTP and Protobuf APIs are exposed to provide a valid
-/// configuration.
-async fn listen_dynamic_config(
-    tasks: &mut JoinSet<eyre::Result<()>>,
-    cancel_token: CancellationToken,
-    dynamic: &DynamicConfig,
-    store_dir: Option<&Path>,
-) -> eyre::Result<Option<Config>> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel(2);
-
-    let config_file = store_dir.map(|p| p.join(CONFIG_FILE_NAME));
-
-    let http_address = (
-        dynamic.http_host.unwrap_or(DEFAULT_HOST),
-        dynamic.http_port.unwrap_or(DEFAULT_HTTP_PORT),
-    )
-        .into();
-
-    let grpc_address = (
-        dynamic.grpc_host.unwrap_or(DEFAULT_HOST),
-        dynamic.grpc_port.unwrap_or(DEFAULT_GRPC_PORT),
-    )
-        .into();
-
-    self::http::serve(
-        tasks,
-        cancel_token.child_token(),
-        &http_address,
-        tx.clone(),
-        config_file.clone(),
-    )
-    .await?;
-
-    grpc::serve(
-        tasks,
-        cancel_token.child_token(),
-        grpc_address,
-        tx,
-        config_file,
-    )
-    .await?;
-
-    let res = cancel_token
-        .run_until_cancelled(rx.recv())
-        .await
-        .ok_or_eyre("dynamic config server exited")?;
-
-    match res {
-        Some(config) => {
-            info!("dynamic config received");
-
-            Ok(Some(config))
-        }
-        None => {
-            info!("dynamic config cancelled");
-
-            Ok(None)
-        }
-    }
 }
