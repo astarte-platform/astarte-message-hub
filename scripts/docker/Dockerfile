@@ -16,7 +16,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-FROM rust:1.88-alpine3.20 AS build
+FROM rust:1.93-alpine3.20 AS build
 
 RUN mkdir /msg-hub && \
     apk add --no-cache alpine-sdk musl-dev pkgconfig \
