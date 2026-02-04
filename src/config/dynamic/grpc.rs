@@ -20,7 +20,6 @@
 
 use std::net::{AddrParseError, IpAddr, SocketAddr};
 use std::num::TryFromIntError;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -38,6 +37,10 @@ use tonic::transport::server::TcpIncoming;
 use tonic::{Code, Request, Response, Status};
 use tracing::{error, info};
 
+use crate::config::file::CONFIG_FILE_NAME_NO_EXT;
+use crate::config::loader::ConfigEntry;
+use crate::store::StoreDir;
+
 use super::Config;
 
 /// Protobuf server error
@@ -53,19 +56,25 @@ pub enum ProtobufConfigError {
 
 #[derive(Debug)]
 struct AstarteMessageHubConfig {
-    tx: tokio::sync::mpsc::Sender<Config>,
-    /// Optional config file in the store directory to save the configuration to.
-    config_file: Option<PathBuf>,
+    tx: tokio::sync::mpsc::Sender<ConfigEntry>,
+    store_dir: StoreDir,
 }
 
 #[tonic::async_trait]
 impl MessageHubConfig for AstarteMessageHubConfig {
     /// Protobuf API that allows to set The Message Hub configurations
     async fn set_config(&self, request: Request<ConfigMessage>) -> Result<Response<()>, Status> {
-        let req = request.into_inner();
+        let ConfigMessage {
+            realm,
+            device_id,
+            credentials_secret,
+            pairing_url,
+            pairing_token,
+            grpc_socket_port,
+            grpc_socket_host,
+        } = request.into_inner();
 
-        let host = req
-            .grpc_socket_host
+        let host = grpc_socket_host
             .map(|host| IpAddr::from_str(&host))
             .transpose()
             .map_err(|err| {
@@ -73,20 +82,20 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             })?;
 
         // Protobuf version 3 only supports u32
-        let port = req
-            .grpc_socket_port
-            .map(u16::try_from)
-            .transpose()
-            .map_err(|err: TryFromIntError| {
-                Status::new(Code::InvalidArgument, format!("Invalid grpc port: {err}"))
-            })?;
+        let port =
+            grpc_socket_port
+                .map(u16::try_from)
+                .transpose()
+                .map_err(|err: TryFromIntError| {
+                    Status::new(Code::InvalidArgument, format!("Invalid grpc port: {err}"))
+                })?;
 
         let config = Config {
-            realm: Some(req.realm),
-            device_id: req.device_id,
-            credentials_secret: req.credentials_secret,
-            pairing_token: req.pairing_token,
-            pairing_url: Some(req.pairing_url),
+            realm: Some(realm),
+            device_id,
+            credentials_secret,
+            pairing_token,
+            pairing_url: Some(pairing_url),
             grpc_socket_port: port,
             grpc_socket_host: host,
             ..Default::default()
@@ -98,17 +107,13 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             Status::invalid_argument(err.to_string())
         })?;
 
-        if let Some(config_file) = &self.config_file {
-            let cfg = toml::to_string(&config).map_err(|e| Status::internal(e.to_string()))?;
+        self.store_dir
+            .store_config(&config, CONFIG_FILE_NAME_NO_EXT)
+            .await;
 
-            if let Err(error) = tokio::fs::write(config_file, cfg).await {
-                error!(
-                    config_file = %config_file.display(),
-                    %error,
-                    "couldn't write configuration file"
-                );
-            }
-        }
+        let path = self.store_dir.dynamic_config_file(CONFIG_FILE_NAME_NO_EXT);
+
+        let config = ConfigEntry::new(path, config);
 
         self.tx
             .send_timeout(config, Duration::from_secs(10))
@@ -128,10 +133,10 @@ pub async fn serve(
     tasks: &mut JoinSet<eyre::Result<()>>,
     cancel: CancellationToken,
     address: SocketAddr,
-    tx: mpsc::Sender<Config>,
-    config_file: Option<PathBuf>,
+    tx: mpsc::Sender<ConfigEntry>,
+    store_dir: StoreDir,
 ) -> eyre::Result<SocketAddr> {
-    let service = AstarteMessageHubConfig { tx, config_file };
+    let service = AstarteMessageHubConfig { tx, store_dir };
 
     let listener = TcpIncoming::bind(address).wrap_err("couldn't bind gRPC server address")?;
 
@@ -163,35 +168,34 @@ mod test {
     use tempfile::TempDir;
     use tonic::transport::Endpoint;
 
-    use crate::config::CONFIG_FILE_NAME;
+    use crate::config::file::CONFIG_FILE_NAME;
 
     use super::*;
 
     struct TestServer {
         tasks: JoinSet<eyre::Result<()>>,
         cancel_token: CancellationToken,
-        config_file: PathBuf,
-        rx: mpsc::Receiver<Config>,
+        rx: mpsc::Receiver<ConfigEntry>,
         address: SocketAddr,
-        _dir: TempDir,
+        dir: TempDir,
     }
 
     impl TestServer {
         async fn serve() -> Self {
             let dir = TempDir::new().unwrap();
 
-            let toml_file = dir.path().join(CONFIG_FILE_NAME);
-
             let mut tasks = JoinSet::new();
             let cancel_token = CancellationToken::new();
             let (tx, rx) = tokio::sync::mpsc::channel(1);
+
+            let store_dir = StoreDir::create(dir.path().to_path_buf()).await.unwrap();
 
             let address = serve(
                 &mut tasks,
                 cancel_token.clone(),
                 "127.0.0.1:0".parse().unwrap(),
                 tx,
-                Some(toml_file.clone()),
+                store_dir,
             )
             .await
             .expect("failed to create server");
@@ -199,31 +203,31 @@ mod test {
             Self {
                 tasks,
                 cancel_token,
-                config_file: toml_file,
                 rx,
                 address,
-                _dir: dir,
+                dir,
             }
         }
     }
 
-    fn create_config() -> (TempDir, AstarteMessageHubConfig, mpsc::Receiver<Config>) {
+    async fn create_config() -> (
+        TempDir,
+        AstarteMessageHubConfig,
+        mpsc::Receiver<ConfigEntry>,
+    ) {
         let dir = TempDir::new().unwrap();
-        let config_file = dir.path().join(CONFIG_FILE_NAME);
+        let store_dir = StoreDir::create(dir.path().to_path_buf()).await.unwrap();
 
         let (tx, rx) = mpsc::channel(1);
 
-        let config_server = AstarteMessageHubConfig {
-            tx,
-            config_file: Some(config_file),
-        };
+        let config_server = AstarteMessageHubConfig { tx, store_dir };
 
         (dir, config_server, rx)
     }
 
     #[tokio::test]
     async fn set_config_test() {
-        let (_dir, config_server, mut rx) = create_config();
+        let (_dir, config_server, mut rx) = create_config().await;
 
         let msg = ConfigMessage {
             realm: "rpc_realm".to_string(),
@@ -248,12 +252,12 @@ mod test {
 
         let config = rx.try_recv().unwrap();
 
-        assert_eq!(config, exp);
+        assert_eq!(config.config, exp);
     }
 
     #[tokio::test]
     async fn test_set_config_invalid_config() {
-        let (_dir, config_server, _rx) = create_config();
+        let (_dir, config_server, _rx) = create_config().await;
 
         let msg = ConfigMessage {
             realm: "".to_string(),
@@ -305,14 +309,18 @@ mod test {
             ..Default::default()
         };
 
-        assert_eq!(config, exp);
+        assert_eq!(config.config, exp);
 
         server.cancel_token.cancel();
 
         server.tasks.join_next().await.unwrap().unwrap().unwrap();
 
-        let config: Config =
-            toml::from_str(&tokio::fs::read_to_string(server.config_file).await.unwrap()).unwrap();
+        let config: Config = toml::from_str(
+            &tokio::fs::read_to_string(server.dir.path().join("config").join(CONFIG_FILE_NAME))
+                .await
+                .unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(config, exp);
     }

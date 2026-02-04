@@ -728,6 +728,7 @@ mod test {
         AstarteNode, InterceptorError, NodeId, NodeIdInterceptorLayer, node_id_from_ascii,
         node_id_from_bin,
     };
+    use crate::store::StoreDir;
 
     use super::*;
 
@@ -840,9 +841,9 @@ mod test {
     ) -> (AstarteMessageHub<MockAstarteHandler>, TempDir) {
         let tmp = TempDir::new().unwrap();
 
-        let introspection = Introspection::create(tmp.path().join("interfaces"))
-            .await
-            .unwrap();
+        let store_dir = StoreDir::create(tmp.path().to_path_buf()).await.unwrap();
+
+        let introspection = Introspection::new(store_dir);
 
         (AstarteMessageHub::new(mock_astarte, introspection), tmp)
     }

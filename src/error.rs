@@ -29,7 +29,7 @@ use tracing::debug;
 use uuid::Uuid;
 
 use crate::astarte::handler::DeviceError;
-use crate::config::http::HttpError;
+use crate::config::dynamic::http::HttpError;
 
 /// A list specifying general categories of Astarte Message Hub error.
 #[derive(thiserror::Error, Debug)]

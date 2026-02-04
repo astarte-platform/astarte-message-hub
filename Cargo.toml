@@ -94,6 +94,7 @@ rusqlite = { version = "0.32.1", optional = true }
 [dev-dependencies]
 astarte-device-sdk = { workspace = true, features = ["derive", "message-hub"] }
 astarte-device-sdk-mock.workspace = true
+insta = { workspace = true, features = ["toml"] }
 mockall.workspace = true
 pretty_assertions.workspace = true
 reqwest = { workspace = true, features = ["charset", "http2", "system-proxy", "rustls-no-provider", "json"] }
@@ -115,6 +116,7 @@ dirs = "6.0.0"
 displaydoc = "0.2.5"
 eyre = "0.6.12"
 futures = "0.3.31"
+insta = "1.46.3"
 itertools = "0.14.0"
 mockall = "0.14.0"
 pretty_assertions = "1.4.1"

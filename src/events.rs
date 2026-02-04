@@ -16,6 +16,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//! Security events
+
 use std::time::Duration;
 
 use astarte_device_sdk::{
@@ -26,7 +28,8 @@ use astarte_device_sdk::{
 use chrono::Utc;
 use tracing::debug;
 
-pub(crate) async fn check_cert_expiry<S>(client: DeviceClient<Mqtt<S>>) -> Result<(), eyre::Report>
+/// Checks the expiry of the certificate
+pub async fn check_cert_expiry<S>(client: DeviceClient<Mqtt<S>>) -> Result<(), eyre::Report>
 where
     S: PropertyStore + StoreCapabilities,
 {

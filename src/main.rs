@@ -21,22 +21,22 @@
 
 #![warn(missing_docs)]
 
+use astarte_message_hub::config::file::Config;
 use std::io::{IsTerminal, stdout};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-use astarte_message_hub::config::MessageHubOptions;
+use astarte_message_hub::config::{CustomConfig, MessageHubOptions};
 use clap::Parser;
 use eyre::eyre;
-use tracing::{debug, warn};
+use tracing::{info, warn};
 
 use crate::cli::Cli;
-use crate::tasks::MessageHubTasks;
+
+use self::tasks::MessageHubTasks;
 
 mod cli;
-#[cfg(feature = "security-events")]
-mod events;
 mod tasks;
 
 #[tokio::main]
@@ -61,24 +61,18 @@ async fn main() -> eyre::Result<()> {
     let mut builder = MessageHubOptions::builder();
 
     if let Some(config_file) = &args.config {
-        builder.set_custom_config(config_file);
+        builder.set_custom(CustomConfig::File(config_file.clone()));
+    } else if let Some(config_dir) = &args.config_dir {
+        builder.set_custom(CustomConfig::Dir(config_dir.clone()));
     }
 
-    if let Some(config_dir) = &args.config_dir {
-        builder.set_config_dir(config_dir);
+    builder.set_overrides(Config::from(args));
+
+    let mut tasks = MessageHubTasks::create(builder).await?;
+
+    while tasks.run().await?.is_continue() {
+        info!("restarting the Message Hub");
     }
-
-    if let Some(storage_dir) = &args.device.store_dir {
-        builder.set_storage_dir(storage_dir);
-    }
-
-    let Some(tasks) = MessageHubTasks::create(builder).await? else {
-        debug!("cancelled before start");
-
-        return Ok(());
-    };
-
-    tasks.run().await?;
 
     Ok(())
 }
