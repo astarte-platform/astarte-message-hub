@@ -1,0 +1,37 @@
+---
+source: src/config/file/mod.rs
+expression: config
+---
+realm = '1'
+device_id = '2'
+pairing_url = '3'
+credentials_secret = '4'
+pairing_token = '5'
+interfaces_directory = '/foo'
+astarte_ignore_ssl = true
+grpc_socket_host = '127.0.0.1'
+grpc_socket_port = 6
+store_directory = '/bar'
+[dynamic_config.http]
+enabled = false
+host = '127.0.0.1'
+port = 40041
+[dynamic_config.grpc]
+enabled = true
+host = '127.0.0.1'
+port = 50052
+
+[astarte]
+keep_alive_secs = 30
+timeout_secs = 10
+ignore_ssl = true
+[astarte.volatile]
+max_retention_items = 10
+[astarte.store]
+max_retention_items = 10
+[astarte.store.max_db_size]
+unit = 'mib'
+value = 1000
+[astarte.store.max_db_journal_size]
+unit = 'mib'
+value = 2000

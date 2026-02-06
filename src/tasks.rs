@@ -16,104 +16,134 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    time::{Duration, Instant},
-};
+use std::ops::ControlFlow;
+use std::{net::SocketAddr, time::Duration};
 
-use astarte_device_sdk::{
-    DeviceClient, DeviceConnection, EventLoop,
-    builder::DeviceBuilder,
-    client::ClientDisconnect,
-    store::SqliteStore,
-    transport::mqtt::{Mqtt, MqttConfig},
-};
-use astarte_message_hub::{
-    AstarteMessageHub,
-    astarte::handler::{DevicePublisher, DeviceSubscriber, init_pub_sub},
-    config::MessageHubOptions,
-};
+use astarte_device_sdk::{EventLoop, client::ClientDisconnect};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
-use eyre::{WrapErr, eyre};
-use log::{debug, error, info};
-use tokio::task::JoinSet;
+use clap::error::Result;
+use eyre::{ContextCompat, OptionExt, WrapErr, eyre};
+use tokio::select;
+use tokio::sync::mpsc;
+use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
+use tracing::{error, info, trace, warn};
+
+use astarte_message_hub::AstarteMessageHub;
+use astarte_message_hub::astarte::handler::init_pub_sub;
+use astarte_message_hub::cache::Introspection;
+use astarte_message_hub::config::ConfigBuilder;
+use astarte_message_hub::config::dynamic::listen_dynamic_config;
+use astarte_message_hub::config::loader::{ConfigEntry, ConfigRepository};
+use astarte_message_hub::store::StoreDir;
 
 pub(crate) struct MessageHubTasks {
-    client: DeviceClient<Mqtt<SqliteStore>>,
-    connection: DeviceConnection<Mqtt<SqliteStore>>,
-    publisher: DevicePublisher,
-    subscriber: DeviceSubscriber,
-    interfaces_dir: PathBuf,
-    address: SocketAddr,
+    tasks: JoinSet<eyre::Result<()>>,
+    config: ConfigRepository,
+    store_dir: StoreDir,
+    config_rx: Option<mpsc::Receiver<ConfigEntry>>,
 }
 
 impl MessageHubTasks {
     const TASK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
-    pub(crate) async fn with_options(
-        options: MessageHubOptions,
-        interfaces_dir: PathBuf,
-    ) -> eyre::Result<Self> {
-        // Initialize an Astarte device
-        let (client, connection) = initialize_astarte_device_sdk(&options, &interfaces_dir).await?;
-        info!("astarte device initialized");
+    pub(crate) async fn create(builder: ConfigBuilder) -> eyre::Result<Self> {
+        let tasks = JoinSet::new();
 
-        let (publisher, subscriber) = init_pub_sub(client.clone());
-
-        let address = (options.grpc_socket_host, options.grpc_socket_port).into();
+        let (config, store_dir) = builder.build().await?;
 
         Ok(Self {
-            client,
-            connection,
-            publisher,
-            subscriber,
-            interfaces_dir,
-            address,
+            tasks,
+            config,
+            store_dir,
+            config_rx: None,
         })
     }
 
-    pub(crate) async fn run(self) -> eyre::Result<()> {
-        let Self {
-            client,
-            connection,
-            publisher,
-            mut subscriber,
-            interfaces_dir,
-            address,
-        } = self;
-
+    pub(crate) async fn run(&mut self) -> eyre::Result<ControlFlow<()>> {
+        // Cancel token for the run.
         let cancel = CancellationToken::new();
-        let mut tasks = JoinSet::new();
+
+        // wait for a shutdown signal and cancel other tasks
+        self.tasks.spawn({
+            let cancel = cancel.clone();
+
+            async move {
+                info!("waiting for shutdown");
+
+                if cancel.run_until_cancelled(shutdown()?).await.is_some() {
+                    info!("cancelling tasks");
+
+                    cancel.cancel();
+                };
+
+                Ok(())
+            }
+        });
+
+        if self.wait_for_dynamic(&cancel).await?.is_break() {
+            return Ok(ControlFlow::Break(()));
+        }
+
+        let options = self.config.try_into_options(&self.store_dir).await?;
+
+        // Initialize an Astarte device
+        let (client, connection) = options.create_connection(&self.store_dir).await?;
+
+        let (publisher, mut subscriber) = init_pub_sub(client.clone());
+
+        let address = SocketAddr::from((options.grpc_socket_host, options.grpc_socket_port));
+
+        // disconnect from astarte
+        self.tasks.spawn({
+            let cancel = cancel.child_token();
+            let mut client = client.clone();
+
+            async move {
+                cancel.cancelled().await;
+
+                client.disconnect().await?;
+
+                info!("Astarte client disconnected");
+
+                Ok(())
+            }
+        });
 
         // check the astarte check expiry
         #[cfg(feature = "security-events")]
-        tasks.spawn({
-            use futures::FutureExt;
-
-            use crate::events::check_cert_expiry;
+        {
+            use astarte_message_hub::events::check_cert_expiry;
 
             let client = client.clone();
             let cancel = cancel.child_token();
 
-            cancel
-                .run_until_cancelled_owned(async move { check_cert_expiry(client).await })
-                .map(|r| r.unwrap_or(Ok(())))
-        });
+            self.tasks.spawn(async move {
+                cancel
+                    .run_until_cancelled_owned(check_cert_expiry(client))
+                    .await
+                    .unwrap_or(Ok(()))
+            });
+        }
 
         // Event loop for the astarte device sdk
-        // NOTE the disconnect called on the client exits the handle_events() event loop
-        tasks.spawn(async move {
-            connection
-                .handle_events()
-                .await
-                .wrap_err("Astarte disconnected")
+        self.tasks.spawn({
+            let cancel = cancel.child_token();
+
+            async move {
+                // NOTE: this is not optimal since the task is aborted, but we need to pass the
+                //       cancellation token to the Astarte device Sdk to be cancel safe.
+                let Some(res) = cancel.run_until_cancelled(connection.handle_events()).await else {
+                    return Ok(());
+                };
+
+                res.wrap_err("Astarte disconnected")
+            }
         });
 
         // Forward the astarte events to the subscribers
         // NOTE the cancellation token is used to stop the task in the subscriber
-        tasks.spawn({
+        self.tasks.spawn({
             let cancel = cancel.child_token();
 
             async move {
@@ -128,18 +158,21 @@ impl MessageHubTasks {
             }
         });
 
+        let introspection = Introspection::new(self.store_dir.clone());
+
         // Handles the Message Hub gRPC server
-        tasks.spawn({
+        self.tasks.spawn({
             let cancel = cancel.child_token();
 
             async move {
                 // Create a new message hub service
-                let message_hub = AstarteMessageHub::new(publisher, interfaces_dir);
+                let message_hub = AstarteMessageHub::new(publisher, introspection);
 
                 info!("Starting the server on grpc://{address}");
 
                 // Run the proto-buff server
                 tonic::transport::Server::builder()
+                    .layer(tower_http::trace::TraceLayer::new_for_grpc())
                     .layer(message_hub.make_interceptor_layer())
                     .add_service(MessageHubServer::new(message_hub))
                     .serve_with_shutdown(address, cancel.cancelled())
@@ -148,87 +181,157 @@ impl MessageHubTasks {
             }
         });
 
-        // wait for a shutdown signal and cancel other tasks
-        tasks.spawn({
-            let cancel = cancel.clone();
-            let mut client = client.clone();
-
-            async move {
-                info!("waiting for shutdown");
-
-                cancel
-                    .run_until_cancelled(shutdown()?)
-                    .await
-                    .inspect(|_| cancel.cancel());
-
-                client.disconnect().await?;
-
-                Ok(())
-            }
-        });
-
-        Self::join_tasks(tasks, cancel).await
+        self.join_tasks(cancel).await
     }
 
-    async fn join_tasks(
-        mut tasks: JoinSet<eyre::Result<()>>,
-        cancel: CancellationToken,
-    ) -> eyre::Result<()> {
-        let mut task_errors = false;
+    async fn wait_for_dynamic(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> eyre::Result<ControlFlow<()>> {
+        let Some(dynamic) = self.config.get_dynamic_config() else {
+            return Ok(ControlFlow::Continue(()));
+        };
 
-        info!("running tasks until shutdown is called");
+        if !dynamic.is_enabled() {
+            return Ok(ControlFlow::Continue(()));
+        }
 
-        // run until we have to shutdown the tasks or until the first task exits with an error
-        while let Some(join_res) = cancel
-            .run_until_cancelled(tasks.join_next())
-            .await
-            .flatten()
-        {
-            match join_res {
-                Ok(Err(e)) => {
-                    error!("error in first tasks joined: {e}");
-                    task_errors = true;
-                    break;
+        let rx = listen_dynamic_config(
+            &mut self.tasks,
+            cancel.child_token(),
+            dynamic,
+            self.store_dir.clone(),
+        )
+        .await?;
+        let rx = self.config_rx.insert(rx);
+
+        // Wait for fist dynamic config
+        if !self.config.has_dynamic() {
+            // Wait until cancel
+            let Some(res) = cancel.run_until_cancelled(rx.recv()).await else {
+                return Ok(ControlFlow::Break(()));
+            };
+
+            let entry = res.wrap_err("couldn't receive dynamic config")?;
+
+            self.config.add_dynamic(entry);
+        }
+
+        Ok(ControlFlow::Continue(()))
+    }
+
+    async fn join_tasks(&mut self, cancel: CancellationToken) -> eyre::Result<ControlFlow<()>> {
+        while let Some(event) = self.select_next(&cancel).await {
+            match event {
+                Event::Task(Ok(())) => {
+                    trace!("task joined");
                 }
-                Err(e) => {
-                    error!("error while joining first task: {e}");
-                    task_errors = true;
-                    break;
+                Event::Config(Some(entry)) => {
+                    info!("dynamic config received");
+
+                    self.config.add_dynamic(*entry);
+
+                    cancel.cancel();
+
+                    self.wait_exit().await?;
+
+                    return Ok(ControlFlow::Continue(()));
                 }
-                _ => {}
+                Event::Config(None) => {
+                    warn!("dynamic config closed");
+                }
+                Event::Task(Err(error)) => {
+                    error!(%error, "task exited with error");
+
+                    cancel.cancel();
+
+                    self.wait_exit().await?;
+
+                    return Err(eyre::eyre!("task exited with error"));
+                }
+
+                Event::JoinErr(error) => {
+                    error!(%error, "couldn't join a task");
+
+                    cancel.cancel();
+
+                    self.wait_exit().await?;
+
+                    return Err(eyre::eyre!("task exited with error"));
+                }
+                Event::Cancel => {
+                    info!("cancel called");
+
+                    self.wait_exit().await?;
+
+                    return Ok(ControlFlow::Break(()));
+                }
             }
         }
 
-        // shutdown everything
-        cancel.cancel();
+        info!("all task exited");
 
+        Ok(ControlFlow::Break(()))
+    }
+
+    /// Gets the next event
+    async fn select_next(&mut self, cancel: &CancellationToken) -> Option<Event> {
+        // Futures here are cancel safe
+        if let Some(config_rx) = &mut self.config_rx {
+            select! {
+                opt_res = self.tasks.join_next() => {
+                    opt_res.map(Event::from)
+                },
+                () = cancel.cancelled() => {
+                    Some(Event::Cancel)
+                },
+                opt_config = config_rx.recv() => {
+                    Some(Event::Config(opt_config.map(Box::new)))
+                },
+            }
+        } else {
+            select! {
+                opt_res = self.tasks.join_next() => {
+                    opt_res.map(Event::from)
+                },
+                _ = cancel.cancelled() => {
+                    Some(Event::Cancel)
+                },
+            }
+        }
+    }
+
+    async fn wait_exit(&mut self) -> eyre::Result<()> {
         info!(
-            "waiting for tasks to join cleanly with a '{}' second timeout",
-            Self::TASK_SHUTDOWN_TIMEOUT.as_secs()
+            timeout_secs = Self::TASK_SHUTDOWN_TIMEOUT.as_secs(),
+            "waiting for tasks to join cleanly ",
         );
 
         // join all tasks with a global timeout
-        let deadline = Instant::now()
+        let deadline = tokio::time::Instant::now()
             .checked_add(Self::TASK_SHUTDOWN_TIMEOUT)
-            .unwrap_or(Instant::now());
+            .ok_or_eyre("incorrect instant now")?;
 
-        while let Some(join_res) = tokio::time::timeout(
-            deadline.saturating_duration_since(Instant::now()),
-            tasks.join_next(),
-        )
-        .await
-        .wrap_err("timeout reached while waiting for tasks to shutdown cleanly")?
+        let mut task_errors = false;
+
+        while let Some(join_res) = tokio::time::timeout_at(deadline, self.tasks.join_next())
+            .await
+            .wrap_err("timeout reached while waiting for tasks to shutdown cleanly")?
         {
             match join_res {
-                Ok(Err(e)) => {
-                    error!("error in one of the tasks: {e}");
+                Ok(Ok(())) => {
+                    trace!("task joined");
+                }
+                Ok(Err(error)) => {
+                    error!(%error, "task exited with an error");
+
                     task_errors = true;
                 }
-                Err(e) => {
-                    error!("error while joining the tasks: {e}");
+                Err(error) => {
+                    error!(%error, "couldn't join a task");
+
                     task_errors = true;
                 }
-                _ => {}
             }
         }
 
@@ -238,92 +341,6 @@ impl MessageHubTasks {
             Err(eyre!("one or more task failed"))
         }
     }
-}
-
-async fn initialize_astarte_device_sdk(
-    msg_hub_opts: &MessageHubOptions,
-    interfaces_dir: &Path,
-) -> eyre::Result<(
-    DeviceClient<Mqtt<SqliteStore>>,
-    DeviceConnection<Mqtt<SqliteStore>>,
-)> {
-    tokio::fs::create_dir_all(&msg_hub_opts.store_directory)
-        .await
-        .wrap_err_with(|| {
-            format!(
-                "couldn't create store directory {}",
-                msg_hub_opts.store_directory.display()
-            )
-        })?;
-
-    // initialize the device options and mqtt config
-    let mut mqtt_config = MqttConfig::new(
-        &msg_hub_opts.realm,
-        &msg_hub_opts.device_id,
-        msg_hub_opts.credential.clone(),
-        &msg_hub_opts.pairing_url,
-    );
-
-    if msg_hub_opts.astarte.ignore_ssl {
-        mqtt_config.ignore_ssl_errors();
-    }
-
-    if let Some(keep_alive) = msg_hub_opts.astarte.keep_alive_secs {
-        mqtt_config.keepalive(Duration::from_secs(keep_alive));
-    }
-
-    let mut builder = DeviceBuilder::new().writable_dir(&msg_hub_opts.store_directory)?;
-
-    if let Some(timeout) = msg_hub_opts.astarte.timeout_secs {
-        builder = builder.connection_timeout(Duration::from_secs(timeout))
-    }
-
-    if let Some(ref int_dir) = msg_hub_opts.interfaces_directory {
-        debug!("reading interfaces from {}", int_dir.display());
-
-        builder = builder.interface_directory(int_dir)?;
-    }
-
-    builder = builder.interface_directory(interfaces_dir)?;
-
-    if let Some(max_volatile_items) = msg_hub_opts.astarte.volatile.max_retention_items {
-        debug!("setting astarte max number of volatile items to {max_volatile_items}");
-        builder = builder.max_volatile_retention(max_volatile_items);
-    }
-
-    let store_path = msg_hub_opts
-        .store_directory
-        .to_str()
-        .map(|d| format!("{d}/database.db"))
-        .ok_or_else(|| eyre!("non UTF-8 store directory option"))?;
-
-    let mut store = SqliteStore::connect_db(&store_path).await?;
-
-    if let Some(s) = msg_hub_opts.astarte.store.max_db_size {
-        debug!("setting astarte max db size to {s:?}");
-        store.set_db_max_size(s).await?;
-    } else {
-        debug!("astarte max db size is not set, using default");
-    }
-
-    if let Some(s) = msg_hub_opts.astarte.store.max_db_journal_size {
-        debug!("setting astarte max db journal size to {s:?}");
-        store.set_journal_size_limit(s).await?;
-    } else {
-        debug!("astarte max db journal size is not set, using default");
-    }
-
-    let mut builder = builder.store(store);
-
-    if let Some(max_stored_items) = msg_hub_opts.astarte.store.max_retention_items {
-        debug!("setting astarte max number of stored items to {max_stored_items}");
-        builder = builder.max_stored_retention(max_stored_items);
-    }
-
-    // create a device instance
-    let (client, connection) = builder.connection(mqtt_config).build().await?;
-
-    Ok((client, connection))
 }
 
 #[cfg(unix)]
@@ -362,4 +379,21 @@ fn shutdown() -> eyre::Result<impl std::future::Future<Output = ()>> {
             error!("couldn't receive SIGINT {err}");
         }
     }))
+}
+
+#[derive(Debug)]
+enum Event {
+    Cancel,
+    Task(eyre::Result<()>),
+    JoinErr(JoinError),
+    Config(Option<Box<ConfigEntry>>),
+}
+
+impl From<Result<eyre::Result<()>, JoinError>> for Event {
+    fn from(value: Result<eyre::Result<()>, JoinError>) -> Self {
+        match value {
+            Ok(res) => Event::Task(res),
+            Err(err) => Event::JoinErr(err),
+        }
+    }
 }

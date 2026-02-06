@@ -65,21 +65,22 @@ axum.workspace = true
 chrono.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 color-eyre.workspace = true
+dirs.workspace = true
 displaydoc.workspace = true
 eyre.workspace = true
 futures.workspace = true
 itertools.workspace = true
-log.workspace = true
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "macros", "signal"] }
-tokio-stream = { workspace = true, features = ["net"] }
+tokio-stream = { workspace = true, features = ["fs", "net"] }
 tokio-util.workspace = true
 toml.workspace = true
 tonic.workspace = true
 tower.workspace = true
+tower-http = { workspace = true, features = ["trace"] }
 tracing.workspace = true
 tracing-journald.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
@@ -93,9 +94,11 @@ rusqlite = { version = "0.32.1", optional = true }
 [dev-dependencies]
 astarte-device-sdk = { workspace = true, features = ["derive", "message-hub"] }
 astarte-device-sdk-mock.workspace = true
+insta = { workspace = true, features = ["toml"] }
 mockall.workspace = true
+pretty_assertions.workspace = true
 reqwest = { workspace = true, features = ["charset", "http2", "system-proxy", "rustls-no-provider", "json"] }
-serial_test.workspace = true
+rstest.workspace = true
 tempfile.workspace = true
 
 [workspace.dependencies]
@@ -109,17 +112,19 @@ base64 = "0.22.1"
 chrono = "0.4.42"
 clap = "4.5.57"
 color-eyre = "0.6.5"
+dirs = "6.0.0"
 displaydoc = "0.2.5"
 eyre = "0.6.12"
 futures = "0.3.31"
+insta = "1.46.3"
 itertools = "0.14.0"
-log = "0.4.29"
 mockall = "0.14.0"
+pretty_assertions = "1.4.1"
 reqwest = { version = "0.13.1", default-features = false }
+rstest = "0.26.1"
 rustls = "0.23.35"
 serde = "1.0.228"
 serde_json = "1.0.145"
-serial_test = "3.2.0"
 tempfile = "3.23.0"
 thiserror = "2.0.17"
 tokio = "1.48.0"

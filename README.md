@@ -41,9 +41,12 @@ using 1 MQTT connection to Astarte.
 
 ## Configuration
 
-The Astarte Message Hub is configured through `message-hub-config.toml` in the current working
-directory, otherwise the system wide `/etc/message-hub/config.toml` can be used. In alternative, you
-can specify the path to the configuration file with the `-c/--config` cli option.
+The Astarte Message Hub is configured through the user's config directory
+`$HOME/.config/message-hub/`, searching for a config file `config.toml` or `config.d/*.toml`.
+Otherwise system wide `/etc/message-hub/` directory will be used .
+
+In alternative, you can specify the path to the configuration file with the `-c/--config` or
+`--config-dir` cli options, or passing the options via CLI and ENV directly.
 
 The format for the configuration file is the following:
 
@@ -60,6 +63,8 @@ pairing_token = "[PAIRING_TOKEN]"
 credentials_secret = "[CREDENTIALS_SECRET]"
 # Device id, if not provided it will be retrieved from `io.edgehog.Device` dbus-service
 device_id = "[DEVICE_ID]"
+# Path to store persistent data
+store_directory = "[STORE_DIRECTORY]"
 
 ##
 # Optional fields
@@ -70,8 +75,6 @@ interfaces_directory = "[INTERFACES_DIRECTORY]"
 ##
 # Other fields, with defaults
 #
-# Path to store persistent data
-store_directory = "./"
 # Address the gRPC connection will bind to
 grpc_socket_host = "127.0.0.1"
 grpc_socket_port = 50051
@@ -81,19 +84,25 @@ grpc_socket_port = 50051
 ignore_ssl = false
 ```
 
+It's recommended to specify the **store directory** since the message-hub will require persistence
+for some data.
+
+If one is not specified the user's data directory will be used instead. On linux this will follow
+the XDG specification and use `$HOME/.local/share/message-hub` while on Windows
+`C:\Users\$USER\AppData\Roaming`.
+
 An example configuration file can be found in the
 [examples](https://github.com/astarte-platform/astarte-message-hub/blob/master/examples/message-hub-config.toml)
 direction.
 
 ### Configuration in docker
 
-The message-hub is also distributed as a docker image available in the ghcr.
-Using the image you can quickly test out and connect nodes to the message hub.
-Remember to expose the grpc port (the default is 50051) if you need to accept
-external connections.
-You can use docker-compose or run it directly:
+The message-hub is also distributed as a docker image available in the ghcr. Using the image you can
+quickly test out and connect nodes to the message hub. Remember to expose the grpc port (the default
+is 50051) if you need to accept external connections. You can use docker-compose or run it directly:
 
 Using an already registered device id:
+
 ```sh
 docker run -e MSGHUB_REALM=realm \
   -e MSGHUB_DEVICE_ID=s6USRuvRSv6Te7S2dVVh3Q \
@@ -101,9 +110,11 @@ docker run -e MSGHUB_REALM=realm \
   -e MSGHUB_CREDENTIALS_SECRET=your_secret \
   -p 50051 ghcr.io/lucaato/astarte-message-hub:snapshot
 ```
+
 Replace the environment values with the appropriate ones for your device.
 
 Or by using a pairing token:
+
 ```sh
 docker run -e MSGHUB_REALM=realm \
   -e MSGHUB_DEVICE_ID=s6USRuvRSv6Te7S2dVVh3Q \
@@ -111,6 +122,7 @@ docker run -e MSGHUB_REALM=realm \
   -e MSGHUB_PAIRING_TOKEN=your_pairing_token \
   -p 50051 ghcr.io/lucaato/astarte-message-hub:snapshot
 ```
+
 Replace the environment values with the appropriate ones for your device.
 
 ### Override the configuration file

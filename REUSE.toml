@@ -21,6 +21,12 @@ SPDX-PackageName = "Embedded repo templates"
 SPDX-PackageDownloadLocation = "https://github.com/secomind/embedded-repo-templates"
 
 [[annotations]]
+path = "snapshots/*.snap"
+precedence = "override"
+SPDX-FileCopyrightText = "SECO Mind Srl"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
 path = "e2e-test/interfaces/*.json"
 precedence = "override"
 SPDX-FileCopyrightText = "SECO Mind Srl"

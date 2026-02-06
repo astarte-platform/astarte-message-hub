@@ -21,24 +21,22 @@
 
 #![warn(missing_docs)]
 
-use astarte_message_hub::config::{Config, DEFAULT_HOST, DEFAULT_HTTP_PORT};
-use eyre::{Context, OptionExt};
+use astarte_message_hub::config::file::Config;
 use std::io::{IsTerminal, stdout};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-use astarte_message_hub::config::MessageHubOptions;
+use astarte_message_hub::config::{CustomConfig, MessageHubOptions};
 use clap::Parser;
 use eyre::eyre;
-use log::warn;
+use tracing::{info, warn};
 
 use crate::cli::Cli;
-use crate::tasks::MessageHubTasks;
+
+use self::tasks::MessageHubTasks;
 
 mod cli;
-#[cfg(feature = "security-events")]
-mod events;
 mod tasks;
 
 #[tokio::main]
@@ -60,61 +58,23 @@ async fn main() -> eyre::Result<()> {
         )
     }
 
-    let options = get_config_options(args).await?;
+    let mut builder = MessageHubOptions::builder();
 
-    // Directory to store the Nodes introspection
-    let interfaces_dir = options.store_directory.join("interfaces");
-    if !interfaces_dir.exists() {
-        tokio::fs::create_dir_all(&interfaces_dir)
-            .await
-            .wrap_err("couldn't create interface directory")?;
+    if let Some(config_file) = &args.config {
+        builder.set_custom(CustomConfig::File(config_file.clone()));
+    } else if let Some(config_dir) = &args.config_dir {
+        builder.set_custom(CustomConfig::Dir(config_dir.clone()));
     }
 
-    let tasks = MessageHubTasks::with_options(options, interfaces_dir).await?;
+    builder.set_overrides(Config::from(args));
 
-    tasks.run().await?;
+    let mut tasks = MessageHubTasks::create(builder).await?;
+
+    while tasks.run().await?.is_continue() {
+        info!("restarting the Message Hub");
+    }
 
     Ok(())
-}
-
-async fn get_config_options(args: Cli) -> eyre::Result<MessageHubOptions> {
-    let store_directory = args.device.store_dir.as_deref();
-    let custom_config = args.config.as_deref().or(args.toml.as_deref());
-
-    let mut config = match Config::find_config(custom_config, store_directory).await? {
-        Some(config) => config,
-        None => {
-            let store_directory = args.device.store_dir.as_deref().ok_or_eyre(
-                "no configuration file specified and store directory missing  to start dynamic configuration",
-            )?;
-
-            let http = (
-                args.http.http_host.unwrap_or(DEFAULT_HOST),
-                args.http.http_port.unwrap_or(DEFAULT_HTTP_PORT),
-            )
-                .into();
-
-            let grpc = (
-                args.grpc.host.unwrap_or(DEFAULT_HOST),
-                args.grpc.port.unwrap_or(DEFAULT_HTTP_PORT),
-            )
-                .into();
-
-            Config::listen_dynamic_config(store_directory, http, grpc).await?
-        }
-    };
-
-    args.merge(&mut config);
-
-    if config.device_id.is_none() {
-        // retrieve the device id
-        config.device_id_from_hardware_id().await?;
-    }
-
-    // Read the credentials secret, the store defaults to the current directory
-    config.read_credential_secret().await?;
-
-    Ok(config.try_into()?)
 }
 
 fn init_tracing() -> eyre::Result<()> {

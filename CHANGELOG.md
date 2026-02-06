@@ -27,10 +27,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Configuration files will read and merged based on their priority [#463]
+- Read the files from the `config.d` directories [#463]
+- Read the files from the user configuration directory [#463]
+
 ### Changed
 
 - Update the MSRV to 1.86 and edition 2024
   [#430](https://github.com/astarte-platform/astarte-message-hub/pull/430)
+- The dynamic configuration needs to be enable manually via config, cli or env [#436]
+- You can start the HTTP or gRPC config server separately [#436]
+- The default store directory is no longer the current working directory but the user data directory
+  [#463]
+
+[#436]: https://github.com/astarte-platform/astarte-message-hub/pull/436
 
 ## [0.9.2] - 2026-01-29
 

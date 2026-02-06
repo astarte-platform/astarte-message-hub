@@ -16,7 +16,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use zbus::proxy;
+//! Message Hub configuration via DBus
+
+use eyre::eyre;
+use tracing::info;
+use zbus::{Connection, proxy};
 
 #[proxy(
     interface = "io.edgehog.Device1",
@@ -25,4 +29,33 @@ use zbus::proxy;
 )]
 pub(crate) trait Device {
     fn get_hardware_id(&self, namespace: &str) -> zbus::Result<String>;
+}
+
+// TODO: mock the dbus interface
+/// DBus configuration handler
+#[derive(Debug)]
+pub struct DbusConfig<P> {
+    proxy: P,
+}
+
+impl<'a> DbusConfig<DeviceProxy<'a>> {
+    /// Create the dbus config for the given connection
+    pub async fn connect(connection: &'a Connection) -> eyre::Result<Self> {
+        let proxy = DeviceProxy::new(connection).await?;
+
+        Ok(Self { proxy })
+    }
+
+    /// Gets the device id from the Hardware Id using DBUS.
+    pub async fn device_id_from_hardware_id(&self) -> eyre::Result<String> {
+        let hardware_id = self.proxy.get_hardware_id("").await?;
+
+        if hardware_id.is_empty() {
+            return Err(eyre!("DBUS hardware ID is empty"));
+        }
+
+        info!(hardware_id, "hardware id retrieved");
+
+        Ok(hardware_id)
+    }
 }
