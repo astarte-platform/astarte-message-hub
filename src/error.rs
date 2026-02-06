@@ -1,23 +1,20 @@
-/*
- * This file is part of Astarte.
- *
- * Copyright 2022 SECO Mind Srl
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-//! Contains the error types used in this crate.
+// This file is part of Astarte.
+//
+// Copyright 2022, 2026 SECO Mind Srl
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 
 //! Errors for the message hub.
 
@@ -25,10 +22,9 @@ use std::io;
 use std::path::PathBuf;
 
 use astarte_device_sdk::introspection::AddInterfaceError;
-use astarte_device_sdk::transport::grpc::convert::MessageHubProtoError;
 use astarte_interfaces::error::Error as InterfaceError;
 use astarte_message_hub_proto::prost::UnknownEnumValue;
-use log::{debug, error};
+use log::debug;
 use tonic::{Code, Status};
 use uuid::Uuid;
 
@@ -75,10 +71,6 @@ pub enum AstarteMessageHubError {
     #[error("couldn't convert timestamp, {0}")]
     Timestamp(&'static str),
 
-    /// Astarte Message Hub proto error
-    #[error("Astarte Message Hub proto error, {0}")]
-    Proto(#[from] MessageHubProtoError),
-
     /// Error returned by  the device
     #[error("error returned by the device")]
     Device(#[from] DeviceError),
@@ -115,6 +107,13 @@ pub enum AstarteMessageHubError {
         /// The node ID
         node_id: Uuid,
     },
+
+    /// Couldn't convert value from or to proto
+    #[error("couldn't convert value {ctx}")]
+    Conversion {
+        /// Reason why the conversion failed
+        ctx: &'static str,
+    },
 }
 
 impl From<AstarteMessageHubError> for Status {
@@ -135,10 +134,10 @@ impl From<AstarteMessageHubError> for Status {
             AstarteMessageHubError::Device(ref err) => err.into(),
             AstarteMessageHubError::AstarteInvalidData(_)
             | AstarteMessageHubError::Timestamp(_)
-            | AstarteMessageHubError::Proto(_)
             | AstarteMessageHubError::Uuid(_)
             | AstarteMessageHubError::NodeId(_)
             | AstarteMessageHubError::InvalidProtoOwnership(_)
+            | AstarteMessageHubError::Conversion { .. }
             | AstarteMessageHubError::MissingInterface { .. } => Code::InvalidArgument,
         };
 

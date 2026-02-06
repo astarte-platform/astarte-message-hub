@@ -1,12 +1,12 @@
 # This file is part of Astarte.
 #
-# Copyright 2024 SECO Mind Srl
+# Copyright 2024, 2026 SECO Mind Srl
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+#    http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,35 +18,45 @@
 
 [package]
 name = "e2e-test"
-version = { workspace = true }
-edition = { workspace = true }
-homepage = { workspace = true }
-license = { workspace = true }
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
 publish = false
-repository = { workspace = true }
-rust-version = { workspace = true }
+repository.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 astarte-device-sdk = { workspace = true, features = ["derive", "message-hub"] }
-astarte-interfaces = { workspace = true }
+astarte-interfaces.workspace = true
 astarte-message-hub = { path = ".." }
-astarte-message-hub-proto = { workspace = true }
-base64 = { workspace = true }
-chrono = { workspace = true }
-color-eyre = { workspace = true }
-eyre = { workspace = true }
-futures = { workspace = true }
-hyper = { workspace = true }
-itertools = { workspace = true }
-reqwest = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-stable-eyre = { workspace = true }
-tempfile = { workspace = true }
+astarte-message-hub-proto.workspace = true
+base64.workspace = true
+chrono.workspace = true
+color-eyre.workspace = true
+eyre.workspace = true
+futures.workspace = true
+itertools.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
 tokio = { workspace = true, features = ["full"] }
-tonic = { workspace = true }
-tower = { workspace = true }
+tokio-util.workspace = true
+tonic.workspace = true
+tower.workspace = true
 tower-http = { workspace = true, features = ["trace"] }
-tracing = { workspace = true }
+tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-uuid = { workspace = true }
+uuid.workspace = true
+
+[dependencies.reqwest]
+workspace = true
+default-features = false
+features = [
+  "charset",
+  "http2",
+  "system-proxy",
+  "rustls-no-provider",
+  "json",
+]

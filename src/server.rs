@@ -1,23 +1,20 @@
-/*
- * This file is part of Astarte.
- *
- * Copyright 2022 SECO Mind Srl
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-//! Contains the implementation for the Astarte message hub.
+// This file is part of Astarte.
+//
+// Copyright 2022, 2026 SECO Mind Srl
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
@@ -28,23 +25,19 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use astarte_device_sdk::store::StoredProp;
-use astarte_interfaces::{interface::Ownership, Interface};
+use astarte_interfaces::Interface;
 use astarte_message_hub_proto::message_hub_server::MessageHub;
 use astarte_message_hub_proto::{
-    AstarteData, AstarteMessage, AstartePropertyIndividual, InterfaceName, InterfacesJson,
-    InterfacesName, MessageHubEvent, Node, Property, PropertyFilter, PropertyIdentifier,
-    StoredProperties,
+    AstarteMessage, AstartePropertyIndividual, InterfaceName, InterfacesJson, InterfacesName,
+    MessageHubEvent, Node, PropertyFilter, PropertyIdentifier, StoredProperties,
 };
-use hyper::{http, Uri};
+use axum::http::{self, Uri};
 use itertools::Itertools;
 use log::{debug, error, info, trace};
-use pbjson_types::Empty;
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::body::BoxBody;
-use tonic::metadata::errors::InvalidMetadataValueBytes;
 use tonic::metadata::MetadataMap;
+use tonic::metadata::errors::InvalidMetadataValueBytes;
 use tonic::{Request, Response, Status};
 use tower::{Layer, Service};
 use uuid::Uuid;
@@ -53,6 +46,7 @@ use crate::astarte::handler::DeviceError;
 use crate::astarte::{AstartePublisher, AstarteSubscriber, PropAccessExt};
 use crate::cache::Introspection;
 use crate::error::AstarteMessageHubError;
+use crate::messages::{convert_data_into_proto, map_stored_properties_to_proto};
 
 type Resp<T> = Result<Response<T>, AstarteMessageHubError>;
 
@@ -111,7 +105,7 @@ where
         Ok(Response::new(ReceiverStream::new(sub.receiver)))
     }
 
-    async fn detach_node(&self, id: &Uuid) -> Resp<Empty> {
+    async fn detach_node(&self, id: &Uuid) -> Resp<()> {
         info!("Node {id} Detach Request");
 
         // TODO we should receive this currently hardcoded `false` flag from the grpc method
@@ -121,14 +115,14 @@ where
         let mut nodes = self.nodes.write().await;
         nodes.remove(id);
 
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(()))
     }
 
     async fn add_interfaces_node(
         &self,
         node_id: &Uuid,
         interfaces_json: &InterfacesJson,
-    ) -> Resp<Empty> {
+    ) -> Resp<()> {
         let to_add = interfaces_json
             .interfaces_json
             .iter()
@@ -143,14 +137,14 @@ where
             .await?;
 
         self.introspection.store_many(interfaces.iter()).await;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(()))
     }
 
     async fn remove_interfaces_node(
         &self,
         node_id: &Uuid,
         interfaces_name: InterfacesName,
-    ) -> Resp<Empty> {
+    ) -> Resp<()> {
         let to_remove = HashSet::from_iter(interfaces_name.names);
 
         let removed = self
@@ -160,7 +154,7 @@ where
 
         self.introspection.remove_many(&removed).await;
 
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(()))
     }
 
     async fn get_node_properties(
@@ -220,37 +214,10 @@ where
             .astarte_handler
             .property(node_id, &prop_req.interface_name, &prop_req.path)
             .await?
-            .map(AstarteData::from);
+            .map(convert_data_into_proto);
 
         Ok(Response::new(AstartePropertyIndividual { data }))
     }
-}
-
-/// Map a list of stored properties to the respective protobuf version
-///
-/// Unset values will result in a conversion error.
-fn map_stored_properties_to_proto(
-    props: Vec<StoredProp>,
-) -> astarte_message_hub_proto::StoredProperties {
-    let properties = props
-        .into_iter()
-        .map(|prop| {
-            let ownership = match prop.ownership {
-                Ownership::Device => astarte_message_hub_proto::Ownership::Device,
-                Ownership::Server => astarte_message_hub_proto::Ownership::Server,
-            };
-
-            Property {
-                interface_name: prop.interface,
-                path: prop.path,
-                version_major: prop.interface_major,
-                ownership: ownership.into(),
-                data: Some(prop.value.into()),
-            }
-        })
-        .collect();
-
-    astarte_message_hub_proto::StoredProperties { properties }
 }
 
 /// Errors related to the interception of the NodeId into gRPC request
@@ -267,9 +234,9 @@ pub enum InterceptorError {
     /// Couldn't decode metadata binary value
     MetadataBytes(#[from] InvalidMetadataValueBytes),
     /// Invalid URI
-    InvalidUri(#[from] http::uri::InvalidUri),
+    InvalidUri(#[from] axum::http::uri::InvalidUri),
     /// Http error
-    Http(#[from] http::Error),
+    Http(#[from] axum::http::Error),
 }
 
 impl From<InterceptorError> for Status {
@@ -304,7 +271,7 @@ impl<S> Layer<S> for NodeIdInterceptorLayer {
     fn layer(&self, service: S) -> Self::Service {
         NodeIdInterceptor {
             inner: service,
-            msg_hub_nodes: self.msg_hub_nodes.clone(),
+            nodes: self.msg_hub_nodes.clone(),
         }
     }
 }
@@ -312,7 +279,7 @@ impl<S> Layer<S> for NodeIdInterceptorLayer {
 #[derive(Clone)]
 pub struct NodeIdInterceptor<S> {
     inner: S,
-    msg_hub_nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
+    nodes: Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
 }
 
 impl<S> NodeIdInterceptor<S> {
@@ -322,10 +289,10 @@ impl<S> NodeIdInterceptor<S> {
     /// cannot implement the `Sync` trait (as services in tonic cannot be Sync). To circumvent this
     /// problem, we pass a reference to the message hub nodes in the input to perform the necessary
     /// checks.
-    async fn check_node_id(
-        nodes: &Arc<RwLock<HashMap<Uuid, AstarteNode>>>,
-        req: hyper::Request<BoxBody>,
-    ) -> Result<hyper::Request<BoxBody>, InterceptorError> {
+    async fn check_node_id<ReqBody>(
+        nodes: &RwLock<HashMap<Uuid, AstarteNode>>,
+        req: http::Request<ReqBody>,
+    ) -> Result<http::Request<ReqBody>, InterceptorError> {
         // check if the request is an Attach rpc
         let is_attach = is_attach(req.uri());
 
@@ -416,28 +383,31 @@ fn node_id_from_ascii(metadata: &MetadataMap) -> Result<Option<Uuid>, Intercepto
         .map_err(InterceptorError::Uuid)
 }
 
-impl<S> Service<hyper::Request<BoxBody>> for NodeIdInterceptor<S>
+impl<S, ReqBody, ResBody> Service<http::request::Request<ReqBody>> for NodeIdInterceptor<S>
 where
-    S: Service<hyper::Request<BoxBody>, Response = hyper::Response<BoxBody>>
+    S: Service<http::request::Request<ReqBody>, Response = http::response::Response<ResBody>>
         + Clone
         + Send
         + 'static,
     S::Future: Send + 'static,
+    ReqBody: Send + 'static,
+    ResBody: Default,
 {
     type Response = S::Response;
     type Error = S::Error;
     type Future = futures::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx).map_err(S::Error::into)
+        self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: hyper::Request<BoxBody>) -> Self::Future {
-        let clone = self.clone();
-        let mut service = std::mem::replace(self, clone);
+    fn call(&mut self, req: http::Request<ReqBody>) -> Self::Future {
+        let nodes = Arc::clone(&self.nodes);
+        let clone = self.inner.clone();
+        let mut inner = std::mem::replace(&mut self.inner, clone);
 
         Box::pin(async move {
-            let checked_req = match Self::check_node_id(&service.msg_hub_nodes, req).await {
+            let checked_req = match Self::check_node_id(&nodes, req).await {
                 Ok(req) => req,
                 // return a response with the status code related to the given error
                 Err(err) => {
@@ -445,7 +415,7 @@ where
                 }
             };
 
-            service.inner.call(checked_req).await
+            inner.call(checked_req).await
         })
     }
 }
@@ -551,6 +521,7 @@ where
     /// use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
     /// use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     /// use astarte_message_hub_proto::AstarteMessage;
+    /// use astarte_message_hub_proto::prost_types::Timestamp;
     /// use tonic::transport::channel::Endpoint;
     /// use tonic::metadata::MetadataValue;
     /// use uuid::Uuid;
@@ -588,7 +559,7 @@ where
     ///         path: "uptimeSeconds".to_string(),
     ///         payload: Some(Payload::DatastreamIndividual(AstarteDatastreamIndividual {
     ///             data: Some(AstarteData { astarte_data: Some(ProtoData::Integer(5) )}),
-    ///             timestamp: Some(chrono::Utc::now().into()),
+    ///             timestamp: Some(Timestamp{ seconds: 1769788312, nanos: 0 }),
     ///         }))
     ///     };
     ///
@@ -597,7 +568,7 @@ where
     ///     Ok(())
     ///
     /// }
-    async fn send(&self, request: Request<AstarteMessage>) -> Result<Response<Empty>, Status> {
+    async fn send(&self, request: Request<AstarteMessage>) -> Result<Response<()>, Status> {
         let node_id = request.get_node_id()?;
         debug!("Node {node_id} Send Request");
 
@@ -608,12 +579,12 @@ where
             error!("{err_msg}");
             Err(Status::internal(err_msg))
         } else {
-            Ok(Response::new(Empty {}))
+            Ok(Response::new(()))
         }
     }
 
     /// Remove an existing Node from Astarte Message Hub.
-    async fn detach(&self, request: Request<Empty>) -> Result<Response<Empty>, Status> {
+    async fn detach(&self, request: Request<()>) -> Result<Response<()>, Status> {
         let id = request.get_node_id()?;
 
         self.detach_node(id).await.map_err(Status::from)
@@ -622,7 +593,7 @@ where
     async fn add_interfaces(
         &self,
         request: Request<InterfacesJson>,
-    ) -> Result<Response<Empty>, Status> {
+    ) -> Result<Response<()>, Status> {
         // retrieve the node id
         let node_id = request.get_node_id()?;
 
@@ -638,7 +609,7 @@ where
     async fn remove_interfaces(
         &self,
         request: Request<InterfacesName>,
-    ) -> Result<Response<Empty>, Status> {
+    ) -> Result<Response<()>, Status> {
         // retrieve the node id
         let node_id = *request.get_node_id()?;
 
@@ -731,23 +702,23 @@ impl AstarteNode {
 
 #[cfg(test)]
 mod test {
-    use astarte_device_sdk::store::StoredProp;
     use astarte_device_sdk::AstarteData as AstarteDataSdk;
+    use astarte_device_sdk::store::StoredProp;
     use astarte_interfaces::error::Error as InterfaceError;
+    use astarte_interfaces::schema::Ownership;
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::astarte_message::Payload;
     use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
     use async_trait::async_trait;
-    use hyper::{Response, StatusCode};
     use mockall::mock;
     use std::collections::HashMap;
     use std::io;
     use std::io::ErrorKind;
     use std::ops::Deref;
     use std::sync::Arc;
-    use tokio::sync::mpsc;
     use tokio::sync::RwLock;
-    use tonic::body::BoxBody;
+    use tokio::sync::mpsc;
+    use tonic::body::Body;
     use tonic::metadata::{MetadataMap, MetadataValue};
     use tonic::{Code, Request, Status};
     use tower::{Service, ServiceBuilder};
@@ -757,8 +728,8 @@ mod test {
     use crate::astarte::{AstartePublisher, AstarteSubscriber};
     use crate::error::AstarteMessageHubError;
     use crate::server::{
-        node_id_from_ascii, node_id_from_bin, AstarteNode, InterceptorError, NodeId,
-        NodeIdInterceptorLayer,
+        AstarteNode, InterceptorError, NodeId, NodeIdInterceptorLayer, node_id_from_ascii,
+        node_id_from_bin,
     };
 
     use super::*;
@@ -1104,7 +1075,7 @@ mod test {
 
         assert!(attach(TEST_UUID, &astarte_message).await.is_ok());
 
-        let mut req_node_detach = Request::new(Empty {});
+        let mut req_node_detach = Request::new(());
         add_metadata_node_id(TEST_UUID, &mut req_node_detach);
         let detach_result = astarte_message.detach(req_node_detach).await;
 
@@ -1127,7 +1098,7 @@ mod test {
         let astarte_message: AstarteMessageHub<MockAstarteHandler> =
             AstarteMessageHub::new(mock_astarte, tmp.path());
 
-        let mut req_node = Request::new(Empty {});
+        let mut req_node = Request::new(());
 
         // it is necessary to add the NodeId extensions otherwise sending is not allowed
         req_node.extensions_mut().insert(NodeId(TEST_UUID));
@@ -1170,7 +1141,7 @@ mod test {
         req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
         assert!(astarte_message.attach(req_node_attach).await.is_ok());
 
-        let mut req_node_detach = Request::new(Empty {});
+        let mut req_node_detach = Request::new(());
         req_node_detach.extensions_mut().insert(NodeId(TEST_UUID));
         let detach_result = astarte_message.detach(req_node_detach).await;
 
@@ -1519,17 +1490,17 @@ mod test {
         assert!(res.is_some());
     }
 
-    fn create_http_req(uri: &str) -> hyper::Request<BoxBody> {
-        hyper::Request::builder()
+    fn create_http_req(uri: &str) -> http::Request<Body> {
+        http::Request::builder()
             .uri(uri)
-            .body(BoxBody::default())
+            .body(Body::default())
             .expect("failed to create http req")
     }
 
-    fn create_http_req_with_metadata_node_id(uri: &str) -> hyper::Request<BoxBody> {
-        let req = hyper::Request::builder()
+    fn create_http_req_with_metadata_node_id(uri: &str) -> http::Request<Body> {
+        let req = http::Request::builder()
             .uri(uri)
-            .body(BoxBody::default())
+            .body(Body::default())
             .expect("failed to create http req");
 
         let (mut parts, body) = req.into_parts();
@@ -1538,25 +1509,22 @@ mod test {
         metadata.insert_bin("node-id-bin", metadata_val);
         parts.headers = metadata.into_headers();
 
-        hyper::Request::from_parts(parts, body)
+        http::Request::from_parts(parts, body)
     }
 
     fn create_node_interceptor_service(
         hm: HashMap<Uuid, AstarteNode>,
-    ) -> impl Service<
-        hyper::Request<BoxBody>,
-        Response = hyper::Response<BoxBody>,
-        Error = InterceptorError,
-    > {
+    ) -> impl Service<http::Request<Body>, Response = http::Response<Body>, Error = InterceptorError>
+    {
         let msg_hub_nodes = Arc::new(RwLock::new(hm));
 
         ServiceBuilder::new()
             .layer(NodeIdInterceptorLayer::new(msg_hub_nodes))
-            .service_fn(|_req: hyper::Request<BoxBody>| {
+            .service_fn(|_req: http::Request<Body>| {
                 futures::future::ready(
-                    Response::builder()
-                        .status(StatusCode::OK)
-                        .body(BoxBody::default())
+                    http::Response::builder()
+                        .status(http::StatusCode::OK)
+                        .body(Body::default())
                         .map_err(InterceptorError::Http),
                 )
             })

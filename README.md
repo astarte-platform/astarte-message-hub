@@ -1,7 +1,21 @@
-<!---
-  Copyright 2022 SECO Mind Srl
+<!--
+This file is part of Astarte.
 
-  SPDX-License-Identifier: Apache-2.0
+Copyright 2022-2026 SECO Mind Srl
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+SPDX-License-Identifier: Apache-2.0
 -->
 
 # Astarte Message Hub
@@ -70,6 +84,34 @@ ignore_ssl = false
 An example configuration file can be found in the
 [examples](https://github.com/astarte-platform/astarte-message-hub/blob/master/examples/message-hub-config.toml)
 direction.
+
+### Configuration in docker
+
+The message-hub is also distributed as a docker image available in the ghcr.
+Using the image you can quickly test out and connect nodes to the message hub.
+Remember to expose the grpc port (the default is 50051) if you need to accept
+external connections.
+You can use docker-compose or run it directly:
+
+Using an already registered device id:
+```sh
+docker run -e MSGHUB_REALM=realm \
+  -e MSGHUB_DEVICE_ID=s6USRuvRSv6Te7S2dVVh3Q \
+  -e MSGHUB_PAIRING_URL=https://api.eu1.astarte.cloud/pairing \
+  -e MSGHUB_CREDENTIALS_SECRET=your_secret \
+  -p 50051 ghcr.io/lucaato/astarte-message-hub:snapshot
+```
+Replace the environment values with the appropriate ones for your device.
+
+Or by using a pairing token:
+```sh
+docker run -e MSGHUB_REALM=realm \
+  -e MSGHUB_DEVICE_ID=s6USRuvRSv6Te7S2dVVh3Q \
+  -e MSGHUB_PAIRING_URL=https://api.eu1.astarte.cloud/pairing \
+  -e MSGHUB_PAIRING_TOKEN=your_pairing_token \
+  -p 50051 ghcr.io/lucaato/astarte-message-hub:snapshot
+```
+Replace the environment values with the appropriate ones for your device.
 
 ### Override the configuration file
 

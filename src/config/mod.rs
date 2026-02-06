@@ -1,23 +1,22 @@
-/*
- * This file is part of Astarte.
- *
- * Copyright 2022 SECO Mind Srl
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-//! Helper module to retrieve the configuration of the Astarte message hub.
+// This file is part of Astarte.
+//
+// Copyright 2022, 2026 SECO Mind Srl
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
+
+//! Configuration for the Message Hub.
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -25,11 +24,13 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use astarte_device_fdo::srv_info::AstarteMod;
 use astarte_device_sdk::store::sqlite::Size;
 use astarte_device_sdk::transport::mqtt::Credential;
 use log::debug;
 use serde::{Deserialize, Serialize};
 use tokio::{fs, sync::Notify};
+use tracing::info;
 
 use crate::config::http::HttpConfigProvider;
 use crate::config::protobuf::ProtobufConfigProvider;
@@ -84,6 +85,9 @@ pub struct Config {
     /// Astarte device SDK options.
     #[serde(skip_serializing_if = "DeviceSdkOptions::is_default", default)]
     pub astarte: DeviceSdkOptions,
+    /// FIDO Device Onboarding configuration.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub fdo: Option<FdoConfig>,
 }
 
 impl Config {
@@ -140,14 +144,35 @@ impl Config {
 
     /// Validate the values are present for the server configuration.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.fdo.as_ref().is_some_and(|fdo| fdo.enabled) {
+            info!("FDO is enabled");
+        } else {
+            self.validate_pairing_config()?;
+        }
+
+        if self
+            .interfaces_directory
+            .as_ref()
+            .is_some_and(|p| !p.is_dir())
+        {
+            return Err(ConfigError::InvalidInterfaceDirectory(
+                self.interfaces_directory.clone(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validates that the configuration is usable with pairing.
+    fn validate_pairing_config(&self) -> Result<(), ConfigError> {
         if !self.realm.as_ref().is_some_and(|realm| !realm.is_empty()) {
             return Err(ConfigError::MissingField("realm"));
         }
 
-        if !self
+        if self
             .device_id
             .as_ref()
-            .is_some_and(|device_id| !device_id.is_empty())
+            .is_none_or(|device_id| device_id.is_empty())
         {
             return Err(ConfigError::MissingField("device_id"));
         }
@@ -166,26 +191,12 @@ impl Config {
             return Err(ConfigError::Credentials);
         }
 
-        if !self
+        if self
             .pairing_url
             .as_ref()
-            .is_some_and(|pairing_url| !pairing_url.is_empty())
+            .is_none_or(|pairing_url| pairing_url.is_empty())
         {
             return Err(ConfigError::MissingField("pairing_url"));
-        }
-
-        if self.store_directory.is_none() {
-            return Err(ConfigError::MissingField("store_directory"));
-        }
-
-        if self
-            .interfaces_directory
-            .as_ref()
-            .is_some_and(|p| !p.is_dir())
-        {
-            return Err(ConfigError::InvalidInterfaceDirectory(
-                self.interfaces_directory.clone(),
-            ));
         }
 
         Ok(())
@@ -213,8 +224,6 @@ impl Config {
     /// Gets the device id from the Hardware Id using DBUS.
     #[cfg(test)]
     pub async fn device_id_from_hardware_id(&mut self) -> Result<(), AstarteMessageHubError> {
-        use log::info;
-
         info!("retrieve mock-id");
 
         self.device_id = Some("mock-id".to_string());
@@ -255,7 +264,7 @@ impl Config {
                     "failed to read {}: {}",
                     path.to_string_lossy(),
                     err
-                )))
+                )));
             }
         };
 
@@ -299,6 +308,23 @@ impl Config {
         };
 
         Ok(config)
+    }
+
+    /// Merges the configuration with the one from FDO
+    pub fn with_fdo(mut self, amod: AstarteMod<'static>) -> Result<MessageHubOptions, ConfigError> {
+        let AstarteMod {
+            realm,
+            secret,
+            base_url,
+            device_id,
+        } = amod;
+
+        self.realm.replace(realm.into());
+        self.credentials_secret.replace(secret.into());
+        self.pairing_url.replace(format!("{base_url}/pairing"));
+        self.device_id.replace(device_id.into());
+
+        self.try_into()
     }
 }
 
@@ -421,7 +447,7 @@ pub struct DeviceSdkOptions {
     /// Astarte device SDK volatile store options.
     #[serde(skip_serializing_if = "DeviceSdkVolatileOptions::is_default", default)]
     pub volatile: DeviceSdkVolatileOptions,
-    /// Astarte device SDK peristent store options.
+    /// Astarte device SDK persistent store options.
     #[serde(skip_serializing_if = "DeviceSdkStoreOptions::is_default", default)]
     pub store: DeviceSdkStoreOptions,
 }
@@ -469,6 +495,17 @@ impl DeviceSdkVolatileOptions {
     }
 }
 
+/// Options to setuop FIDO Device Onboarding
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename = "astarte")]
+pub struct FdoConfig {
+    /// Flag to enable the FDO protocol
+    #[serde(default)]
+    pub enabled: bool,
+    /// Manufacturing URL for Device Initialization.
+    pub manufactoring_url: String,
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -488,6 +525,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let res = expected_msg_hub_opts.validate();
@@ -511,6 +549,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let res = expected_msg_hub_opts.validate();
@@ -533,6 +572,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -553,6 +593,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         let res = expected_msg_hub_opts.validate();
         assert!(res.is_err());
@@ -574,6 +615,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -594,6 +636,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -614,6 +657,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -634,6 +678,7 @@ mod test {
             grpc_socket_port: Some(5),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -654,6 +699,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
         assert!(expected_msg_hub_opts.validate().is_err());
         MessageHubOptions::try_from(expected_msg_hub_opts).unwrap_err();
@@ -681,6 +727,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(dir.path().to_path_buf()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         opt.read_credential_secret().await.unwrap();
@@ -705,6 +752,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(dir.path().to_path_buf()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let res = opt.read_credential_secret().await;
@@ -733,6 +781,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(MessageHubOptions::default_store_directory()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let dir = tempfile::TempDir::new().unwrap();
@@ -770,6 +819,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(dir.path().to_path_buf()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let path = dir.path().join(CONFIG_FILE_NAME);
@@ -809,6 +859,7 @@ mod test {
             grpc_socket_port: Some(50051),
             store_directory: Some(PathBuf::from("/var/lib/message-hub")),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         assert_ne!(opts, expected);
@@ -836,6 +887,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(dir.path().to_path_buf()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         opt.device_id_from_hardware_id().await.unwrap();
@@ -865,6 +917,7 @@ mod test {
             grpc_socket_port: Some(655),
             store_directory: Some(dir.path().to_path_buf()),
             astarte: DeviceSdkOptions::default(),
+            fdo: None,
         };
 
         let device_id = opt.device_id_from_hardware_id().await;
