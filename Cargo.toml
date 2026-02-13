@@ -115,7 +115,7 @@ futures = "0.3.31"
 itertools = "0.14.0"
 log = "0.4.29"
 mockall = "0.14.0"
-reqwest = { version = "0.13.1", default-features = false }
+reqwest = { version = "0.13.2", default-features = false }
 rustls = "0.23.35"
 serde = "1.0.228"
 serde_json = "1.0.145"
