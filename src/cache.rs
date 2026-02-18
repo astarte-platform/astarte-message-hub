@@ -1,12 +1,12 @@
 // This file is part of Astarte.
 //
-// Copyright 2024 SECO Mind Srl
+// Copyright 2024, 2026 SECO Mind Srl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+//    http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,24 +21,28 @@
 use std::path::PathBuf;
 
 use astarte_interfaces::Interface;
-use log::{debug, error};
+use tracing::{debug, error};
+
+use crate::store::StoreDir;
 
 /// Caching for the device introspection.
-pub(crate) struct Introspection {
-    interface_dir: PathBuf,
+#[derive(Debug)]
+pub struct Introspection {
+    store_dir: StoreDir,
 }
 
 impl Introspection {
-    pub(crate) fn new(interface_dir: impl Into<PathBuf>) -> Self {
-        Self {
-            interface_dir: interface_dir.into(),
-        }
+    /// Uses the given directory to cache the node's introspeciton.
+    pub fn new(store_dir: StoreDir) -> Self {
+        Self { store_dir }
     }
 
     pub(crate) async fn store(&self, interface: &Interface) {
         debug!("caching {}", interface.interface_name());
 
-        let file = self.interface_file(interface.interface_name());
+        let Some(file) = self.interface_file(interface.interface_name()).await else {
+            return;
+        };
 
         let contents = match serde_json::to_vec(interface) {
             Ok(i) => i,
@@ -57,8 +61,14 @@ impl Introspection {
         }
     }
 
-    fn interface_file(&self, interface_name: &str) -> PathBuf {
-        self.interface_dir.join(format!("{interface_name}.json"))
+    async fn interface_file(&self, interface_name: &str) -> Option<PathBuf> {
+        self.store_dir
+            .get_interfaces_cache_dir()
+            .await
+            .map(|mut p| {
+                p.push(format!("{interface_name}.json"));
+                p
+            })
     }
 
     pub(crate) async fn store_many<'a, I>(&self, interfaces: I)
@@ -76,7 +86,9 @@ impl Introspection {
     {
         debug!("removind interface {}", interface_name.as_ref());
 
-        let file = self.interface_file(interface_name.as_ref());
+        let Some(file) = self.interface_file(interface_name.as_ref()).await else {
+            return;
+        };
 
         if let Err(err) = tokio::fs::remove_file(&file).await {
             error!("couldn't remove interface file {}: {err}", file.display());
@@ -95,8 +107,11 @@ impl Introspection {
 
 #[cfg(test)]
 mod tests {
-    use std::{io, path::Path, str::FromStr};
+    use std::io;
+    use std::str::FromStr;
+    use std::sync::Arc;
 
+    use rstest::{fixture, rstest};
     use tempfile::TempDir;
     use tokio::fs;
 
@@ -109,18 +124,34 @@ mod tests {
         "../e2e-test/interfaces/org.astarte-platform.rust.e2etest.DeviceAggregate.json"
     );
 
-    #[tokio::test]
-    async fn should_store() {
+    #[fixture]
+    fn error_instrospeciton() -> Introspection {
+        Introspection {
+            store_dir: StoreDir {
+                store_dir: Arc::from(PathBuf::from("/dev/null")),
+            },
+        }
+    }
+
+    async fn introspection() -> (Introspection, TempDir) {
         let dir = TempDir::new().unwrap();
 
-        let intro = Introspection::new(dir.path());
+        let store_dir = StoreDir::create(dir.path().to_path_buf()).await.unwrap();
 
+        (Introspection::new(store_dir), dir)
+    }
+
+    #[tokio::test]
+    async fn should_store() {
         let interface = Interface::from_str(DEVICE_PROPERTY).unwrap();
+
+        let (intro, dir) = introspection().await;
 
         intro.store(&interface).await;
 
         let cached = fs::read_to_string(
             dir.path()
+                .join("interfaces")
                 .join("org.astarte-platform.rust.e2etest.DeviceProperty.json"),
         )
         .await
@@ -131,22 +162,21 @@ mod tests {
         assert_eq!(res, interface);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn store_should_not_error() {
-        let dir = Path::new("/foo/bar/none-existing");
+    async fn store_should_not_error(error_instrospeciton: Introspection) {
+        let interface = Interface::from_str(DEVICE_PROPERTY).unwrap();
 
-        let intro = Introspection::new(dir);
+        error_instrospeciton.store(&interface).await;
 
         let interface = Interface::from_str(DEVICE_PROPERTY).unwrap();
 
-        intro.store(&interface).await;
+        error_instrospeciton.store(&interface).await;
     }
 
     #[tokio::test]
     async fn should_store_many() {
-        let dir = TempDir::new().unwrap();
-
-        let intro = Introspection::new(dir.path());
+        let (intro, dir) = introspection().await;
 
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
@@ -157,6 +187,7 @@ mod tests {
 
         let cached = fs::read_to_string(
             dir.path()
+                .join("interfaces")
                 .join("org.astarte-platform.rust.e2etest.DeviceProperty.json"),
         )
         .await
@@ -168,6 +199,7 @@ mod tests {
 
         let cached = fs::read_to_string(
             dir.path()
+                .join("interfaces")
                 .join("org.astarte-platform.rust.e2etest.DeviceAggregate.json"),
         )
         .await
@@ -178,25 +210,20 @@ mod tests {
         assert_eq!(res, agg);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn store_many_should_not_error() {
-        let dir = Path::new("/foo/bar/none-existing");
-
-        let intro = Introspection::new(dir);
-
+    async fn store_many_should_not_error(error_instrospeciton: Introspection) {
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
 
         let exp = [prop.clone(), agg.clone()];
 
-        intro.store_many(&exp).await;
+        error_instrospeciton.store_many(&exp).await;
     }
 
     #[tokio::test]
     async fn should_remove() {
-        let dir = TempDir::new().unwrap();
-
-        let intro = Introspection::new(dir.path());
+        let (intro, dir) = introspection().await;
 
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
@@ -207,6 +234,7 @@ mod tests {
 
         let cached = dir
             .path()
+            .join("interfaces")
             .join("org.astarte-platform.rust.e2etest.DeviceProperty.json");
 
         assert!(cached.is_file());
@@ -218,25 +246,20 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn remove_should_not_error() {
-        let dir = Path::new("/foo/bar/none-existing");
-
-        let intro = Introspection::new(dir);
-
+    async fn remove_should_not_error(error_instrospeciton: Introspection) {
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
 
         let exp = [prop.clone(), agg.clone()];
 
-        intro.store_many(&exp).await;
+        error_instrospeciton.store_many(&exp).await;
     }
 
     #[tokio::test]
     async fn should_remove_many() {
-        let dir = TempDir::new().unwrap();
-
-        let intro = Introspection::new(dir.path());
+        let (intro, dir) = introspection().await;
 
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
@@ -247,6 +270,7 @@ mod tests {
 
         let cached = dir
             .path()
+            .join("interfaces")
             .join("org.astarte-platform.rust.e2etest.DeviceProperty.json");
 
         assert!(cached.is_file());
@@ -258,19 +282,18 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn remove_many_should_not_error() {
-        let dir = Path::new("/foo/bar/none-existing");
-
-        let intro = Introspection::new(dir);
-
+    async fn remove_many_should_not_error(error_instrospeciton: Introspection) {
         let prop = Interface::from_str(DEVICE_PROPERTY).unwrap();
         let agg = Interface::from_str(DEVICE_AGGREGATE).unwrap();
 
         let exp = [prop.clone(), agg.clone()];
 
-        intro.store_many(&exp).await;
+        error_instrospeciton.store_many(&exp).await;
 
-        intro.remove_many(&[prop.interface_name()]).await;
+        error_instrospeciton
+            .remove_many(&[prop.interface_name()])
+            .await;
     }
 }

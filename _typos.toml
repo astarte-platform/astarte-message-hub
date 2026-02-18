@@ -16,24 +16,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-realm = "example_realm"
-device_id = "YOUR_UNIQUE_DEVICE_ID"
-pairing_url = "https://api.astarte.EXAMPLE.COM/pairing"
-grpc_socket_port = 50051
-interfaces_directory = "/usr/share/message-hub/astarte-interfaces/"
-pairing_token = "YOUR_PAIRING_TOKEN"
-# credentials_secret = "YOUR_CREDENTIAL_SECRET"
-store_directory = "/var/lib/message-hub"
-
-[astarte]
-ignore_ssl = false
-# keep_alive_secs = 30
-# timeout_secs = 5
-
-# [astarte.volatile]
-# max_retention_items = 1000
-
-# [astarte.store]
-# max_db_size = { value = 1, unit = "gib" }
-# max_db_journal_size = { value = 64, unit = "mib" }
-# max_retention_items = 1_000_000
+[default.extend-words]
+flate2 = "flate2"
+# serde
+ser = "ser"
