@@ -256,7 +256,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "toml",
- "tonic 0.14.4",
+ "tonic 0.14.5",
  "tower 0.5.3",
  "tower-http",
  "tracing",
@@ -294,7 +294,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "tonic 0.14.4",
+ "tonic 0.14.5",
  "tonic-prost",
  "uuid",
 ]
@@ -938,7 +938,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
- "tonic 0.14.4",
+ "tonic 0.14.5",
  "tower 0.5.3",
  "tower-http",
  "tracing",
@@ -3427,9 +3427,9 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.14.4"
+version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f32a6f80051a4111560201420c7885d0082ba9efe2ab61875c587bb6b18b9a0"
+checksum = "fec7c61a0695dc1887c1b53952990f3ad2e3a31453e1f49f10e75424943a93ec"
 dependencies = [
  "async-trait",
  "axum 0.8.8",
@@ -3462,7 +3462,7 @@ checksum = "9f86539c0089bfd09b1f8c0ab0239d80392af74c21bc9e0f15e1b4aca4c1647f"
 dependencies = [
  "bytes",
  "prost 0.14.3",
- "tonic 0.14.4",
+ "tonic 0.14.5",
 ]
 
 [[package]]
