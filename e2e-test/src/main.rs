@@ -19,6 +19,7 @@
 use std::str::FromStr;
 use std::{env::VarError, future::Future, sync::Arc};
 
+use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::transport::grpc::Grpc;
 use astarte_device_sdk::{DeviceClient, Value, prelude::*};
 use astarte_interfaces::Interface;
@@ -27,7 +28,7 @@ use interfaces::ServerAggregate;
 use itertools::Itertools;
 use tempfile::tempdir;
 use tokio::{sync::Barrier, task::JoinSet};
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::{Uuid, uuid};
 
@@ -73,6 +74,7 @@ async fn main() -> eyre::Result<()> {
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .with(filter)
+        .with(tracing_error::ErrorLayer::default())
         .try_init()?;
 
     rustls::crypto::aws_lc_rs::default_provider()
@@ -177,37 +179,40 @@ async fn e2e_test(
 
 async fn send<F, O>(node: &Node, barrier: &Barrier, f: F) -> eyre::Result<()>
 where
-    F: FnOnce(DeviceClient<Grpc>) -> O,
+    F: FnOnce(DeviceClient<Grpc<MemoryStore>>) -> O,
     O: Future<Output = eyre::Result<()>> + Send + 'static,
 {
     let client = node.client.clone();
     let handle = tokio::spawn((f)(client));
 
     // wait for send call
-    tokio::time::timeout(tokio::time::Duration::from_secs(5), barrier.wait()).await?;
+    tokio::time::timeout(tokio::time::Duration::from_secs(5), barrier.wait())
+        .await
+        .wrap_err("send barrier timeout")?;
 
     handle.await?
 }
 
+#[instrument(skip_all)]
 async fn send_prop<F, O>(node: &Node, barrier: &Barrier, f: F) -> eyre::Result<()>
 where
-    F: FnOnce(DeviceClient<Grpc>) -> O,
+    F: FnOnce(DeviceClient<Grpc<MemoryStore>>) -> O,
     O: Future<Output = eyre::Result<()>> + Send + 'static,
 {
     let client = node.client.clone();
     let handle = tokio::spawn((f)(client));
 
-    // wait for inner try_load_prop call
-    barrier.wait().await;
     // wait for send call
-    barrier.wait().await;
+    tokio::time::timeout(tokio::time::Duration::from_secs(5), barrier.wait())
+        .await
+        .wrap_err("send call")?;
 
     handle.await?
 }
 
 #[instrument(skip_all)]
 async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre::Result<()> {
-    debug!("sending DeviceAggregate");
+    info!("sending DeviceAggregate");
     send(node, barrier, |mut client| async move {
         client
             .send_object_with_timestamp(
@@ -235,7 +240,7 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
     })
     .await?;
 
-    debug!("sending DeviceDatastream");
+    info!("sending DeviceDatastream");
     let mut data = DeviceDatastream::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
@@ -268,7 +273,7 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
     })
     .await?;
 
-    debug!("sending DeviceProperty");
+    info!("sending DeviceProperty");
     let mut data = DeviceProperty::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
@@ -305,7 +310,6 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
                 .await?
                 .ok_or_eyre(format!("property endpoint {endpoint} not stored"))
         });
-        barrier.wait().await;
         let stored_prop = handle.await??;
 
         let exp_value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
@@ -317,7 +321,6 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
     let mut data = DeviceProperty::default().into_object()?;
     let client = node.client.clone();
     let handle = tokio::spawn(async move { client.interface_props(DeviceProperty::name()).await });
-    barrier.wait().await;
     let stored_prop = handle.await??;
     for prop in stored_prop {
         let exp_value = data
@@ -330,7 +333,6 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
     let mut data = DeviceProperty::default().into_object()?;
     let client = node.client.clone();
     let handle = tokio::spawn(async move { client.device_props().await });
-    barrier.wait().await;
     let stored_prop = handle.await??;
     for prop in stored_prop {
         let exp_value = data
@@ -422,7 +424,9 @@ async fn receive_server_data(node: &mut Node, api: &Api, barrier: &Barrier) -> e
     let mut data = ServerProperty::default().into_object()?;
     let client = node.client.clone();
     let handle = tokio::spawn(async move { client.server_props().await });
-    barrier.wait().await;
+    tokio::time::timeout(tokio::time::Duration::from_secs(5), barrier.wait())
+        .await
+        .wrap_err("server props")?;
     let stored_prop = handle.await??;
     for prop in stored_prop {
         let exp_value = data
@@ -470,7 +474,9 @@ async fn extend_node_interfaces(
     let mut client = node.client.clone();
     let handle = tokio::spawn(async move { client.extend_interfaces(to_add).await });
 
-    barrier.wait().await;
+    tokio::time::timeout(tokio::time::Duration::from_secs(5), barrier.wait())
+        .await
+        .wrap_err("extend interfaces")?;
 
     let mut added = handle.await??;
     added.sort();
@@ -500,7 +506,7 @@ async fn extend_node_interfaces(
     })
     .await?;
 
-    debug!("sending AdditionalDeviceDatastream");
+    info!("sending AdditionalDeviceDatastream");
     let mut data = AdditionalDeviceDatastream::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
@@ -548,7 +554,9 @@ async fn remove_node_interfaces(
     let to_remove_cl = to_remove.clone();
     let handle = tokio::spawn(async move { client.remove_interfaces(to_remove_cl).await });
 
-    barrier.wait().await;
+    tokio::time::timeout(tokio::time::Duration::from_secs(5), barrier.wait())
+        .await
+        .wrap_err("remove interfaces")?;
 
     let mut removed = handle.await??;
     removed.sort();

@@ -4,7 +4,7 @@ expression: config
 ---
 realm = '1'
 device_id = '2'
-pairing_url = '3'
+pairing_url = 'http://api.astarte.localhost/pairing'
 credentials_secret = '4'
 pairing_token = '5'
 interfaces_directory = '/foo'

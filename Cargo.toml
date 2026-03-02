@@ -29,7 +29,7 @@ edition = "2024"
 homepage = "https://astarte.cloud/"
 license = "Apache-2.0"
 repository = "https://github.com/astarte-platform/astarte-message-hub"
-rust-version = "1.86"
+rust-version = "1.88"
 
 [package]
 name = "astarte-message-hub"
@@ -65,6 +65,7 @@ axum.workspace = true
 chrono.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 color-eyre.workspace = true
+tracing-error.workspace = true
 dirs.workspace = true
 displaydoc.workspace = true
 eyre.workspace = true
@@ -84,12 +85,13 @@ tower-http = { workspace = true, features = ["trace"] }
 tracing.workspace = true
 tracing-journald.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
+url.workspace = true
 uuid.workspace = true
 zbus = { workspace = true, default-features = false, features = ["tokio"] }
 
 # C dependencies
 aws-lc-rs = { version = "1.15.1", optional = true }
-rusqlite = { version = "0.32.1", optional = true }
+rusqlite = { version = "0.36.0", optional = true }
 
 [dev-dependencies]
 astarte-device-sdk = { workspace = true, features = ["derive", "message-hub"] }
@@ -102,8 +104,8 @@ rstest.workspace = true
 tempfile.workspace = true
 
 [workspace.dependencies]
-astarte-device-sdk = "0.11.2"
-astarte-device-sdk-mock = "0.11.2"
+astarte-device-sdk = "0.12.1"
+astarte-device-sdk-mock = "0.12.1"
 astarte-interfaces = "0.1.1"
 astarte-message-hub-proto = "0.10.1"
 async-trait = "0.1.89"
@@ -135,8 +137,10 @@ tonic = "0.14.5"
 tower = "0.5.2"
 tower-http = "0.6.7"
 tracing = "0.1.43"
+tracing-error = "0.2.1"
 tracing-journald = "0.3.1"
 tracing-subscriber = "0.3.22"
+url = "2.5.8"
 uuid = "1.8.0"
 zbus = { version = "5.13.2", default-features = false }
 

@@ -313,8 +313,15 @@ impl TryFrom<Config> for MessageHubOptions {
 
         let pairing_url = value
             .pairing_url
+            .as_ref()
             .filter(|url| !url.is_empty())
-            .ok_or(ConfigError::MissingField("pairing_url"))?;
+            .ok_or(ConfigError::MissingField("pairing_url"))?
+            .parse()
+            .map_err(|error| {
+                error!(url= ?value.pairing_url, "couldn't parse pairing_url");
+
+                ConfigError::Url(error)
+            })?;
 
         let credential = value
             .credentials_secret
@@ -381,14 +388,14 @@ mod test {
     #[case::credential_secret(Config {
         realm: Some("1".to_string()),
         device_id: Some("2".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         credentials_secret: Some("4".to_string()),
         ..Default::default()
     })]
     #[case::pairing_token(Config {
         realm: Some("1".to_string()),
         device_id: Some("2".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         pairing_token: Some("4".to_string()),
         ..Default::default()
     })]
@@ -402,14 +409,14 @@ mod test {
     #[case::empty_realm(Config {
         realm: Some("".to_string()),
         device_id: Some("2".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         pairing_token: Some("4".to_string()),
         ..Default::default()
     })]
     #[case::empty_device_id(Config {
         realm: Some("1".to_string()),
         device_id: Some("".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         pairing_token: Some("4".to_string()),
         ..Default::default()
     })]
@@ -423,21 +430,21 @@ mod test {
     #[case::empty_credential_secret(Config {
         realm: Some("1".to_string()),
         device_id: Some("2".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         credentials_secret: Some("".to_string()),
         ..Default::default()
     })]
     #[case::empty_pairing_token(Config {
         realm: Some("1".to_string()),
         device_id: Some("2".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         pairing_token: Some("".to_string()),
         ..Default::default()
     })]
     #[case::invalid_interface_dir(Config {
         realm: Some("1".to_string()),
         device_id: Some("2".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         pairing_token: Some("4".to_string()),
         interfaces_directory: Some(PathBuf::from("")),
         ..Default::default()
@@ -445,7 +452,7 @@ mod test {
     #[case::missing_cred_and_pairing(Config {
         realm: Some("1".to_string()),
         device_id: Some("2".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         ..Default::default()
     })]
     fn config_is_invalid_options(#[case] config: Config) {
@@ -465,7 +472,7 @@ mod test {
         let mut opt = Config {
             realm: Some("1".to_string()),
             device_id: Some("2".to_string()),
-            pairing_url: Some("3".to_string()),
+            pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
             store_directory: Some(dir.path().to_path_buf()),
             ..Default::default()
         };
@@ -482,7 +489,7 @@ mod test {
         let expected = Config {
             realm: Some("1".to_string()),
             device_id: Some("2".to_string()),
-            pairing_url: Some("3".to_string()),
+            pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
             pairing_token: Some("42".to_string()),
             ..Default::default()
         };
@@ -507,7 +514,7 @@ mod test {
         let expected = Config {
             realm: Some("1".to_string()),
             device_id: Some("2".to_string()),
-            pairing_url: Some("3".to_string()),
+            pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
             pairing_token: Some("42".to_string()),
             store_directory: Some(dir.path().to_path_buf()),
             ..Default::default()
@@ -553,7 +560,7 @@ mod test {
     #[case(Config {
         realm: Some("1".to_string()),
         device_id: Some("2".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         pairing_token: Some("4".to_string()),
         astarte_ignore_ssl: Some(true),
         grpc_socket_port: Some(5),
@@ -566,7 +573,7 @@ mod test {
     #[case(Config {
         realm: Some("1".to_string()),
         device_id: Some("2".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         credentials_secret: Some("4".to_string()),
         pairing_token: Some("5".to_string()),
         astarte_ignore_ssl: Some(true),
@@ -580,7 +587,7 @@ mod test {
     #[case(Config {
         realm: Some("1".to_string()),
         device_id: Some("2".to_string()),
-        pairing_url: Some("3".to_string()),
+        pairing_url: Some("http://api.astarte.localhost/pairing".to_string()),
         credentials_secret: Some("4".to_string()),
         pairing_token: Some("5".to_string()),
         astarte_ignore_ssl: Some(true),
