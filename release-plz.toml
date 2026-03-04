@@ -29,7 +29,7 @@ git_release_body = """
 """
 
 [[package]]
-name = "@MAIN_CRATE@"
+name = "astarte-message-hub"
 git_release_name = "v{{ version }}"
 git_tag_name = "v{{ version }}"
 git_tag_enable = true
