@@ -20,14 +20,17 @@ style = "conventional"
 subject_capitalized = false
 merge_commit = false
 allowed_types = [
-  "fix",
+  # User facing
   "feat",
-  "chore",
-  "docs",
-  "style",
-  "refactor",
+  "fix",
   "perf",
-  "test",
-  # Added
+  "refactor",
+  "deprecate",
+  "removed",
+  "security",
+  # Other
+  "chore",
   "ci",
+  "style",
+  "test",
 ]

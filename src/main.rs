@@ -86,7 +86,9 @@ fn init_tracing() -> eyre::Result<()> {
                 .from_env_lossy(),
         );
 
-    let subscribers = tracing_subscriber::registry().with(default_layer);
+    let subscribers = tracing_subscriber::registry()
+        .with(default_layer)
+        .with(tracing_error::ErrorLayer::default());
 
     #[cfg(feature = "security-events")]
     let subscribers = subscribers.with(

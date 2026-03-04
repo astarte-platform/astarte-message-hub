@@ -19,7 +19,10 @@
 use std::{net::Ipv6Addr, path::Path, sync::Arc, time::Duration};
 
 use astarte_device_sdk::{
-    builder::DeviceBuilder, prelude::*, store::SqliteStore, transport::mqtt::MqttConfig,
+    builder::DeviceBuilder,
+    prelude::*,
+    store::SqliteStore,
+    transport::mqtt::{Credential, MqttConfig},
 };
 use astarte_message_hub::{
     AstarteMessageHub, astarte::handler::init_pub_sub, cache::Introspection, store::StoreDir,
@@ -65,11 +68,15 @@ pub async fn init_message_hub(
 
     let store_dir = StoreDir::create(path.to_path_buf()).await?;
 
-    let mut mqtt_config =
-        MqttConfig::with_credential_secret(realm, device_id, credentials_secret, pairing_url);
+    let mut mqtt_config = MqttConfig::new(astarte_device_sdk::transport::mqtt::MqttArgs {
+        realm,
+        device_id,
+        credential: Credential::secret(credentials_secret),
+        pairing_url: pairing_url.parse()?,
+    });
 
     if read_env("E2E_IGNORE_SSL").is_ok() {
-        mqtt_config.ignore_ssl_errors();
+        mqtt_config = mqtt_config.ignore_ssl_errors();
     }
 
     let cache = Introspection::new(store_dir);
@@ -77,7 +84,7 @@ pub async fn init_message_hub(
     let path = path.to_str().ok_or_eyre("invalid_path")?;
 
     let db_path = format!("{path}/store.db");
-    let store = SqliteStore::connect_db(&db_path).await?;
+    let store = SqliteStore::options().with_db_file(&db_path).await?;
 
     let (client, connection) = DeviceBuilder::new()
         .store(store)
@@ -189,7 +196,9 @@ where
 
             trace!("server inner call resolved");
 
-            service.barrier.wait().await;
+            tokio::time::timeout(Duration::from_secs(5), service.barrier.wait())
+                .await
+                .expect("timeout");
 
             trace!("synced with client");
 

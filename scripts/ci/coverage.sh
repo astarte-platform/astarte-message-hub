@@ -43,52 +43,6 @@ CARGO_TARGET_DIR=$(
 export CARGO_TARGET_DIR
 export CARGO_INCREMENTAL=0
 
-crates=(
-    'astarte-message-hub'
-)
-
-find_target_tool() {
-    local libdir
-    local tool_path
-
-    libdir=$(rustup run nightly rustc --print target-libdir)
-    tool_path=$(realpath "$libdir/../bin/$1")
-
-    echo "$tool_path"
-}
-
-object_files() {
-    objects=$(
-        cargo +nightly test --tests --all-features --no-run --message-format=json "$@" |
-            jq -r "select(.profile.test == true) | .filenames[]" |
-            grep -v dSYM -
-    )
-
-    for obj in $objects; do
-        echo "-object=$obj"
-    done
-}
-
-export_lcov() {
-    local src
-    if [[ $1 == "$src_crate" ]]; then
-        src="$SRC_DIR/src"
-    else
-        src="$SRC_DIR/$1/src"
-    fi
-
-    obj_args=$(object_files -p "$p")
-
-    echo "$obj_args" | xargs "$LLVM_COV" export \
-        -Xdemangler=rustfilt \
-        -format=lcov \
-        -ignore-filename-regex='/.cargo/registry' \
-        -instr-profile="$PROFS_DIR/coverage.profdata" \
-        -ignore-filename-regex='.*test\.rs' \
-        -ignore-filename-regex='.*mock\.rs' \
-        -sources "$src" >"$COVERAGE_OUT_DIR/$1/lcov.info"
-}
-
 filter_lcov() {
     local src
     if [[ $1 == "$src_crate" ]]; then

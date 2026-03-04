@@ -31,13 +31,13 @@ use tokio::{
     task::{AbortHandle, JoinSet},
     time::timeout,
 };
-use tracing::{debug, info, instrument};
+use tracing::{info, instrument};
 
 use crate::{GRPC_PORT, UUID, interfaces::INTERFACES};
 
 pub struct Node {
     handle: AbortHandle,
-    pub client: DeviceClient<Grpc>,
+    pub client: DeviceClient<Grpc<MemoryStore>>,
 }
 
 impl Node {
@@ -69,17 +69,15 @@ pub async fn init_node(
         builder = builder.interface_str(iface)?
     }
 
-    debug!("Start connecting to the msghub");
-    let handle = tokio::spawn(async move {
-        let builder = builder.connection(grpc);
-        builder.build().await
-    });
-    barrier.wait().await;
-    info!("Connected to the message hub");
-
-    let (client, connection) = handle.await??;
+    let (client, connection) = builder.connection(grpc).build().await?;
 
     let handle = tasks.spawn(async move { connection.handle_events().await.map_err(Into::into) });
+
+    tokio::time::timeout(Duration::from_secs(5), barrier.wait())
+        .await
+        .wrap_err("init node")?;
+
+    info!("Connected to the message hub");
 
     Ok(Node { client, handle })
 }

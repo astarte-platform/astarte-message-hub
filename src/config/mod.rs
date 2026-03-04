@@ -24,10 +24,11 @@ use std::time::Duration;
 
 use astarte_device_sdk::builder::DeviceBuilder;
 use astarte_device_sdk::store::SqliteStore;
-use astarte_device_sdk::transport::mqtt::{Credential, Mqtt, MqttConfig};
+use astarte_device_sdk::transport::mqtt::{Credential, Mqtt, MqttArgs, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection};
 use eyre::{Context, OptionExt};
 use tracing::{debug, info};
+use url::Url;
 
 use crate::store::StoreDir;
 
@@ -74,7 +75,7 @@ pub struct MessageHubOptions {
     /// A unique ID for the device.
     pub device_id: String,
     /// The URL of the Astarte pairing API.
-    pub pairing_url: String,
+    pub pairing_url: Url,
     /// The credentials secret used to authenticate with Astarte.
     pub credential: Credential,
     /// Directory containing the Astarte interfaces.
@@ -102,23 +103,23 @@ impl MessageHubOptions {
         DeviceConnection<Mqtt<SqliteStore>>,
     )> {
         // initialize the device options and mqtt config
-        let mut mqtt_config = MqttConfig::new(
-            &self.realm,
-            &self.device_id,
-            self.credential.clone(),
-            &self.pairing_url,
-        );
+        let mut mqtt_config = MqttConfig::new(MqttArgs {
+            realm: self.realm.clone(),
+            device_id: self.device_id.clone(),
+            credential: self.credential.clone(),
+            pairing_url: self.pairing_url.clone(),
+        });
 
         if self.astarte.ignore_ssl == Some(true) {
-            mqtt_config.ignore_ssl_errors();
+            mqtt_config = mqtt_config.ignore_ssl_errors();
         }
 
         if let Some(keep_alive) = self.astarte.keep_alive_secs {
-            mqtt_config.keepalive(Duration::from_secs(keep_alive));
+            mqtt_config = mqtt_config.keepalive(Duration::from_secs(keep_alive));
         }
 
         let store_directory = store_dir.get_store_dir().await?;
-        let mut builder = DeviceBuilder::new().writable_dir(store_directory)?;
+        let mut builder = DeviceBuilder::new().writable_dir(store_directory);
 
         if let Some(timeout) = self.astarte.timeout_secs {
             builder = builder.connection_timeout(Duration::from_secs(timeout))
@@ -148,7 +149,7 @@ impl MessageHubOptions {
             .map(|d| format!("{d}/database.db"))
             .ok_or_eyre("non UTF-8 store directory option")?;
 
-        let mut store = SqliteStore::connect_db(&db_path).await?;
+        let mut store = SqliteStore::options();
 
         let DeviceSdkStoreOptions {
             max_db_size,
@@ -158,17 +159,19 @@ impl MessageHubOptions {
 
         if let Some(s) = max_db_size {
             debug!("setting astarte max db size to {s:?}");
-            store.set_db_max_size(s).await?;
+            store = store.set_db_max_size(s);
         } else {
             debug!("astarte max db size is not set, using default");
         }
 
         if let Some(s) = max_db_journal_size {
             debug!("setting astarte max db journal size to {s:?}");
-            store.set_journal_size_limit(s).await?;
+            store = store.set_journal_size_limit(s);
         } else {
             debug!("astarte max db journal size is not set, using default");
         }
+
+        let store = store.with_db_file(&db_path).await?;
 
         let mut builder = builder.store(store);
 

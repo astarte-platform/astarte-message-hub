@@ -157,6 +157,9 @@ pub enum ConfigError {
     /// Couldn't read configuration file
     #[error("couldn't read configuration file")]
     File(#[from] io::Error),
+    /// Couldn't parse url.
+    #[error("coudldn't parse url")]
+    Url(#[from] url::ParseError),
     /// Couldn't read the dynamic generated file.
     #[error("coudldn't read dynamic configuration {0}")]
     Dynamic(PathBuf),

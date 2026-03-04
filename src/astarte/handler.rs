@@ -23,13 +23,11 @@ use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use astarte_device_sdk::AstarteData;
 use astarte_device_sdk::aggregate::AstarteObject;
 use astarte_device_sdk::store::StoredProp;
-use astarte_device_sdk::transport::mqtt::Mqtt;
+use astarte_device_sdk::{AstarteData, Client};
 use astarte_device_sdk::{
     DeviceEvent, Error as AstarteError, Value, client::RecvError, properties::PropAccess,
-    store::SqliteStore,
 };
 use astarte_interfaces::{Interface, error::Error as InterfaceError};
 use astarte_message_hub_proto::{
@@ -46,7 +44,7 @@ use tonic::{Code, Status};
 use tracing::{debug, error, info, trace};
 use uuid::Uuid;
 
-use super::sdk::{Client, DeviceClient, DynamicIntrospection};
+use super::sdk::DynamicIntrospection;
 use super::{AstartePublisher, AstarteSubscriber, PropAccessExt, Subscription};
 use crate::error::AstarteMessageHubError;
 use crate::messages::{
@@ -79,9 +77,10 @@ impl From<&DeviceError> for Code {
 }
 
 /// Initialize the [`DevicePublisher`] and [`DeviceSubscriber`]
-pub fn init_pub_sub(
-    client: DeviceClient<Mqtt<SqliteStore>>,
-) -> (DevicePublisher, DeviceSubscriber) {
+pub fn init_pub_sub<C>(client: C) -> (DevicePublisher<C>, DeviceSubscriber<C>)
+where
+    C: Client,
+{
     let subscribers = SubscribersMap::default();
 
     (
@@ -93,14 +92,14 @@ pub fn init_pub_sub(
 /// Receiver for the [`DeviceEvent`].
 ///
 /// It will forward the events to the registered subscriber.
-pub struct DeviceSubscriber {
-    client: DeviceClient<Mqtt<SqliteStore>>,
+pub struct DeviceSubscriber<C> {
+    client: C,
     subscribers: SubscribersMap,
 }
 
-impl DeviceSubscriber {
+impl<C> DeviceSubscriber<C> {
     /// Create a new client.
-    pub fn new(client: DeviceClient<Mqtt<SqliteStore>>, subscribers: SubscribersMap) -> Self {
+    pub fn new(client: C, subscribers: SubscribersMap) -> Self {
         Self {
             client,
             subscribers,
@@ -108,7 +107,10 @@ impl DeviceSubscriber {
     }
 
     /// Handler responsible for receiving and managing [`DeviceEvent`].
-    pub async fn forward_events(&mut self, cancel: CancellationToken) -> Result<(), DeviceError> {
+    pub async fn forward_events(&mut self, cancel: CancellationToken) -> Result<(), DeviceError>
+    where
+        C: Client,
+    {
         while let Some(res) = cancel.run_until_cancelled(self.client.recv()).await {
             match res {
                 Err(RecvError::Disconnected) => {
@@ -214,16 +216,16 @@ pub struct Subscriber {
 
 /// An Astarte Device SDK based implementation of an Astarte handler.
 ///
-/// Uses the [`DeviceClient`] to provide subscribe and publish functionality.
+/// Uses the [`Client`] to provide subscribe and publish functionality.
 #[derive(Clone)]
-pub struct DevicePublisher {
-    client: DeviceClient<Mqtt<SqliteStore>>,
+pub struct DevicePublisher<C> {
+    client: C,
     subscribers: SubscribersMap,
 }
 
-impl DevicePublisher {
+impl<C> DevicePublisher<C> {
     /// Constructs a new handler from the [AstarteDeviceSdk](astarte_device_sdk::AstarteDeviceSdk)
-    fn new(client: DeviceClient<Mqtt<SqliteStore>>, subscribers: SubscribersMap) -> Self {
+    fn new(client: C, subscribers: SubscribersMap) -> Self {
         DevicePublisher {
             client,
             subscribers,
@@ -236,7 +238,10 @@ impl DevicePublisher {
         data: AstarteDatastreamIndividual,
         interface_name: &str,
         path: &str,
-    ) -> Result<(), AstarteMessageHubError> {
+    ) -> Result<(), AstarteMessageHubError>
+    where
+        C: Client,
+    {
         let astarte_data = data
             .data
             .map(convert_proto_into_data)
@@ -267,7 +272,10 @@ impl DevicePublisher {
         object_data: AstarteDatastreamObject,
         interface_name: &str,
         path: &str,
-    ) -> Result<(), AstarteMessageHubError> {
+    ) -> Result<(), AstarteMessageHubError>
+    where
+        C: Client,
+    {
         let timestamp = object_data.timestamp;
         let aggr = object_data
             .data
@@ -295,7 +303,10 @@ impl DevicePublisher {
         data: AstartePropertyIndividual,
         interface_name: &str,
         path: &str,
-    ) -> Result<(), AstarteMessageHubError> {
+    ) -> Result<(), AstarteMessageHubError>
+    where
+        C: Client,
+    {
         let mut client = self.client.clone();
 
         match data.data {
@@ -320,7 +331,10 @@ impl DevicePublisher {
         &self,
         node: &AstarteNode,
         sender: &Sender<Result<MessageHubEvent, Status>>,
-    ) -> Result<(), AstarteMessageHubError> {
+    ) -> Result<(), AstarteMessageHubError>
+    where
+        C: Client + PropAccess,
+    {
         debug!("sending properties");
 
         let iter = self
@@ -390,7 +404,10 @@ impl DevicePublisher {
 }
 
 #[async_trait]
-impl AstarteSubscriber for DevicePublisher {
+impl<C> AstarteSubscriber for DevicePublisher<C>
+where
+    C: Client + DynamicIntrospection + PropAccess + Send + Sync,
+{
     async fn subscribe(&self, node: &AstarteNode) -> Result<Subscription, AstarteMessageHubError> {
         let introspection = node
             .introspection
@@ -549,7 +566,10 @@ impl AstarteSubscriber for DevicePublisher {
 }
 
 #[async_trait]
-impl AstartePublisher for DevicePublisher {
+impl<C> AstartePublisher for DevicePublisher<C>
+where
+    C: Client + Send + Sync,
+{
     async fn publish(
         &self,
         astarte_message: &AstarteMessage,
@@ -579,7 +599,10 @@ impl AstartePublisher for DevicePublisher {
     }
 }
 
-impl PropAccessExt for DevicePublisher {
+impl<C> PropAccessExt for DevicePublisher<C>
+where
+    C: PropAccess + Send + Sync,
+{
     async fn property(
         &self,
         node_id: NodeId,
@@ -669,8 +692,10 @@ mod test {
 
     use astarte_device_sdk::Value;
     use astarte_device_sdk::error::Error as AstarteSdkError;
-    use astarte_device_sdk_mock::MockDeviceConnection as DeviceConnection;
+    use astarte_device_sdk::store::SqliteStore;
+    use astarte_device_sdk::transport::mqtt::Mqtt;
     use astarte_device_sdk_mock::mockall::Sequence;
+    use astarte_device_sdk_mock::{MockDeviceClient, MockDeviceConnection};
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::{AstarteData, InterfacesJson, MessageHubError};
     use chrono::{DateTime, Utc};
@@ -733,9 +758,12 @@ mod test {
         }
     }
 
-    fn mock_with_clone<F>(mut seq: Sequence, client: &mut DeviceClient<Mqtt<SqliteStore>>, f: F)
+    fn mock_with_clone<F>(mut seq: Sequence, client: &mut MockDeviceClient<Mqtt<SqliteStore>>, f: F)
     where
-        F: FnOnce(Sequence, DeviceClient<Mqtt<SqliteStore>>) -> DeviceClient<Mqtt<SqliteStore>>
+        F: FnOnce(
+                Sequence,
+                MockDeviceClient<Mqtt<SqliteStore>>,
+            ) -> MockDeviceClient<Mqtt<SqliteStore>>
             + Send
             + 'static,
     {
@@ -743,7 +771,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .return_once(move || f(seq, DeviceClient::<Mqtt<SqliteStore>>::new()));
+            .return_once(move || f(seq, MockDeviceClient::<Mqtt<SqliteStore>>::new()));
     }
 
     #[tokio::test]
@@ -751,7 +779,7 @@ mod test {
         let interface = Interface::from_str(SERV_PROPS_IFACE).unwrap();
         let interfaces = vec![interface.clone()];
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -796,8 +824,8 @@ mod test {
         let path = "test";
         let value: i32 = 5;
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
-        let mut connection = DeviceConnection::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut connection = MockDeviceConnection::<Mqtt<SqliteStore>>::default();
 
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
@@ -917,8 +945,8 @@ mod test {
     async fn poll_failed_with_proto_error() {
         let prop_interface = Interface::from_str(SERV_PROPS_IFACE).unwrap();
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
-        let mut connection = DeviceConnection::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut connection = MockDeviceConnection::<Mqtt<SqliteStore>>::default();
 
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
@@ -1071,8 +1099,8 @@ mod test {
     async fn poll_failed_with_proto_error_broadcast() {
         let prop_interface = Interface::from_str(SERV_PROPS_IFACE).unwrap();
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
-        let mut connection = DeviceConnection::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut connection = MockDeviceConnection::<Mqtt<SqliteStore>>::default();
 
         // we define two nodes with the same introspection and test that a RecvError (except for a
         // MappingNotFound one) is broadcast to all the subscribed nodes, even those with a
@@ -1185,7 +1213,7 @@ mod test {
 
     #[tokio::test]
     async fn poll_failed_with_astarte_error() {
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
 
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1193,7 +1221,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(DeviceClient::<Mqtt<SqliteStore>>::new);
+            .returning(MockDeviceClient::<Mqtt<SqliteStore>>::new);
 
         // Simulate disconnect
         client
@@ -1212,7 +1240,7 @@ mod test {
 
     #[tokio::test]
     async fn publish_failed_with_invalid_payload() {
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
 
         let expected_interface_name = "io.demo.Properties";
 
@@ -1224,7 +1252,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(DeviceClient::<Mqtt<SqliteStore>>::default);
+            .returning(MockDeviceClient::<Mqtt<SqliteStore>>::default);
 
         let (publisher, _subscriber) = init_pub_sub(client);
 
@@ -1240,7 +1268,7 @@ mod test {
 
     #[tokio::test]
     async fn publish_failed_with_invalid_astarte_data() {
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
 
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1248,7 +1276,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(DeviceClient::<Mqtt<SqliteStore>>::default);
+            .returning(MockDeviceClient::<Mqtt<SqliteStore>>::default);
 
         let astarte_message = create_astarte_message("io.demo.Properties", "/test", None);
 
@@ -1265,7 +1293,7 @@ mod test {
 
     #[tokio::test]
     async fn publish_individual_success() {
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         let expected_interface_name = "io.demo.Properties";
@@ -1327,7 +1355,7 @@ mod test {
             Some(expected_payload),
         );
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1374,7 +1402,7 @@ mod test {
             Some(expected_payload),
         );
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1435,7 +1463,7 @@ mod test {
             Some(expected_payload),
         );
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1513,7 +1541,7 @@ mod test {
             })),
         );
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         mock_with_clone(seq, &mut client, move |seq, mut client| {
@@ -1578,7 +1606,7 @@ mod test {
             })),
         );
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         mock_with_clone(seq, &mut client, move |seq, mut client| {
@@ -1642,7 +1670,7 @@ mod test {
         );
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
 
         mock_with_clone(seq, &mut client, move |seq, mut client| {
             mock_with_clone(seq, &mut client, move |mut seq, mut client| {
@@ -1719,7 +1747,7 @@ mod test {
             })),
         );
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         mock_with_clone(seq, &mut client, move |seq, mut client| {
@@ -1773,7 +1801,7 @@ mod test {
             })),
         );
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1812,7 +1840,7 @@ mod test {
             })),
         );
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         mock_with_clone(seq, &mut client, move |seq, mut client| {
@@ -1859,7 +1887,7 @@ mod test {
             SERV_OBJ_IFACE.to_string(),
         ]);
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         client
@@ -1867,14 +1895,14 @@ mod test {
             .once()
             .in_sequence(&mut seq)
             .return_once(move || {
-                let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+                let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
 
                 client
                     .expect_clone()
                     .once()
                     .in_sequence(&mut seq)
                     .returning(|| {
-                        let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+                        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
 
                         client
                             .expect_extend_interfaces::<Vec<Interface>>()
@@ -1900,7 +1928,7 @@ mod test {
                     .once()
                     .in_sequence(&mut seq)
                     .return_once(move || {
-                        let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+                        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
 
                         client
                             .expect_remove_interfaces()
@@ -1936,14 +1964,14 @@ mod test {
 
     #[tokio::test]
     async fn detach_node_unsubscribe_failed() {
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         client
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(DeviceClient::<Mqtt<SqliteStore>>::default);
+            .returning(MockDeviceClient::<Mqtt<SqliteStore>>::default);
 
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
         let astarte_node = AstarteNode::from_json(
@@ -1971,7 +1999,7 @@ mod test {
             SERV_OBJ_IFACE.to_string(),
         ]);
 
-        let mut client = DeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         client
@@ -1979,14 +2007,14 @@ mod test {
             .once()
             .in_sequence(&mut seq)
             .return_once(move || {
-                let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+                let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
 
                 client
                     .expect_clone()
                     .once()
                     .in_sequence(&mut seq)
                     .returning(|| {
-                        let mut client = DeviceClient::<Mqtt<SqliteStore>>::new();
+                        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
 
                         client
                             .expect_extend_interfaces::<Vec<Interface>>()
