@@ -25,6 +25,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0](https://github.com/astarte-platform/astarte-message-hub/compare/v0.10.0...v0.11.0) - 2026-03-05
+
+### Fixed
+
+- _(cargo)_ activate the sdk features for ventured and cross
+
+
 ## [0.10.0](https://github.com/astarte-platform/astarte-message-hub/compare/v0.9.2...v0.10.0) - 2026-03-04
 
 ### Added
@@ -33,50 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - _(config)_ improve dynamic configuration
 - _(ci)_ Allow passing a custom ref for docker releases
 - _(MSRV)_ update to 1.86 and edition 2024
-
-### Changed
-
-- _(deps)_ update sdk to 0.12 and MSRV 1.88
-
-<!--
-This file is part of Astarte.
-
-Copyright 2023-2026 SECO Mind Srl
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-   http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
-SPDX-License-Identifier: Apache-2.0
--->
-
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
-adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Added
-
 - Configuration files will read and merged based on their priority [#436]
 - Read the files from the `config.d` directories [#436]
 - Read the files from the user configuration directory [#436]
 
 ### Changed
 
-- Update the MSRV to 1.86 and edition 2024
-  [#430](https://github.com/astarte-platform/astarte-message-hub/pull/430)
+- _(deps)_ update sdk to 0.12 and MSRV 1.88
 - The dynamic configuration needs to be enable manually via config, cli or env [#436]
 - You can start the HTTP or gRPC config server separately [#436]
 - The default store directory is no longer the current working directory but the user data directory

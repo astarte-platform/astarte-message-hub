@@ -158,6 +158,7 @@ dependencies = [
  "astarte-interfaces",
  "astarte-message-hub-proto",
  "async-channel",
+ "aws-lc-rs",
  "base64",
  "bson",
  "bytes",
@@ -224,14 +225,13 @@ dependencies = [
 
 [[package]]
 name = "astarte-message-hub"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "astarte-device-sdk",
  "astarte-device-sdk-mock",
  "astarte-interfaces",
  "astarte-message-hub-proto",
  "async-trait",
- "aws-lc-rs",
  "axum",
  "chrono",
  "clap",
@@ -246,7 +246,6 @@ dependencies = [
  "pretty_assertions",
  "reqwest",
  "rstest",
- "rusqlite",
  "rustls",
  "serde",
  "serde_json",
@@ -860,7 +859,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "e2e-test"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "astarte-device-sdk",
  "astarte-interfaces",
