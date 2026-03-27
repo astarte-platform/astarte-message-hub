@@ -25,7 +25,7 @@ use astarte_device_sdk::introspection::AddInterfaceError;
 use astarte_interfaces::error::Error as InterfaceError;
 use astarte_message_hub_proto::prost::UnknownEnumValue;
 use tonic::{Code, Status};
-use tracing::debug;
+use tracing::error;
 use uuid::Uuid;
 
 use crate::astarte::handler::DeviceError;
@@ -113,7 +113,7 @@ pub enum AstarteMessageHubError {
 
 impl From<AstarteMessageHubError> for Status {
     fn from(value: AstarteMessageHubError) -> Self {
-        debug!("error {value:?}");
+        error!(error = %value, "grpc call failed");
 
         let code = match value {
             AstarteMessageHubError::Astarte(_)

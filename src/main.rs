@@ -22,7 +22,6 @@
 #![warn(missing_docs)]
 
 use astarte_message_hub::config::file::Config;
-use std::io::{IsTerminal, stdout};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
@@ -78,16 +77,23 @@ async fn main() -> eyre::Result<()> {
 }
 
 fn init_tracing() -> eyre::Result<()> {
-    let default_layer = tracing_subscriber::fmt::layer()
-        .with_ansi(stdout().is_terminal())
-        .with_filter(
-            EnvFilter::builder()
-                .with_default_directive("astarte_message_hub=info".parse()?)
-                .from_env_lossy(),
-        );
+    let layer = tracing_subscriber::fmt::layer();
+
+    #[cfg(not(windows))]
+    let layer = {
+        use std::io::{IsTerminal, stdout};
+
+        layer.with_ansi(stdout().is_terminal())
+    };
+
+    let layer = layer.with_filter(
+        EnvFilter::builder()
+            .with_default_directive(tracing::Level::INFO.into())
+            .from_env_lossy(),
+    );
 
     let subscribers = tracing_subscriber::registry()
-        .with(default_layer)
+        .with(layer)
         .with(tracing_error::ErrorLayer::default());
 
     #[cfg(feature = "security-events")]
