@@ -154,6 +154,42 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fb3fb2d8324e27f73597c3ecd96fb91952d40a15598e617b17c177fbd9894a0"
 dependencies = [
+ "astarte-interfaces",
+ "async-channel",
+ "base64",
+ "bson",
+ "bytes",
+ "cfg-if",
+ "chrono",
+ "flate2",
+ "futures",
+ "itertools 0.14.0",
+ "rand 0.10.0",
+ "rcgen",
+ "reqwest",
+ "rumqttc-dev-patched",
+ "rusqlite",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pemfile",
+ "rustls-webpki 0.103.9",
+ "serde",
+ "serde_json",
+ "sync_wrapper",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+ "x509-parser",
+]
+
+[[package]]
+name = "astarte-device-sdk"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c4150fdbde0ffd3132ef81c960a1f79631917bcbe36d8fb6578775fb124528e"
+dependencies = [
  "astarte-device-sdk-derive",
  "astarte-interfaces",
  "astarte-message-hub-proto",
@@ -189,10 +225,11 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-derive"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b55abb7f7b50cd8b944038587e0dce45849532f63cbe2e6a5a24590e8623828"
+checksum = "ba5a4c331c03c0d0423d79cd43934d11e05428a27bb7ec5b72caa0c8dff6e7fd"
 dependencies = [
+ "darling",
  "proc-macro2",
  "quote",
  "syn",
@@ -204,7 +241,7 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7fc41b4ada0283156c975819d013c63e16366ba48de84adeff1e18b6fc5a99e"
 dependencies = [
- "astarte-device-sdk",
+ "astarte-device-sdk 0.12.1",
  "chrono",
  "mockall",
 ]
@@ -227,7 +264,7 @@ dependencies = [
 name = "astarte-message-hub"
 version = "0.11.0"
 dependencies = [
- "astarte-device-sdk",
+ "astarte-device-sdk 0.13.0",
  "astarte-device-sdk-mock",
  "astarte-interfaces",
  "astarte-message-hub-proto",
@@ -778,6 +815,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+name = "darling"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25ae13da2f202d56bd7f91c25fba009e7717a1e4a1cc98a76d844b65ae912e9d"
+dependencies = [
+ "darling_core",
+ "darling_macro",
+]
+
+[[package]]
+name = "darling_core"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9865a50f7c335f53564bb694ef660825eb8610e0a53d3e11bf1b0d3df31e03b0"
+dependencies = [
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim",
+ "syn",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac3984ec7bd6cfa798e62b4a642426a5be0e68f9401cfc2a01e3fa9ea2fcdb8d"
+dependencies = [
+ "darling_core",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -860,7 +931,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 name = "e2e-test"
 version = "0.11.0"
 dependencies = [
- "astarte-device-sdk",
+ "astarte-device-sdk 0.13.0",
  "astarte-interfaces",
  "astarte-message-hub",
  "astarte-message-hub-proto",
@@ -1516,6 +1587,12 @@ name = "id-arena"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
+
+[[package]]
+name = "ident_case"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "idna"
