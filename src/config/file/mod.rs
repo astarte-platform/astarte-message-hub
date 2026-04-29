@@ -32,12 +32,14 @@ use crate::error::ConfigError;
 use crate::store::StoreDir;
 
 pub mod dynamic;
+pub mod fdo;
 pub mod sdk;
 
 use self::dynamic::DynamicConfig;
+use self::fdo::FdoConfig;
 use self::sdk::DeviceSdkOptions;
 
-use super::{DEFAULT_GRPC_PORT, DEFAULT_HOST, MessageHubOptions, Override};
+use super::{DEFAULT_GRPC_PORT, DEFAULT_HOST, MessageHubOptions, Override, Pairing};
 
 /// Default configuration file name for the dynamic config
 pub const CONFIG_FILE_NAME_NO_EXT: &str = "50-message-hub-config";
@@ -93,6 +95,9 @@ pub struct Config {
     /// Astarte device SDK options.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub astarte: Option<DeviceSdkOptions>,
+    /// FIDO Device Onboarding configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fdo: Option<FdoConfig>,
 }
 
 impl Config {
@@ -217,6 +222,31 @@ impl Config {
 
     /// Validate the values are present for the server configuration.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        if self
+            .fdo
+            .as_ref()
+            .is_some_and(|fdo| fdo.enabled.unwrap_or_default())
+        {
+            info!("FDO is enabled");
+        } else {
+            self.validate_pairing_config()?;
+        }
+
+        if self
+            .interfaces_directory
+            .as_ref()
+            .is_some_and(|p| !p.is_dir())
+        {
+            return Err(ConfigError::InvalidInterfaceDirectory(
+                self.interfaces_directory.clone(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validates that the configuration is usable with pairing.
+    fn validate_pairing_config(&self) -> Result<(), ConfigError> {
         if self.realm.as_ref().is_none_or(|realm| realm.is_empty()) {
             return Err(ConfigError::MissingField("realm"));
         }
@@ -251,16 +281,6 @@ impl Config {
             return Err(ConfigError::MissingField("pairing_url"));
         }
 
-        if self
-            .interfaces_directory
-            .as_ref()
-            .is_some_and(|p| !p.is_dir())
-        {
-            return Err(ConfigError::InvalidInterfaceDirectory(
-                self.interfaces_directory.clone(),
-            ));
-        }
-
         Ok(())
     }
 }
@@ -280,6 +300,7 @@ impl Override for Config {
             store_directory,
             astarte,
             dynamic_config,
+            fdo,
         } = other;
 
         self.realm.merge(realm);
@@ -294,46 +315,70 @@ impl Override for Config {
         self.store_directory.merge(store_directory);
         self.astarte.merge(astarte);
         self.dynamic_config.merge(dynamic_config);
+        self.fdo.merge(fdo);
     }
 }
 
 impl TryFrom<Config> for MessageHubOptions {
     type Error = ConfigError;
 
-    fn try_from(value: Config) -> Result<Self, Self::Error> {
-        let device_id = value
-            .device_id
-            .filter(|realm| !realm.is_empty())
-            .ok_or(ConfigError::MissingField("realm"))?;
+    fn try_from(mut value: Config) -> Result<Self, Self::Error> {
+        let pairing = if let Some(fdo) = value.fdo.take_if(|fdo| fdo.enabled.unwrap_or_default()) {
+            let device_id = value
+                .device_id
+                .filter(|realm| !realm.is_empty())
+                .ok_or(ConfigError::MissingField("device_id"))?;
 
-        let realm = value
-            .realm
-            .filter(|realm| !realm.is_empty())
-            .ok_or(ConfigError::MissingField("realm"))?;
+            let manufacturing_url = fdo
+                .manufacturing_url
+                .ok_or(ConfigError::MissingField("manufacturing_url"))?;
 
-        let pairing_url = value
-            .pairing_url
-            .as_ref()
-            .filter(|url| !url.is_empty())
-            .ok_or(ConfigError::MissingField("pairing_url"))?
-            .parse()
-            .map_err(|error| {
-                error!(url= ?value.pairing_url, "couldn't parse pairing_url");
+            Pairing::Fdo {
+                manufacturing_url,
+                device_id,
+            }
+        } else {
+            let device_id = value
+                .device_id
+                .filter(|realm| !realm.is_empty())
+                .ok_or(ConfigError::MissingField("device_id"))?;
 
-                ConfigError::Url(error)
-            })?;
+            let realm = value
+                .realm
+                .filter(|realm| !realm.is_empty())
+                .ok_or(ConfigError::MissingField("realm"))?;
 
-        let credential = value
-            .credentials_secret
-            .filter(|s| !s.is_empty())
-            .map(Credential::secret)
-            .or_else(|| {
-                value
-                    .pairing_token
-                    .filter(|t| !t.is_empty())
-                    .map(Credential::paring_token)
-            })
-            .ok_or(ConfigError::Credentials)?;
+            let pairing_url = value
+                .pairing_url
+                .as_ref()
+                .filter(|url| !url.is_empty())
+                .ok_or(ConfigError::MissingField("pairing_url"))?
+                .parse()
+                .map_err(|error| {
+                    error!(url= ?value.pairing_url, "couldn't parse pairing_url");
+
+                    ConfigError::Url(error)
+                })?;
+
+            let credential = value
+                .credentials_secret
+                .filter(|s| !s.is_empty())
+                .map(Credential::secret)
+                .or_else(|| {
+                    value
+                        .pairing_token
+                        .filter(|t| !t.is_empty())
+                        .map(Credential::paring_token)
+                })
+                .ok_or(ConfigError::Credentials)?;
+
+            Pairing::Legacy {
+                realm,
+                device_id,
+                pairing_url,
+                credential,
+            }
+        };
 
         if value
             .interfaces_directory
@@ -355,10 +400,7 @@ impl TryFrom<Config> for MessageHubOptions {
         }
 
         Ok(MessageHubOptions {
-            realm,
-            device_id,
-            pairing_url,
-            credential,
+            pairing,
             interfaces_directory: value.interfaces_directory,
             grpc_socket_host,
             grpc_socket_port,
@@ -619,7 +661,8 @@ mod test {
                 host: Some(DEFAULT_HOST),
                 port: Some(DEFAULT_GRPC_CONFIG_PORT),
             })
-        })
+        }),
+        fdo: None,
     })]
     #[test]
     fn ser_and_de_config(#[context] ctx: Context, #[case] config: Config) {

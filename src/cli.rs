@@ -94,6 +94,7 @@ impl From<Cli> for Config {
             store_directory: store_dir,
             dynamic_config: dynamic.into(),
             astarte: astarte.into(),
+            fdo: None,
         }
     }
 }
