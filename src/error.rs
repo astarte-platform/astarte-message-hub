@@ -21,7 +21,6 @@
 use std::io;
 use std::path::PathBuf;
 
-use astarte_device_sdk::introspection::AddInterfaceError;
 use astarte_interfaces::error::Error as InterfaceError;
 use astarte_message_hub_proto::prost::UnknownEnumValue;
 use tonic::{Code, Status};
@@ -36,7 +35,7 @@ use crate::config::dynamic::http::HttpError;
 pub enum AstarteMessageHubError {
     /// Error returned by the Astarte SDK
     #[error(transparent)]
-    Astarte(#[from] astarte_device_sdk::error::Error),
+    Astarte(#[from] astarte_device_sdk::error::AstarteError),
 
     /// Invalid date
     #[error("{0}")]
@@ -82,10 +81,6 @@ pub enum AstarteMessageHubError {
     #[error("failed to parse am Interface")]
     ParseInterface(#[from] InterfaceError),
 
-    /// Failed to add interfaces while building an Astarte device
-    #[error("failed to add interfaces while building an Astarte device")]
-    AddInterface(#[from] AddInterfaceError),
-
     /// Couldn't read the configuration
     #[error("coudln't read the configuration")]
     Config(#[from] ConfigError),
@@ -123,8 +118,7 @@ impl From<AstarteMessageHubError> for Status {
             | AstarteMessageHubError::Transport(_)
             | AstarteMessageHubError::Zbus(_)
             | AstarteMessageHubError::HttpServer(_)
-            | AstarteMessageHubError::ParseInterface(_)
-            | AstarteMessageHubError::AddInterface(_) => Code::Internal,
+            | AstarteMessageHubError::ParseInterface(_) => Code::Internal,
             AstarteMessageHubError::Device(ref err) => err.into(),
             AstarteMessageHubError::AstarteInvalidData(_)
             | AstarteMessageHubError::Timestamp(_)

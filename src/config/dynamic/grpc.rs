@@ -41,7 +41,7 @@ use crate::config::file::CONFIG_FILE_NAME_NO_EXT;
 use crate::config::loader::ConfigEntry;
 use crate::store::StoreDir;
 
-use super::Config;
+use super::{Config, SharedValidate};
 
 /// Protobuf server error
 #[derive(thiserror::Error, Debug, displaydoc::Display)]
@@ -55,13 +55,17 @@ pub enum ProtobufConfigError {
 }
 
 #[derive(Debug)]
-struct AstarteMessageHubConfig {
+struct AstarteMessageHubConfig<D> {
     tx: tokio::sync::mpsc::Sender<ConfigEntry>,
     store_dir: StoreDir,
+    validate: SharedValidate<D>,
 }
 
 #[tonic::async_trait]
-impl MessageHubConfig for AstarteMessageHubConfig {
+impl<D> MessageHubConfig for AstarteMessageHubConfig<D>
+where
+    D: astarte_device_sdk::client::ClientConnection + Send + Sync + 'static,
+{
     /// Protobuf API that allows to set The Message Hub configurations
     async fn set_config(&self, request: Request<ConfigMessage>) -> Result<Response<()>, Status> {
         let ConfigMessage {
@@ -107,6 +111,19 @@ impl MessageHubConfig for AstarteMessageHubConfig {
             Status::invalid_argument(err.to_string())
         })?;
 
+        let invalid_config = self
+            .validate
+            .read()
+            .await
+            .as_ref()
+            .is_some_and(|validate| !validate.can_change(&config));
+
+        if invalid_config {
+            return Err(Status::invalid_argument(
+                "device paired, cannot change pairing options",
+            ));
+        }
+
         self.store_dir
             .store_config(&config, CONFIG_FILE_NAME_NO_EXT)
             .await;
@@ -129,14 +146,22 @@ impl MessageHubConfig for AstarteMessageHubConfig {
 }
 
 /// Starts the dynamic configuration gRPC server
-pub async fn serve(
+pub async fn serve<D>(
     tasks: &mut JoinSet<eyre::Result<()>>,
     cancel: CancellationToken,
     address: SocketAddr,
     tx: mpsc::Sender<ConfigEntry>,
     store_dir: StoreDir,
-) -> eyre::Result<SocketAddr> {
-    let service = AstarteMessageHubConfig { tx, store_dir };
+    validate: SharedValidate<D>,
+) -> eyre::Result<SocketAddr>
+where
+    D: astarte_device_sdk::client::ClientConnection + Send + Sync + 'static,
+{
+    let service = AstarteMessageHubConfig {
+        tx,
+        store_dir,
+        validate,
+    };
 
     let listener = TcpIncoming::bind(address).wrap_err("couldn't bind gRPC server address")?;
 
@@ -163,12 +188,15 @@ pub async fn serve(
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use astarte_message_hub_proto::message_hub_config_client::MessageHubConfigClient;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
     use tonic::transport::Endpoint;
 
     use crate::config::file::CONFIG_FILE_NAME;
+    use crate::tests::MockClient;
 
     use super::*;
 
@@ -190,12 +218,13 @@ mod test {
 
             let store_dir = StoreDir::create(dir.path().to_path_buf()).await.unwrap();
 
-            let address = serve(
+            let address = serve::<MockClient>(
                 &mut tasks,
                 cancel_token.clone(),
                 "127.0.0.1:0".parse().unwrap(),
                 tx,
                 store_dir,
+                Arc::default(),
             )
             .await
             .expect("failed to create server");
@@ -212,7 +241,7 @@ mod test {
 
     async fn create_config() -> (
         TempDir,
-        AstarteMessageHubConfig,
+        AstarteMessageHubConfig<MockClient>,
         mpsc::Receiver<ConfigEntry>,
     ) {
         let dir = TempDir::new().unwrap();
@@ -220,7 +249,11 @@ mod test {
 
         let (tx, rx) = mpsc::channel(1);
 
-        let config_server = AstarteMessageHubConfig { tx, store_dir };
+        let config_server = AstarteMessageHubConfig {
+            tx,
+            store_dir,
+            validate: Arc::default(),
+        };
 
         (dir, config_server, rx)
     }

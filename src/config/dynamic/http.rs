@@ -41,7 +41,7 @@ use crate::config::loader::ConfigEntry;
 use crate::error::ConfigError;
 use crate::store::StoreDir;
 
-use super::Config;
+use super::{Config, SharedValidate};
 use crate::config::file::CONFIG_FILE_NAME_NO_EXT;
 
 /// HTTP server error
@@ -75,6 +75,8 @@ pub enum ErrorResponse {
     MediaType,
     /// invalid configuration file
     Deserialize,
+    /// device already paired, couldn't change pairing configuration
+    DevicePaired,
 }
 
 impl IntoResponse for ErrorResponse {
@@ -103,6 +105,10 @@ impl IntoResponse for ErrorResponse {
             ErrorResponse::Deserialize => (
                 StatusCode::BAD_REQUEST,
                 "Invalid configuration file".to_string(),
+            ),
+            ErrorResponse::DevicePaired => (
+                StatusCode::BAD_REQUEST,
+                "Device already paired, couldn't change pairing configuration".to_string(),
             ),
         };
 
@@ -134,14 +140,23 @@ impl Default for ConfigResponse {
 }
 
 #[derive(Debug)]
-struct ConfigServer {
+struct ConfigServer<D> {
     tx: mpsc::Sender<ConfigEntry>,
     store_dir: StoreDir,
+    validate: SharedValidate<D>,
 }
 
-impl ConfigServer {
-    fn new(tx: mpsc::Sender<ConfigEntry>, store_dir: StoreDir) -> Self {
-        Self { tx, store_dir }
+impl<D> ConfigServer<D> {
+    fn new(
+        tx: mpsc::Sender<ConfigEntry>,
+        store_dir: StoreDir,
+        validate: SharedValidate<D>,
+    ) -> Self {
+        Self {
+            tx,
+            store_dir,
+            validate,
+        }
     }
 
     async fn send_config(&self, config: Config, file_name: &str) -> Result<(), ErrorResponse> {
@@ -205,14 +220,18 @@ impl TryFrom<ConfigPayload> for Config {
 }
 
 /// Start a new HTTP API Server to allow a third party to feed the Message Hub configurations
-pub async fn serve(
+pub async fn serve<D>(
     tasks: &mut JoinSet<eyre::Result<()>>,
     cancel: CancellationToken,
     address: &SocketAddr,
     tx: mpsc::Sender<ConfigEntry>,
     store_dir: StoreDir,
-) -> Result<SocketAddr, HttpError> {
-    let cfg_server = ConfigServer::new(tx, store_dir);
+    validate: SharedValidate<D>,
+) -> Result<SocketAddr, HttpError>
+where
+    D: astarte_device_sdk::client::ClientConnection + Send + Sync + 'static,
+{
+    let cfg_server = ConfigServer::new(tx, store_dir, validate);
 
     let app = Router::new()
         .route("/", get(root))
@@ -271,12 +290,26 @@ async fn root() -> (StatusCode, Json<ConfigResponse>) {
 }
 
 /// HTTP API endpoint that allows to set The Message Hub configurations
-async fn set_config(
-    State(state): State<Arc<ConfigServer>>,
+async fn set_config<D>(
+    State(state): State<Arc<ConfigServer<D>>>,
     Query(query): Query<UploadQuery>,
     Json(payload): Json<ConfigPayload>,
-) -> Result<(StatusCode, Json<ConfigResponse>), ErrorResponse> {
+) -> Result<(StatusCode, Json<ConfigResponse>), ErrorResponse>
+where
+    D: astarte_device_sdk::client::ClientConnection + Send + Sync + 'static,
+{
     let config = Config::try_from(payload)?;
+
+    let invalid_config = state
+        .validate
+        .read()
+        .await
+        .as_ref()
+        .is_some_and(|validate| !validate.can_change(&config));
+
+    if invalid_config {
+        return Err(ErrorResponse::DevicePaired);
+    }
 
     if query.store {
         state
@@ -290,16 +323,30 @@ async fn set_config(
     Ok((StatusCode::OK, Json(ConfigResponse::default())))
 }
 
-async fn upload_config(
-    State(state): State<Arc<ConfigServer>>,
+async fn upload_config<D>(
+    State(state): State<Arc<ConfigServer<D>>>,
     axum::extract::Path(file_name): axum::extract::Path<String>,
     Query(query): Query<UploadQuery>,
     Json(payload): Json<ConfigPayload>,
-) -> Result<StatusCode, ErrorResponse> {
+) -> Result<StatusCode, ErrorResponse>
+where
+    D: astarte_device_sdk::client::ClientConnection + Send + Sync,
+{
     let file_name = file_name.strip_suffix(".json").unwrap_or(&file_name);
     let file_name = file_name.strip_suffix(".toml").unwrap_or(file_name);
 
     let config = Config::try_from(payload)?;
+
+    let invalid_config = state
+        .validate
+        .read()
+        .await
+        .as_ref()
+        .is_some_and(|validate| !validate.can_change(&config));
+
+    if invalid_config {
+        return Err(ErrorResponse::DevicePaired);
+    }
 
     if query.store {
         state.store_dir.store_config(&config, file_name).await;
@@ -319,6 +366,8 @@ mod test {
     use rstest::rstest;
     use serde_json::{Map, Number, Value};
     use tempfile::TempDir;
+
+    use crate::tests::MockClient;
 
     use super::*;
 
@@ -340,12 +389,13 @@ mod test {
 
             let store_dir = StoreDir::create(dir.path().to_path_buf()).await.unwrap();
 
-            let address = serve(
+            let address = serve::<MockClient>(
                 &mut tasks,
                 cancel_token.clone(),
                 &"127.0.0.1:0".parse().unwrap(),
                 tx,
                 store_dir,
+                Arc::default(),
             )
             .await
             .expect("failed to create server");

@@ -699,8 +699,8 @@ impl AstarteNode {
 #[cfg(test)]
 mod test {
     use astarte_device_sdk::AstarteData as AstarteDataSdk;
+    use astarte_device_sdk::error::{AstarteError, InterfaceError};
     use astarte_device_sdk::store::StoredProp;
-    use astarte_interfaces::error::Error as InterfaceError;
     use astarte_interfaces::schema::Ownership;
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::astarte_message::Payload;
@@ -912,12 +912,10 @@ mod test {
         let attach_result = attach(TEST_UUID, &msg_hub).await;
 
         // send a custom error to the Node
-        let msghub_event = MessageHubEvent::from_error(AstarteMessageHubError::Astarte(
-            astarte_device_sdk::Error::Interface(InterfaceError::DuplicateMapping {
-                endpoint: "test".to_string(),
-                duplicate: "test".to_string(),
-            }),
-        ));
+        let msghub_event =
+            MessageHubEvent::from_error(AstarteMessageHubError::Astarte(AstarteError::new(
+                astarte_device_sdk::error::ErrorKind::Interface(InterfaceError::Invalid),
+            )));
         if let Err(err) = tx.send(Ok(msghub_event.clone())).await {
             panic!("send error: {err:?}");
         }
@@ -1358,11 +1356,11 @@ mod test {
             .expect_interface_props()
             .once()
             .return_once(|_, _| {
-                Err(AstarteMessageHubError::Astarte(
-                    astarte_device_sdk::Error::InterfaceNotFound {
-                        name: "io.demo.Values3".to_string(),
-                    },
-                ))
+                Err(AstarteMessageHubError::Astarte(AstarteError::new(
+                    astarte_device_sdk::error::ErrorKind::Interface(
+                        InterfaceError::InterfaceNotFound,
+                    ),
+                )))
             });
 
         // expect get_properties

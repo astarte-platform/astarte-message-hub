@@ -19,7 +19,7 @@
 //! Astarte Message Hub client example, will send the uptime every 3 seconds to Astarte.
 
 use astarte_device_sdk::builder::DeviceBuilder;
-use astarte_device_sdk::client::{ClientDisconnect, RecvError};
+use astarte_device_sdk::client::ClientConnection;
 use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::transport::grpc::GrpcConfig;
 use astarte_device_sdk::{Client, EventLoop};
@@ -28,7 +28,7 @@ use clap::Parser;
 use std::time;
 use tokio::signal::ctrl_c;
 use tokio::task::JoinSet;
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -92,16 +92,9 @@ async fn main() -> Result<(), DynError> {
 
     tasks.spawn(async move {
         info!("start receiving messages from the Astarte Message Hub Server");
-        loop {
-            match client_cl.recv().await {
-                Ok(event) => {
-                    info!("received {event:?}");
-                }
-                Err(RecvError::Disconnected) => break,
-                Err(err) => {
-                    error!("error while receiving data from Astarte Message Hub Server: {err:?}")
-                }
-            }
+
+        while let Some(event) = client_cl.recv().await {
+            info!("received {event:?}");
         }
 
         Ok(())
