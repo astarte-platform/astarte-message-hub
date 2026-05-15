@@ -16,6 +16,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#![expect(clippy::result_large_err)]
+
 use std::str::FromStr;
 use std::{env::VarError, future::Future, sync::Arc};
 

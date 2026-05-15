@@ -684,6 +684,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::messages::convert_chrono_to_timestamp;
+    use crate::tests::{MockClient, MockConnection};
 
     use super::*;
 
@@ -692,10 +693,7 @@ mod test {
 
     use astarte_device_sdk::Value;
     use astarte_device_sdk::error::Error as AstarteSdkError;
-    use astarte_device_sdk::store::SqliteStore;
-    use astarte_device_sdk::transport::mqtt::Mqtt;
     use astarte_device_sdk_mock::mockall::Sequence;
-    use astarte_device_sdk_mock::{MockDeviceClient, MockDeviceConnection};
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::{AstarteData, InterfacesJson, MessageHubError};
     use chrono::{DateTime, Utc};
@@ -758,20 +756,15 @@ mod test {
         }
     }
 
-    fn mock_with_clone<F>(mut seq: Sequence, client: &mut MockDeviceClient<Mqtt<SqliteStore>>, f: F)
+    fn mock_with_clone<F>(mut seq: Sequence, client: &mut MockClient, f: F)
     where
-        F: FnOnce(
-                Sequence,
-                MockDeviceClient<Mqtt<SqliteStore>>,
-            ) -> MockDeviceClient<Mqtt<SqliteStore>>
-            + Send
-            + 'static,
+        F: FnOnce(Sequence, MockClient) -> MockClient + Send + 'static,
     {
         client
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .return_once(move || f(seq, MockDeviceClient::<Mqtt<SqliteStore>>::new()));
+            .return_once(move || f(seq, MockClient::new()));
     }
 
     #[tokio::test]
@@ -779,7 +772,7 @@ mod test {
         let interface = Interface::from_str(SERV_PROPS_IFACE).unwrap();
         let interfaces = vec![interface.clone()];
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -824,8 +817,8 @@ mod test {
         let path = "test";
         let value: i32 = 5;
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
-        let mut connection = MockDeviceConnection::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
+        let mut connection = MockConnection::default();
 
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
@@ -945,8 +938,8 @@ mod test {
     async fn poll_failed_with_proto_error() {
         let prop_interface = Interface::from_str(SERV_PROPS_IFACE).unwrap();
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
-        let mut connection = MockDeviceConnection::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
+        let mut connection = MockConnection::default();
 
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
 
@@ -1099,8 +1092,8 @@ mod test {
     async fn poll_failed_with_proto_error_broadcast() {
         let prop_interface = Interface::from_str(SERV_PROPS_IFACE).unwrap();
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
-        let mut connection = MockDeviceConnection::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
+        let mut connection = MockConnection::default();
 
         // we define two nodes with the same introspection and test that a RecvError (except for a
         // MappingNotFound one) is broadcast to all the subscribed nodes, even those with a
@@ -1213,7 +1206,7 @@ mod test {
 
     #[tokio::test]
     async fn poll_failed_with_astarte_error() {
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
 
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1221,7 +1214,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(MockDeviceClient::<Mqtt<SqliteStore>>::new);
+            .returning(MockClient::new);
 
         // Simulate disconnect
         client
@@ -1240,7 +1233,7 @@ mod test {
 
     #[tokio::test]
     async fn publish_failed_with_invalid_payload() {
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
+        let mut client = MockClient::new();
 
         let expected_interface_name = "io.demo.Properties";
 
@@ -1252,7 +1245,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(MockDeviceClient::<Mqtt<SqliteStore>>::default);
+            .returning(MockClient::default);
 
         let (publisher, _subscriber) = init_pub_sub(client);
 
@@ -1268,7 +1261,7 @@ mod test {
 
     #[tokio::test]
     async fn publish_failed_with_invalid_astarte_data() {
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
 
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1276,7 +1269,7 @@ mod test {
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(MockDeviceClient::<Mqtt<SqliteStore>>::default);
+            .returning(MockClient::default);
 
         let astarte_message = create_astarte_message("io.demo.Properties", "/test", None);
 
@@ -1293,7 +1286,7 @@ mod test {
 
     #[tokio::test]
     async fn publish_individual_success() {
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         let expected_interface_name = "io.demo.Properties";
@@ -1355,7 +1348,7 @@ mod test {
             Some(expected_payload),
         );
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1402,7 +1395,7 @@ mod test {
             Some(expected_payload),
         );
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
+        let mut client = MockClient::new();
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1463,7 +1456,7 @@ mod test {
             Some(expected_payload),
         );
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1541,7 +1534,7 @@ mod test {
             })),
         );
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         mock_with_clone(seq, &mut client, move |seq, mut client| {
@@ -1606,7 +1599,7 @@ mod test {
             })),
         );
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         mock_with_clone(seq, &mut client, move |seq, mut client| {
@@ -1670,7 +1663,7 @@ mod test {
         );
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
+        let mut client = MockClient::new();
 
         mock_with_clone(seq, &mut client, move |seq, mut client| {
             mock_with_clone(seq, &mut client, move |mut seq, mut client| {
@@ -1747,7 +1740,7 @@ mod test {
             })),
         );
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         mock_with_clone(seq, &mut client, move |seq, mut client| {
@@ -1801,7 +1794,7 @@ mod test {
             })),
         );
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
 
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
@@ -1840,7 +1833,7 @@ mod test {
             })),
         );
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
         let seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         mock_with_clone(seq, &mut client, move |seq, mut client| {
@@ -1887,7 +1880,7 @@ mod test {
             SERV_OBJ_IFACE.to_string(),
         ]);
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         client
@@ -1895,14 +1888,14 @@ mod test {
             .once()
             .in_sequence(&mut seq)
             .return_once(move || {
-                let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
+                let mut client = MockClient::new();
 
                 client
                     .expect_clone()
                     .once()
                     .in_sequence(&mut seq)
                     .returning(|| {
-                        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
+                        let mut client = MockClient::new();
 
                         client
                             .expect_extend_interfaces::<Vec<Interface>>()
@@ -1928,7 +1921,7 @@ mod test {
                     .once()
                     .in_sequence(&mut seq)
                     .return_once(move || {
-                        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
+                        let mut client = MockClient::new();
 
                         client
                             .expect_remove_interfaces()
@@ -1964,14 +1957,14 @@ mod test {
 
     #[tokio::test]
     async fn detach_node_unsubscribe_failed() {
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
+        let mut client = MockClient::new();
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         client
             .expect_clone()
             .once()
             .in_sequence(&mut seq)
-            .returning(MockDeviceClient::<Mqtt<SqliteStore>>::default);
+            .returning(MockClient::default);
 
         let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
         let astarte_node = AstarteNode::from_json(
@@ -1999,7 +1992,7 @@ mod test {
             SERV_OBJ_IFACE.to_string(),
         ]);
 
-        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::default();
+        let mut client = MockClient::default();
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
 
         client
@@ -2007,14 +2000,14 @@ mod test {
             .once()
             .in_sequence(&mut seq)
             .return_once(move || {
-                let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
+                let mut client = MockClient::new();
 
                 client
                     .expect_clone()
                     .once()
                     .in_sequence(&mut seq)
                     .returning(|| {
-                        let mut client = MockDeviceClient::<Mqtt<SqliteStore>>::new();
+                        let mut client = MockClient::new();
 
                         client
                             .expect_extend_interfaces::<Vec<Interface>>()
