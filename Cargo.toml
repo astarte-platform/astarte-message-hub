@@ -102,7 +102,7 @@ tempfile.workspace = true
 [workspace.dependencies]
 astarte-device-sdk = "0.12.1"
 astarte-device-sdk-mock = "0.12.1"
-astarte-interfaces = "0.1.1"
+astarte-interfaces = "0.2.0"
 astarte-message-hub-proto = "0.10.1"
 async-trait = "0.1.89"
 axum = "0.8.9"
