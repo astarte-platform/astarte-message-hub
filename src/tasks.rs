@@ -17,14 +17,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::ops::ControlFlow;
+use std::sync::Arc;
 use std::{net::SocketAddr, time::Duration};
 
-use astarte_device_sdk::{EventLoop, client::ClientDisconnect};
+use astarte_device_sdk::EventLoop;
+use astarte_device_sdk::client::ClientConnection;
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::error::Result;
 use eyre::{ContextCompat, OptionExt, WrapErr, eyre};
 use tokio::select;
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, mpsc};
 use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, trace, warn};
@@ -33,7 +35,7 @@ use astarte_message_hub::AstarteMessageHub;
 use astarte_message_hub::astarte::handler::init_pub_sub;
 use astarte_message_hub::cache::Introspection;
 use astarte_message_hub::config::ConfigBuilder;
-use astarte_message_hub::config::dynamic::listen_dynamic_config;
+use astarte_message_hub::config::dynamic::{SharedValidate, Validate, listen_dynamic_config};
 use astarte_message_hub::config::loader::{ConfigEntry, ConfigRepository};
 use astarte_message_hub::store::StoreDir;
 
@@ -81,7 +83,13 @@ impl MessageHubTasks {
             }
         });
 
-        if self.wait_for_dynamic(&cancel).await?.is_break() {
+        let dyn_validate = Arc::new(RwLock::new(None));
+
+        if self
+            .wait_for_dynamic(&cancel, &dyn_validate)
+            .await?
+            .is_break()
+        {
             return Ok(ControlFlow::Break(()));
         }
 
@@ -89,6 +97,8 @@ impl MessageHubTasks {
 
         // Initialize an Astarte device
         let (client, connection) = options.create_connection(&self.store_dir).await?;
+
+        *dyn_validate.write().await = Some(Validate::new(client.clone(), &options));
 
         let (publisher, mut subscriber) = init_pub_sub(client.clone());
 
@@ -184,10 +194,14 @@ impl MessageHubTasks {
         self.join_tasks(cancel).await
     }
 
-    async fn wait_for_dynamic(
+    async fn wait_for_dynamic<D>(
         &mut self,
         cancel: &CancellationToken,
-    ) -> eyre::Result<ControlFlow<()>> {
+        validate: &SharedValidate<D>,
+    ) -> eyre::Result<ControlFlow<()>>
+    where
+        D: astarte_device_sdk::client::ClientConnection + Send + Sync + 'static,
+    {
         let Some(dynamic) = self.config.get_dynamic_config() else {
             return Ok(ControlFlow::Continue(()));
         };
@@ -201,6 +215,7 @@ impl MessageHubTasks {
             cancel.child_token(),
             dynamic,
             self.store_dir.clone(),
+            validate,
         )
         .await?;
         let rx = self.config_rx.insert(rx);
