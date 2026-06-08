@@ -57,7 +57,10 @@ bindgen = ["astarte-device-sdk/bindgen"]
 cross = ["vendored", "bindgen", "astarte-device-sdk/cross"]
 
 [dependencies]
-astarte-device-sdk = { workspace = true, features = ["derive", "security-events"] }
+astarte-device-sdk = { workspace = true, features = [
+  "derive",
+  "security-events"
+] }
 astarte-interfaces.workspace = true
 astarte-message-hub-proto.workspace = true
 async-trait.workspace = true
@@ -74,7 +77,12 @@ rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "sync", "macros", "signal"] }
+tokio = { workspace = true, features = [
+  "rt-multi-thread",
+  "sync",
+  "macros",
+  "signal"
+] }
 tokio-stream = { workspace = true, features = ["fs", "net"] }
 tokio-util.workspace = true
 toml.workspace = true
@@ -84,7 +92,11 @@ tower-http = { workspace = true, features = ["trace"] }
 tracing.workspace = true
 tracing-error.workspace = true
 tracing-journald.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
+tracing-subscriber = { workspace = true, features = [
+  "env-filter",
+  "fmt",
+  "json"
+] }
 url.workspace = true
 uuid.workspace = true
 zbus = { workspace = true, default-features = false, features = ["tokio"] }
@@ -95,14 +107,20 @@ astarte-device-sdk-mock.workspace = true
 insta = { workspace = true, features = ["toml"] }
 mockall.workspace = true
 pretty_assertions.workspace = true
-reqwest = { workspace = true, features = ["charset", "http2", "system-proxy", "rustls-no-provider", "json"] }
+reqwest = { workspace = true, features = [
+  "charset",
+  "http2",
+  "system-proxy",
+  "rustls-no-provider",
+  "json"
+] }
 rstest.workspace = true
 tempfile.workspace = true
 
 [workspace.dependencies]
-astarte-device-sdk = "0.12.1"
-astarte-device-sdk-mock = "0.12.1"
-astarte-interfaces = "0.1.1"
+astarte-device-sdk = "0.13.0"
+astarte-device-sdk-mock = "0.13.0"
+astarte-interfaces = "1.0.0"
 astarte-message-hub-proto = "0.10.1"
 async-trait = "0.1.89"
 axum = "0.8.9"
@@ -147,3 +165,7 @@ lto = "thin"
 debug = true
 # Supported by all platform
 split-debuginfo = "packed"
+
+[patch.crates-io]
+astarte-device-sdk = { git = "https://github.com/joshuachp/astarte-device-sdk-rust", branch = "push-komlmvvsluzy" }
+astarte-device-sdk-mock = { git = "https://github.com/joshuachp/astarte-device-sdk-rust", branch = "push-komlmvvsluzy" }
