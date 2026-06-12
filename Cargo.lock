@@ -155,7 +155,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fb3fb2d8324e27f73597c3ecd96fb91952d40a15598e617b17c177fbd9894a0"
 dependencies = [
  "astarte-device-sdk-derive",
- "astarte-interfaces",
+ "astarte-interfaces 0.1.1",
  "astarte-message-hub-proto",
  "async-channel",
  "aws-lc-rs",
@@ -224,12 +224,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "astarte-interfaces"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f8b7a2a5a2e54f865ebe5ca93ee3efd41dea73f7eb0b5e0802f5ced63a8cf9d"
+dependencies = [
+ "cfg-if",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "astarte-message-hub"
 version = "0.11.0"
 dependencies = [
  "astarte-device-sdk",
  "astarte-device-sdk-mock",
- "astarte-interfaces",
+ "astarte-interfaces 1.0.0",
  "astarte-message-hub-proto",
  "async-trait",
  "axum",
@@ -861,7 +875,7 @@ name = "e2e-test"
 version = "0.11.0"
 dependencies = [
  "astarte-device-sdk",
- "astarte-interfaces",
+ "astarte-interfaces 1.0.0",
  "astarte-message-hub",
  "astarte-message-hub-proto",
  "base64",
