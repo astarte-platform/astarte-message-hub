@@ -38,7 +38,7 @@ jobs:
       id-token: write
     steps:
       - name: Check out the repo at the specified ref
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.commit-sha }}
       - name: Log in to registry
