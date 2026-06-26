@@ -188,6 +188,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "astarte-device-sdk"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c4150fdbde0ffd3132ef81c960a1f79631917bcbe36d8fb6578775fb124528e"
+dependencies = [
+ "astarte-interfaces",
+ "async-channel",
+ "base64",
+ "bson",
+ "bytes",
+ "cfg-if",
+ "chrono",
+ "flate2",
+ "futures",
+ "itertools 0.14.0",
+ "rand 0.10.0",
+ "rcgen",
+ "reqwest",
+ "rumqttc-dev-patched",
+ "rusqlite",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pemfile",
+ "rustls-webpki 0.103.9",
+ "serde",
+ "serde_json",
+ "sync_wrapper",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+ "x509-parser",
+]
+
+[[package]]
 name = "astarte-device-sdk-derive"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -200,11 +236,11 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-mock"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7fc41b4ada0283156c975819d013c63e16366ba48de84adeff1e18b6fc5a99e"
+checksum = "85be8a22418ab65c26728d1490030c7935fc0d9511d68cd732bf3ad9ef4aaadf"
 dependencies = [
- "astarte-device-sdk",
+ "astarte-device-sdk 0.13.0",
  "chrono",
  "mockall",
 ]
@@ -227,7 +263,7 @@ dependencies = [
 name = "astarte-message-hub"
 version = "0.11.0"
 dependencies = [
- "astarte-device-sdk",
+ "astarte-device-sdk 0.12.1",
  "astarte-device-sdk-mock",
  "astarte-interfaces",
  "astarte-message-hub-proto",
@@ -860,7 +896,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 name = "e2e-test"
 version = "0.11.0"
 dependencies = [
- "astarte-device-sdk",
+ "astarte-device-sdk 0.12.1",
  "astarte-interfaces",
  "astarte-message-hub",
  "astarte-message-hub-proto",
