@@ -36,7 +36,9 @@ use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tower_http::trace::TraceLayer;
 use tracing::{error, info};
+use url::Url;
 
+use crate::config::file::fdo::FdoConfig;
 use crate::config::loader::ConfigEntry;
 use crate::error::ConfigError;
 use crate::store::StoreDir;
@@ -174,13 +176,14 @@ impl ConfigServer {
 
 #[derive(Debug, Clone, Deserialize)]
 struct ConfigPayload {
-    realm: String,
+    realm: Option<String>,
     device_id: Option<String>,
     credentials_secret: Option<String>,
-    pairing_url: String,
+    pairing_url: Option<String>,
     pairing_token: Option<String>,
     grpc_socket_host: Option<IpAddr>,
     grpc_socket_port: Option<u16>,
+    fdo: Option<FdoPayload>,
 }
 
 impl TryFrom<ConfigPayload> for Config {
@@ -195,22 +198,46 @@ impl TryFrom<ConfigPayload> for Config {
             pairing_token,
             grpc_socket_host,
             grpc_socket_port,
+            fdo,
         } = value;
 
+        let fdo = fdo.map(FdoConfig::from);
+
         let config = Self {
-            realm: Some(realm),
+            realm,
             device_id,
             credentials_secret,
-            pairing_url: Some(pairing_url),
+            pairing_url,
             pairing_token,
             grpc_socket_host,
             grpc_socket_port,
+            fdo,
             ..Default::default()
         };
 
         config.validate()?;
 
         Ok(config)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct FdoPayload {
+    enabled: Option<bool>,
+    manufacturing_url: Option<Url>,
+}
+
+impl From<FdoPayload> for FdoConfig {
+    fn from(value: FdoPayload) -> Self {
+        let FdoPayload {
+            enabled,
+            manufacturing_url,
+        } = value;
+
+        FdoConfig {
+            enabled,
+            manufacturing_url,
+        }
     }
 }
 
@@ -396,19 +423,25 @@ mod test {
 
     #[rstest]
     #[timeout(Duration::from_secs(2))]
+    #[case(Config {
+        realm: Some("realm".to_string()),
+        device_id: Some("device_id".to_string()),
+        pairing_url: Some("pairing_url".to_string()),
+        credentials_secret: Some("credentials_secret".to_string()),
+        ..Default::default()
+    })]
+    #[case(Config {
+        fdo: Some(FdoConfig {
+            enabled: Some(true),
+            manufacturing_url: Some("http://example.com".parse().unwrap())
+        }),
+        ..Default::default()
+    })]
     #[tokio::test]
-    async fn server_test() {
+    async fn server_test(#[case] exp: Config) {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
         let mut server = TestServer::serve().await;
-
-        let exp = Config {
-            realm: Some("realm".to_string()),
-            device_id: Some("device_id".to_string()),
-            pairing_url: Some("pairing_url".to_string()),
-            credentials_secret: Some("credentials_secret".to_string()),
-            ..Default::default()
-        };
 
         let client = reqwest::Client::new();
 
@@ -444,19 +477,25 @@ mod test {
 
     #[rstest]
     #[timeout(Duration::from_secs(2))]
+    #[case(Config {
+        realm: Some("realm".to_string()),
+        device_id: Some("device_id".to_string()),
+        pairing_url: Some("pairing_url".to_string()),
+        credentials_secret: Some("credentials_secret".to_string()),
+        ..Default::default()
+    })]
+    #[case(Config {
+        fdo: Some(FdoConfig {
+            enabled: Some(true),
+            manufacturing_url: Some("http://example.com".parse().unwrap())
+        }),
+        ..Default::default()
+    })]
     #[tokio::test]
-    async fn server_upload_test() {
+    async fn server_upload_test(#[case] exp: Config) {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
         let mut server = TestServer::serve().await;
-
-        let exp = Config {
-            realm: Some("realm".to_string()),
-            device_id: Some("device_id".to_string()),
-            pairing_url: Some("pairing_url".to_string()),
-            credentials_secret: Some("credentials_secret".to_string()),
-            ..Default::default()
-        };
 
         let client = reqwest::Client::new();
 
