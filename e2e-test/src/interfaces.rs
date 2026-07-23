@@ -16,6 +16,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use astarte_device_sdk::astarte_device_error::Error;
+use astarte_device_sdk::types::TypeError;
 use astarte_device_sdk::{IntoAstarteObject, aggregate::AstarteObject};
 use serde::{Deserialize, Serialize};
 
@@ -88,7 +90,7 @@ impl DeviceAggregate {
         "/sendor_1"
     }
 
-    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+    pub fn into_object(self) -> Result<AstarteObject, Error<TypeError>> {
         self.0.try_into()
     }
 }
@@ -109,7 +111,7 @@ impl DeviceDatastream {
         DEVICE_DATASTREAM
     }
 
-    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+    pub fn into_object(self) -> Result<AstarteObject, Error<TypeError>> {
         self.0.try_into()
     }
 }
@@ -130,7 +132,7 @@ impl DeviceProperty {
         DEVICE_PROPERTY
     }
 
-    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+    pub fn into_object(self) -> Result<AstarteObject, Error<TypeError>> {
         self.0.try_into()
     }
 }
@@ -155,7 +157,7 @@ impl ServerAggregate {
         "/sendor_1"
     }
 
-    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+    pub fn into_object(self) -> Result<AstarteObject, Error<TypeError>> {
         self.0.try_into()
     }
 }
@@ -176,7 +178,7 @@ impl ServerDatastream {
         SERVER_DATASTREAM
     }
 
-    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+    pub fn into_object(self) -> Result<AstarteObject, Error<TypeError>> {
         self.0.try_into()
     }
 }
@@ -197,7 +199,7 @@ impl ServerProperty {
         SERVER_PROPERTY
     }
 
-    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+    pub fn into_object(self) -> Result<AstarteObject, Error<TypeError>> {
         self.0.try_into()
     }
 }
@@ -220,7 +222,7 @@ impl AdditionalDeviceDatastream {
         ADDITIONAL_DEVICE_DATASTREAM
     }
 
-    pub fn into_object(self) -> Result<AstarteObject, astarte_device_sdk::Error> {
+    pub fn into_object(self) -> Result<AstarteObject, Error<TypeError>> {
         self.0.try_into()
     }
 }
@@ -248,6 +250,7 @@ impl AdditionalServerDatastream {
 #[astarte_object(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub struct Data {
+    #[astarte_object(fallible)]
     double_endpoint: f64,
     integer_endpoint: i32,
     boolean_endpoint: bool,
@@ -257,6 +260,7 @@ pub struct Data {
     #[serde(with = "crate::utils::blob")]
     binaryblob_endpoint: Vec<u8>,
     datetime_endpoint: Timestamp,
+    #[astarte_object(fallible)]
     doublearray_endpoint: Vec<f64>,
     integerarray_endpoint: Vec<i32>,
     booleanarray_endpoint: Vec<bool>,

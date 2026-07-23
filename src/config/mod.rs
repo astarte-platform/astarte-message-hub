@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use astarte_device_sdk::builder::DeviceBuilder;
+use astarte_device_sdk::pairing::api::PairingApi;
 use astarte_device_sdk::store::SqliteStore;
 use astarte_device_sdk::transport::mqtt::{Credential, Mqtt, MqttArgs, MqttConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection};
@@ -99,8 +100,8 @@ impl MessageHubOptions {
         &self,
         store_dir: &StoreDir,
     ) -> eyre::Result<(
-        DeviceClient<Mqtt<SqliteStore>>,
-        DeviceConnection<Mqtt<SqliteStore>>,
+        DeviceClient<Mqtt<SqliteStore, PairingApi>>,
+        DeviceConnection<Mqtt<SqliteStore, PairingApi>>,
     )> {
         // initialize the device options and mqtt config
         let mut mqtt_config = MqttConfig::new(MqttArgs {

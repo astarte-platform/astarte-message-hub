@@ -25,7 +25,7 @@ use astarte_device_sdk::{
     store::memory::MemoryStore,
     transport::grpc::{Grpc, GrpcConfig},
 };
-use eyre::Context;
+use eyre::{Context, OptionExt};
 use tokio::{
     sync::Barrier,
     task::{AbortHandle, JoinSet},
@@ -44,7 +44,7 @@ impl Node {
     pub async fn recv(&mut self) -> eyre::Result<DeviceEvent> {
         let event = timeout(Duration::from_secs(5), self.client.recv())
             .await?
-            .wrap_err("error from the sdk")?;
+            .ok_or_eyre("error from the sdk")?;
 
         Ok(event)
     }
