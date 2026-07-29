@@ -18,11 +18,16 @@
 
 name: Publish snapshot Docker images
 on:
+  push:
+    branches:
+      - master
+      - main
+      - release-[0-9]+.[0-9]+
   workflow_call:
   workflow_dispatch:
     inputs:
       commit-sha:
-        description: 'The branch, tag or SHA to checkout'
+        description: "The branch, tag or SHA to checkout"
         required: true
         type: string
 env:

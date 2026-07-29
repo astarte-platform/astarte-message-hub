@@ -150,7 +150,9 @@ fn check_astarte_value(data: &AstarteData, value: &Value) -> eyre::Result<bool> 
 
 impl Api {
     fn url(api_url: &str, realm: &str, device_id: &str) -> eyre::Result<Url> {
-        let url = Url::parse(&format!("{api_url}/v1/{realm}/devices/{device_id}"))?;
+        let url = Url::parse(&format!(
+            "{api_url}/appengine/v1/{realm}/devices/{device_id}"
+        ))?;
 
         Ok(url)
     }

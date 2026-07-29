@@ -22,9 +22,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'The tag to checkout and release'
+        description: "The tag to checkout and release"
         required: true
         type: string
+  release:
+    types: [published]
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/astarte-message-hub
 jobs:
@@ -36,8 +38,6 @@ jobs:
       contents: read
       attestations: write
       id-token: write
-    strategy:
-      fail-fast: true
     steps:
       - name: Check out the repo at specified tag
         uses: actions/checkout@v7
