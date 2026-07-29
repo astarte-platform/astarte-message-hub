@@ -63,7 +63,7 @@ pub async fn init_message_hub(
 ) -> eyre::Result<MsgHub> {
     let realm = read_env("E2E_REALM")?;
     let device_id = read_env("E2E_DEVICE_ID")?;
-    let credentials_secret = read_env("E2E_CREDENTIAL_SECRET")?;
+    let pairing_token = read_env("E2E_PAIRING_TOKEN")?;
     let pairing_url = read_env("E2E_PAIRING_URL")?;
 
     let store_dir = StoreDir::create(path.to_path_buf()).await?;
@@ -71,7 +71,7 @@ pub async fn init_message_hub(
     let mut mqtt_config = MqttConfig::new(astarte_device_sdk::transport::mqtt::MqttArgs {
         realm,
         device_id,
-        credential: Credential::secret(credentials_secret),
+        credential: Credential::paring_token(pairing_token),
         pairing_url: pairing_url.parse()?,
     });
 
@@ -87,6 +87,7 @@ pub async fn init_message_hub(
     let store = SqliteStore::options().with_db_file(&db_path).await?;
 
     let (client, connection) = DeviceBuilder::new()
+        .writable_dir(path)
         .store(store)
         .connection(mqtt_config)
         .build()
