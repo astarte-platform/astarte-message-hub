@@ -222,12 +222,12 @@ impl Config {
 
     /// Validate the values are present for the server configuration.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        if self
-            .fdo
-            .as_ref()
-            .is_some_and(|fdo| fdo.enabled.unwrap_or_default())
+        if let Some(fdo) = &self.fdo.as_ref()
+            && fdo.enabled.unwrap_or_default()
         {
             info!("FDO is enabled");
+
+            fdo.validate()?;
         } else {
             self.validate_pairing_config()?;
         }

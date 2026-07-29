@@ -1,0 +1,6 @@
+---
+source: src/config/file/fdo.rs
+expression: toml
+---
+enabled = true
+manufacturing_url = "https://example.com/"
