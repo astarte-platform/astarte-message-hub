@@ -20,8 +20,11 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::{net::SocketAddr, time::Duration};
 
-use astarte_device_sdk::EventLoop;
 use astarte_device_sdk::client::ClientConnection;
+use astarte_device_sdk::pairing::Pairing;
+use astarte_device_sdk::store::SqliteStore;
+use astarte_device_sdk::transport::mqtt::Mqtt;
+use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::error::Result;
 use eyre::{ContextCompat, OptionExt, WrapErr, eyre};
@@ -96,8 +99,46 @@ impl MessageHubTasks {
         let options = self.config.try_into_options(&self.store_dir).await?;
 
         // Initialize an Astarte device
-        let (client, connection) = options.create_connection(&self.store_dir).await?;
+        match &options.pairing {
+            #[cfg(feature = "fdo")]
+            astarte_message_hub::config::Pairing::Fdo(fdo) => {
+                let (client, connection) = cancel
+                    .run_until_cancelled(options.connection_fdo(fdo, &self.store_dir))
+                    .await
+                    .ok_or_eyre("cancelled connect")??;
 
+                let res = self
+                    .with_connection(cancel, dyn_validate, options, client, connection)
+                    .await?;
+
+                Ok(res)
+            }
+            astarte_message_hub::config::Pairing::Legacy(legacy) => {
+                let (client, connection) = cancel
+                    .run_until_cancelled(options.create_connection(legacy, &self.store_dir))
+                    .await
+                    .ok_or_eyre("cancelled connect")??;
+
+                let res = self
+                    .with_connection(cancel, dyn_validate, options, client, connection)
+                    .await?;
+
+                Ok(res)
+            }
+        }
+    }
+
+    async fn with_connection<P>(
+        &mut self,
+        cancel: CancellationToken,
+        dyn_validate: SharedValidate,
+        options: astarte_message_hub::config::MessageHubOptions,
+        client: DeviceClient<Mqtt<SqliteStore, P>>,
+        connection: DeviceConnection<Mqtt<SqliteStore, P>>,
+    ) -> std::result::Result<ControlFlow<()>, eyre::Error>
+    where
+        P: Pairing + 'static,
+    {
         *dyn_validate.write().await = Some(Validate::new(client.clone(), &options));
 
         let (publisher, mut subscriber) = init_pub_sub(client.clone());
@@ -194,14 +235,11 @@ impl MessageHubTasks {
         self.join_tasks(cancel).await
     }
 
-    async fn wait_for_dynamic<D>(
+    async fn wait_for_dynamic(
         &mut self,
         cancel: &CancellationToken,
-        validate: &SharedValidate<D>,
-    ) -> eyre::Result<ControlFlow<()>>
-    where
-        D: astarte_device_sdk::client::ClientConnection + Send + Sync + 'static,
-    {
+        validate: &SharedValidate,
+    ) -> eyre::Result<ControlFlow<()>> {
         let Some(dynamic) = self.config.get_dynamic_config() else {
             return Ok(ControlFlow::Continue(()));
         };

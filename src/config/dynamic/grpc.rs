@@ -54,18 +54,14 @@ pub enum ProtobufConfigError {
     Channel(#[from] SendError<()>),
 }
 
-#[derive(Debug)]
-struct AstarteMessageHubConfig<D> {
+struct AstarteMessageHubConfig {
     tx: tokio::sync::mpsc::Sender<ConfigEntry>,
     store_dir: StoreDir,
-    validate: SharedValidate<D>,
+    validate: SharedValidate,
 }
 
 #[tonic::async_trait]
-impl<D> MessageHubConfig for AstarteMessageHubConfig<D>
-where
-    D: astarte_device_sdk::client::ClientConnection + Send + Sync + 'static,
-{
+impl MessageHubConfig for AstarteMessageHubConfig {
     /// Protobuf API that allows to set The Message Hub configurations
     async fn set_config(&self, request: Request<ConfigMessage>) -> Result<Response<()>, Status> {
         let ConfigMessage {
@@ -146,17 +142,14 @@ where
 }
 
 /// Starts the dynamic configuration gRPC server
-pub async fn serve<D>(
+pub async fn serve(
     tasks: &mut JoinSet<eyre::Result<()>>,
     cancel: CancellationToken,
     address: SocketAddr,
     tx: mpsc::Sender<ConfigEntry>,
     store_dir: StoreDir,
-    validate: SharedValidate<D>,
-) -> eyre::Result<SocketAddr>
-where
-    D: astarte_device_sdk::client::ClientConnection + Send + Sync + 'static,
-{
+    validate: SharedValidate,
+) -> eyre::Result<SocketAddr> {
     let service = AstarteMessageHubConfig {
         tx,
         store_dir,
@@ -196,7 +189,6 @@ mod test {
     use tonic::transport::Endpoint;
 
     use crate::config::file::CONFIG_FILE_NAME;
-    use crate::tests::MockClient;
 
     use super::*;
 
@@ -218,7 +210,7 @@ mod test {
 
             let store_dir = StoreDir::create(dir.path().to_path_buf()).await.unwrap();
 
-            let address = serve::<MockClient>(
+            let address = serve(
                 &mut tasks,
                 cancel_token.clone(),
                 "127.0.0.1:0".parse().unwrap(),
@@ -241,7 +233,7 @@ mod test {
 
     async fn create_config() -> (
         TempDir,
-        AstarteMessageHubConfig<MockClient>,
+        AstarteMessageHubConfig,
         mpsc::Receiver<ConfigEntry>,
     ) {
         let dir = TempDir::new().unwrap();

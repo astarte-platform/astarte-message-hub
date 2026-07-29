@@ -82,7 +82,7 @@ fn init_tracing() -> eyre::Result<()> {
         .with_ansi(stdout().is_terminal())
         .with_filter(
             EnvFilter::builder()
-                .with_default_directive("astarte_message_hub=info".parse()?)
+                .with_default_directive("info".parse()?)
                 .from_env_lossy(),
         );
 

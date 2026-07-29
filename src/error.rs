@@ -82,7 +82,7 @@ pub enum AstarteMessageHubError {
     ParseInterface(#[from] InterfaceError),
 
     /// Couldn't read the configuration
-    #[error("coudln't read the configuration")]
+    #[error("couldn't read the configuration")]
     Config(#[from] ConfigError),
 
     /// Received an invalid ownership enumeration field
@@ -146,15 +146,18 @@ pub enum ConfigError {
     #[error("interface path {0:?} is not a directory")]
     InvalidInterfaceDirectory(Option<PathBuf>),
     /// Couldn't deserialize the configuration file
-    #[error("coudln't deserialize the configuration file")]
+    #[error("couldn't deserialize the configuration file")]
     Toml(#[from] toml::de::Error),
     /// Couldn't read configuration file
     #[error("couldn't read configuration file")]
     File(#[from] io::Error),
     /// Couldn't parse url.
-    #[error("coudldn't parse url")]
+    #[error("couldn't parse url")]
     Url(#[from] url::ParseError),
     /// Couldn't read the dynamic generated file.
-    #[error("coudldn't read dynamic configuration {0}")]
+    #[error("couldn't read dynamic configuration {0}")]
     Dynamic(PathBuf),
+    /// Couldn't read the dynamic generated file.
+    #[error("couldn't use configuration for missing feature {0}")]
+    Feature(&'static str),
 }

@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 # This file is part of Astarte.
 #
 # Copyright 2025, 2026 SECO Mind Srl
@@ -16,13 +18,14 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-name: "Install deps"
-description: "Install dependencies needed to run the jobs"
-runs:
-  using: "composite"
-  steps:
-    - name: Install system dependencies
-      shell: bash
-      run: |
-        sudo apt-get update
-        sudo apt-get -y install libsqlite3-dev libtss2-dev
+set -exEuo pipefail
+
+# Trap -e errors
+trap 'echo "Exit status $? at line $LINENO from: $BASH_COMMAND"' ERR
+
+podman build . -f scripts/cross/Containerfile -t cross-build:latest
+podman run \
+    -v ./:/app:z \
+    -v cargo-cache:/root/.cargo/registry:z \
+    -it --rm localhost/cross-build:latest \
+    -c "cargo build --release --target aarch64-unknown-linux-gnu $@"
