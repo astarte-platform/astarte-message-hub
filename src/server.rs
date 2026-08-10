@@ -86,8 +86,7 @@ where
         debug!("Node Attach Request");
         let node = req.into_inner();
 
-        let interfaces_json = InterfacesJson::from_iter(node.interfaces_json);
-        let astarte_node = AstarteNode::from_json(node_id, &interfaces_json)?;
+        let astarte_node = AstarteNode::from_json(node_id, &node.interfaces_json)?;
 
         info!("Node attached {astarte_node:?}");
 
@@ -681,12 +680,14 @@ impl AstarteNode {
         }
     }
 
-    pub fn from_json(uuid: Uuid, interfaces_json: &InterfacesJson) -> Result<Self, DeviceError> {
+    pub fn from_json<S>(uuid: Uuid, interfaces_json: &[S]) -> Result<Self, DeviceError>
+    where
+        S: Borrow<str>,
+    {
         let introspection = interfaces_json
-            .interfaces_json
             .iter()
             .map(|i| {
-                Interface::from_str(i)
+                Interface::from_str(i.borrow())
                     .map_err(DeviceError::Interface)
                     .map(|i| (i.interface_name().to_string(), i))
             })
@@ -704,7 +705,8 @@ mod test {
     use astarte_interfaces::schema::Ownership;
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
     use astarte_message_hub_proto::astarte_message::Payload;
-    use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual};
+    use astarte_message_hub_proto::message_hub_event::Event;
+    use astarte_message_hub_proto::{AstarteData, AstarteDatastreamIndividual, MessageHubError};
     use async_trait::async_trait;
     use mockall::mock;
     use std::collections::HashMap;
@@ -859,7 +861,9 @@ mod test {
         msg_hub: &AstarteMessageHub<MockAstarteHandler>,
     ) -> Result<tonic::Response<ReceiverStream<Result<MessageHubEvent, Status>>>, Status> {
         let interfaces = vec![SERV_PROPS_IFACE.to_string(), SERV_OBJ_IFACE.to_string()];
-        let node = Node::new(interfaces);
+        let node = Node {
+            interfaces_json: interfaces,
+        };
 
         let mut req_node = Request::new(node);
 
@@ -912,10 +916,13 @@ mod test {
         let attach_result = attach(TEST_UUID, &msg_hub).await;
 
         // send a custom error to the Node
-        let msghub_event =
-            MessageHubEvent::from_error(AstarteMessageHubError::Astarte(AstarteError::new(
-                astarte_device_sdk::error::ErrorKind::Interface(InterfaceError::Invalid),
-            )));
+        let msghub_event = MessageHubEvent {
+            event: Some(Event::Error(MessageHubError::from_error(
+                AstarteMessageHubError::Astarte(AstarteError::new(
+                    astarte_device_sdk::error::ErrorKind::Interface(InterfaceError::Invalid),
+                )),
+            ))),
+        };
         if let Err(err) = tx.send(Ok(msghub_event.clone())).await {
             panic!("send error: {err:?}");
         }
@@ -934,7 +941,9 @@ mod test {
 
         let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
-        let node = Node::new(vec![]);
+        let node = Node {
+            interfaces_json: vec![],
+        };
 
         // avoid inserting the node id
         let req_node = Request::new(node);
@@ -959,9 +968,9 @@ mod test {
 
         let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
-        let interfaces = [SERV_PROPS_IFACE];
+        let interfaces_json = vec![SERV_PROPS_IFACE.to_string()];
 
-        let node = Node::from_interfaces(interfaces).unwrap();
+        let node = Node { interfaces_json };
 
         let req_node = Request::new(node);
         let attach_result = msg_hub.attach(req_node).await;
@@ -1127,8 +1136,8 @@ mod test {
 
         let (msg_hub, _dir) = mock_msg_hub(mock_astarte).await;
 
-        let interfaces = vec![SERV_PROPS_IFACE.to_string()];
-        let node = Node::new(interfaces);
+        let interfaces_json = vec![SERV_PROPS_IFACE.to_string()];
+        let node = Node { interfaces_json };
 
         let mut req_node_attach = Request::new(node);
         req_node_attach.extensions_mut().insert(NodeId(TEST_UUID));
@@ -1406,7 +1415,7 @@ mod test {
 
     #[test]
     fn failed_invalid_interface() {
-        let interfaces = InterfacesJson::from_iter(["INVALID".to_string()]);
+        let interfaces = ["INVALID".to_string()];
 
         let astarte_node = AstarteNode::from_json(TEST_UUID, &interfaces);
 
