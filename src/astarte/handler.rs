@@ -29,6 +29,7 @@ use astarte_device_sdk::store::StoredProp;
 use astarte_device_sdk::{AstarteData, Client};
 use astarte_device_sdk::{DeviceEvent, Value};
 use astarte_interfaces::{Interface, error::Error as InterfaceError};
+use astarte_message_hub_proto::message_hub_event::Event;
 use astarte_message_hub_proto::{
     AstarteDatastreamIndividual, AstarteDatastreamObject, AstarteMessage,
     AstartePropertyIndividual, MessageHubEvent, astarte_message::Payload,
@@ -137,7 +138,9 @@ impl<C> DeviceSubscriber<C> {
         // determine if sending a proto message hub error or a correct message to the message hub nodes
         let iface_name = event.interface.clone();
 
-        let msghub_event = MessageHubEvent::from(convert_event_to_message(event));
+        let msghub_event = MessageHubEvent {
+            event: Some(Event::Message(convert_event_to_message(event))),
+        };
 
         trace!("message hub event: {msghub_event:?}");
 
@@ -313,7 +316,9 @@ impl<C> DevicePublisher<C> {
                         data: Value::Property(Some(prop.value)),
                     };
 
-                    MessageHubEvent::from(convert_event_to_message(event))
+                    MessageHubEvent {
+                        event: Some(Event::Message(convert_event_to_message(event))),
+                    }
                 })
             });
 
@@ -657,8 +662,8 @@ mod test {
     use astarte_device_sdk::Value;
     use astarte_device_sdk::error::{AstarteError, ErrorKind};
     use astarte_device_sdk_mock::mockall::Sequence;
+    use astarte_message_hub_proto::AstarteData;
     use astarte_message_hub_proto::astarte_data::AstarteData as ProtoData;
-    use astarte_message_hub_proto::{AstarteData, InterfacesJson};
     use chrono::{DateTime, Utc};
     use mockall::predicate;
 
@@ -754,7 +759,7 @@ mod test {
             .once()
             .returning(|| Ok(Vec::new()));
 
-        let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
+        let interfaces = vec![SERV_PROPS_IFACE.to_string()];
 
         let astarte_node = AstarteNode::from_json(
             "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
@@ -783,7 +788,7 @@ mod test {
         let mut client = MockClient::default();
         let mut connection = MockConnection::default();
 
-        let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
+        let interfaces = vec![SERV_PROPS_IFACE.to_string()];
 
         let astarte_node = AstarteNode::from_json(
             "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
@@ -852,14 +857,12 @@ mod test {
 
         let mut subscription = subscribe_result.unwrap();
 
-        let astarte_message = subscription
-            .receiver
-            .recv()
-            .await
-            .unwrap()
-            .unwrap()
-            .take_message()
-            .unwrap();
+        let MessageHubEvent {
+            event: Some(Event::Message(astarte_message)),
+        } = subscription.receiver.recv().await.unwrap().unwrap()
+        else {
+            panic!()
+        };
 
         assert_eq!(expected_interface_name, astarte_message.interface_name);
         assert_eq!(path, astarte_message.path);
@@ -1534,10 +1537,7 @@ mod test {
 
     #[tokio::test]
     async fn detach_node_success() {
-        let interfaces = InterfacesJson::from_iter(vec![
-            SERV_PROPS_IFACE.to_string(),
-            SERV_OBJ_IFACE.to_string(),
-        ]);
+        let interfaces = vec![SERV_PROPS_IFACE.to_string(), SERV_OBJ_IFACE.to_string()];
 
         let mut client = MockClient::default();
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();
@@ -1625,7 +1625,7 @@ mod test {
             .in_sequence(&mut seq)
             .returning(MockClient::default);
 
-        let interfaces = InterfacesJson::from_iter(vec![SERV_PROPS_IFACE.to_string()]);
+        let interfaces = vec![SERV_PROPS_IFACE.to_string()];
         let astarte_node = AstarteNode::from_json(
             "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
             &interfaces,
@@ -1646,10 +1646,7 @@ mod test {
 
     #[tokio::test]
     async fn detach_node_success_no_cleanup() {
-        let interfaces = InterfacesJson::from_iter(vec![
-            SERV_PROPS_IFACE.to_string(),
-            SERV_OBJ_IFACE.to_string(),
-        ]);
+        let interfaces = vec![SERV_PROPS_IFACE.to_string(), SERV_OBJ_IFACE.to_string()];
 
         let mut client = MockClient::default();
         let mut seq = astarte_device_sdk_mock::mockall::Sequence::new();

@@ -24,7 +24,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use astarte_message_hub_proto::ConfigMessage;
-use astarte_message_hub_proto::message_hub_config_server::{
+use astarte_message_hub_proto::proto::message_hub_config_server::{
     MessageHubConfig, MessageHubConfigServer,
 };
 use eyre::Context;
