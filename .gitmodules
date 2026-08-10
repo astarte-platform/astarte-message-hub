@@ -16,10 +16,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-[default.extend-words]
-flate2 = "flate2"
-# serde
-ser = "ser"
-
-[files]
-extend-exclude = ["deps/*"]
+[submodule "deps/message-hub-proto"]
+	path = deps/message-hub-proto
+	url = https://github.com/astarte-platform/astarte-message-hub-proto.git
+	branch = main

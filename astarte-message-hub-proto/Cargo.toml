@@ -1,6 +1,6 @@
 # This file is part of Astarte.
 #
-# Copyright 2026 SECO Mind Srl
+# Copyright 2023, 2026 SECO Mind Srl
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,11 +15,23 @@
 # limitations under the License.
 #
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: CC0-1.0
 
-[default.extend-words]
-flate2 = "flate2"
-# serde
-ser = "ser"
+[package]
+name = "astarte-message-hub-proto"
+version.workspace = true
+categories = ["api-bindings"]
+edition.workspace = true
+homepage.workspace = true
+keywords = ["astarte", "protobuf", "iot"]
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Astarte message hub protocol buffers for Rust"
 
-[files]
-extend-exclude = ["deps/*"]
+[dependencies]
+chrono.workspace = true
+prost.workspace = true
+prost-types = { workspace = true, features = ["chrono"] }
+tonic.workspace = true
+tonic-prost.workspace = true
