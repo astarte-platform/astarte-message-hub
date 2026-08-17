@@ -20,7 +20,10 @@
 [workspace]
 resolver = "3"
 members = [
+  "astarte-message-hub-proto",
+  "astarte-message-hub-proto-mock",
   "e2e-test",
+  "proto-codegen",
 ]
 
 [workspace.package]
@@ -125,13 +128,13 @@ tempfile.workspace = true
 astarte-device-sdk = "0.14.2"
 astarte-device-sdk-mock = "0.14.2"
 astarte-interfaces = "1.0.0"
-astarte-message-hub-proto = "0.10.1"
+astarte-message-hub-proto = { path = "./astarte-message-hub-proto", version = "=0.12.0" }
 async-trait = "0.1.89"
 axum = "0.8.9"
 base64 = "0.23.0"
+cfg-if = "1.0.4"
 chrono = "0.4.44"
 clap = "4.6.1"
-cfg-if = "1.0.4"
 color-eyre = "0.6.5"
 dirs = "6.0.0"
 displaydoc = "0.2.5"
@@ -141,6 +144,9 @@ insta = "1.47.2"
 itertools = "0.15.0"
 mockall = "0.15.0"
 pretty_assertions = "1.4.1"
+prost = "0.14.4"
+prost-build = "0.14.4"
+prost-types = "0.14.4"
 reqwest = { version = "0.13.3", default-features = false }
 rstest = "0.26.1"
 rustls = "0.23.40"
@@ -154,6 +160,8 @@ tokio-stream = "0.1.17"
 tokio-util = "0.7.17"
 toml = "1.1.2"
 tonic = "0.14.6"
+tonic-prost = "0.14.6"
+tonic-prost-build = "0.14.6"
 tower = "0.5.2"
 tower-http = "0.7.0"
 tracing = "0.1.43"
@@ -162,6 +170,7 @@ tracing-journald = "0.3.1"
 tracing-subscriber = "0.3.23"
 url = "2.5.8"
 uuid = "1.23.1"
+walkdir = "2.5.0"
 zbus = { version = "5.15.0", default-features = false }
 
 [profile.release]
