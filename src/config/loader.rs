@@ -184,7 +184,7 @@ impl ConfigRepository {
                 Ok(Some(ConfigEntry { path, config }))
             })
             .try_for_each(|entry| {
-                configs.insert(entry);
+                configs.replace(entry);
 
                 futures::future::ok(())
             })
@@ -259,7 +259,7 @@ impl ConfigRepository {
 
     /// Add a dynamic config
     pub fn add_dynamic(&mut self, entry: ConfigEntry) {
-        self.dynamic.insert(entry);
+        self.dynamic.replace(entry);
     }
 }
 
@@ -341,5 +341,36 @@ mod tests {
         assert_eq!(files, exp);
 
         Ok(())
+    }
+
+    #[test]
+    fn update_dynamic_config() {
+        let mut config = ConfigRepository::default();
+        let path = PathBuf::from("/foo");
+
+        config.add_dynamic(ConfigEntry {
+            path: path.clone(),
+            config: Config {
+                realm: Some("other".to_string()),
+                ..Default::default()
+            },
+        });
+
+        let exp = Config {
+            realm: Some("test".to_string()),
+            ..Default::default()
+        };
+
+        config.add_dynamic(ConfigEntry {
+            path: path.clone(),
+            config: exp.clone(),
+        });
+
+        assert_eq!(config.dynamic.len(), 1);
+
+        assert_eq!(
+            *config.dynamic.first().unwrap(),
+            ConfigEntry { path, config: exp }
+        );
     }
 }
