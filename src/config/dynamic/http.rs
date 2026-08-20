@@ -17,6 +17,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Provides an HTTP API to set The Message Hub configurations
+//!
+//! The API has the following endpoints:
+//!
+//! - `GET /` to check the status of the server
+//! - `POST /config` to upload the configuration file [`CONFIG_FILE_NAME_NO_EXT`]
+//! - `PUT /config/upload/<file_name>` to upload the configuration file and customize the file name,
+//!   for example with a priority like `99-config.toml`
+//!
+//! You can pass `?store=false` in the query parameter to choose whether to store the uploaded
+//! configuration file.
+//!
+//! The payload must be in the format of [`ConfigPayload`]
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};
@@ -174,16 +186,40 @@ impl ConfigServer {
     }
 }
 
+/// Json payload for the configuration API.
+///
+/// The fields are optional and will be validated with all the other configurations.
+///
+/// ### Example
+///
+/// ```json
+/// {
+///     realm: "test",
+///     device_id: "wCVUPizcTNatmidLgHBMjw",
+///     credentials_secret: "CREDENTIALS_SECRET"
+///     pairing_url: "http://api.astarte.localhost/pairing",
+/// }
+/// ```
 #[derive(Debug, Clone, Deserialize)]
-struct ConfigPayload {
-    realm: Option<String>,
-    device_id: Option<String>,
-    credentials_secret: Option<String>,
-    pairing_url: Option<String>,
-    pairing_token: Option<String>,
-    grpc_socket_host: Option<IpAddr>,
-    grpc_socket_port: Option<u16>,
-    fdo: Option<FdoPayload>,
+pub struct ConfigPayload {
+    /// Device Astarte realm
+    pub realm: Option<String>,
+    /// Device ID registered on Astarte
+    pub device_id: Option<String>,
+    /// Credential secret of an already registered device.
+    pub credentials_secret: Option<String>,
+    /// Astarte pairing URL
+    pub pairing_url: Option<String>,
+    /// JWT token with pairing claim.
+    pub pairing_token: Option<String>,
+    /// gRPC host to start the message-hub on.
+    pub grpc_socket_host: Option<IpAddr>,
+    /// gRPC port to start the message-hub on.
+    pub grpc_socket_port: Option<u16>,
+    /// FDO configuration.
+    ///
+    /// Used instead to provide paring token or secret.
+    pub fdo: Option<FdoPayload>,
 }
 
 impl TryFrom<ConfigPayload> for Config {
@@ -221,10 +257,13 @@ impl TryFrom<ConfigPayload> for Config {
     }
 }
 
+/// FDO configuration
 #[derive(Debug, Clone, Deserialize)]
-struct FdoPayload {
-    enabled: Option<bool>,
-    manufacturing_url: Option<Url>,
+pub struct FdoPayload {
+    /// Enable pairing with FDO
+    pub enabled: Option<bool>,
+    /// URL of the manufacturing server
+    pub manufacturing_url: Option<Url>,
 }
 
 impl From<FdoPayload> for FdoConfig {
