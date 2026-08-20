@@ -95,6 +95,9 @@ An example configuration file can be found in the
 [examples](https://github.com/astarte-platform/astarte-message-hub/blob/master/examples/message-hub-config.toml)
 direction.
 
+For the full list of the available fields of the configuration file, you can look at the
+[Config struct on in the documentation](https://docs.rs/astarte-message-hub/latest/astarte_message_hub/config/file/struct.Config.html).
+
 #### Configuration priority
 
 The Message Hub will first load the default configuration files in the system and user directory, in
@@ -104,6 +107,25 @@ by one named `40-config.toml`.
 
 After all the configuration files, the custom configuration file (specified with the `-c` or
 `--config` flag) and other CLI and ENV arguments will take be read.
+
+#### Dynamic configuration
+
+If the message-hub is started with the dynamic configuration option enable, either from CLI or
+configuration file. It will start the HTTP and/or the gRPC and wait for a configuration to be
+provided.
+
+The configuration will be then stored if a store directory has been provided, and it's not required
+for future restarts.
+
+You can update the configuration with subsequent calls to the dynamic configuration API, and this
+will make the message-hub restart and reload the configuration.
+
+Although, if the device is already is already paired with Astarte not all the fields can be changed.
+The `device-id`, `realm` and `pairing-url` must remain the same after registering the device, while
+you can change the `credential_secret` since it can be wiped from Astarte.
+
+You can find the
+[HTTP api described in the docs.](https://docs.rs/astarte-message-hub/latest/astarte_message_hub/config/dynamic/http/index.html)
 
 ### Configuration in docker
 

@@ -56,6 +56,44 @@ pub const LEGACY_CONFIG_FILE_NAME: &str = "message-hub-config.toml";
 const LEGACY_CREDENTIAL_FILE: &str = "credentials_secret";
 
 /// Struct to deserialize the configuration options for the Astarte message hub.
+///
+/// This will be deserialized from a file using [`toml`].
+///
+/// ### Example
+///
+/// ```toml
+/// ##
+/// # Required fields
+/// #
+/// realm = "<REALM>"
+/// # Required to communicate with Astarte.
+/// pairing_url = "<PAIRING_URL>"
+/// # Used to register a device and obtain a `credentials_secret`
+/// pairing_token = "[PAIRING_TOKEN]"
+/// # Credential secret, if not provided the `pairing_token` is required
+/// credentials_secret = "[CREDENTIALS_SECRET]"
+/// # Device id, if not provided it will be retrieved from `io.edgehog.Device` dbus-service
+/// device_id = "[DEVICE_ID]"
+/// # Path to store persistent data
+/// store_directory = "[STORE_DIRECTORY]"
+///
+/// ##
+/// # Optional fields
+/// #
+/// # Directory containing the JSON interfaces
+/// interfaces_directory = "[INTERFACES_DIRECTORY]"
+///
+/// ##
+/// # Other fields, with defaults
+/// #
+/// # Address the gRPC connection will bind to
+/// grpc_socket_host = "127.0.0.1"
+/// grpc_socket_port = 50051
+///
+/// [astarte]
+/// # Ignore SSL errors
+/// ignore_ssl = false
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Config {
     /// The Astarte realm the device belongs to.
