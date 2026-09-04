@@ -150,12 +150,6 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-error"
-version = "0.14.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e36a904fb755c033f877364ff74d8f18586c74d8beb6a045eb63c5d01d796f99"
-
-[[package]]
-name = "astarte-device-error"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23819ab279c1a5fdaaa5338a7a9a69a7c0400e09bef720d561602197bb92e943"
@@ -190,52 +184,11 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk"
-version = "0.14.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20c228f54abbed903bb8d7fbd3f424463398eeefe34f528353223ce1d1404ad9"
-dependencies = [
- "astarte-device-error 0.14.3",
- "astarte-interfaces",
- "async-channel",
- "base64 0.22.1",
- "bson",
- "bytes",
- "cfg-if",
- "chrono",
- "flate2",
- "futures",
- "http",
- "http-body-util",
- "itertools 0.14.0",
- "mime",
- "rand 0.10.2",
- "rcgen",
- "reqwest",
- "rumqttc-dev-patched",
- "rusqlite",
- "rustls",
- "rustls-native-certs",
- "rustls-pemfile",
- "rustls-webpki 0.103.13",
- "serde",
- "serde_json",
- "sync_wrapper",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "url",
- "uuid",
- "x509-parser",
-]
-
-[[package]]
-name = "astarte-device-sdk"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "080a229672cfba402cc7bc6401f2861d2c554a002c20ef0a57b8cd776295f9b2"
 dependencies = [
- "astarte-device-error 0.15.0",
+ "astarte-device-error",
  "astarte-device-fdo",
  "astarte-device-sdk-derive",
  "astarte-interfaces",
@@ -288,11 +241,11 @@ dependencies = [
 
 [[package]]
 name = "astarte-device-sdk-mock"
-version = "0.14.3"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86ed5816418b9b12c791db2020d3efa6af3f972c6c2bba71a1597febba7af21b"
+checksum = "39eb171cf2a459106a9b26ef6215e1f4d669024d65f8bad5c94ad9c9c7115497"
 dependencies = [
- "astarte-device-sdk 0.14.3",
+ "astarte-device-sdk",
  "chrono",
  "mockall 0.14.0",
 ]
@@ -332,7 +285,7 @@ dependencies = [
 name = "astarte-message-hub"
 version = "0.12.0"
 dependencies = [
- "astarte-device-sdk 0.15.0",
+ "astarte-device-sdk",
  "astarte-device-sdk-mock",
  "astarte-interfaces",
  "astarte-message-hub-proto",
@@ -1122,7 +1075,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 name = "e2e-test"
 version = "0.12.0"
 dependencies = [
- "astarte-device-sdk 0.15.0",
+ "astarte-device-sdk",
  "astarte-interfaces",
  "astarte-message-hub",
  "astarte-message-hub-proto",
