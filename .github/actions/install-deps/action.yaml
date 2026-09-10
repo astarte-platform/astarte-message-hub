@@ -28,9 +28,15 @@ runs:
     - name: Install Linux (Ubuntu) system dependencies
       if: ${{ startsWith(inputs.for-image, 'ubuntu-') }}
       shell: bash
+      env:
+        PB_REL: https://github.com/protocolbuffers/protobuf/releases
+        PB_VERSION: 35.1
       run: |
         sudo apt-get update
         sudo apt-get -y install libsqlite3-dev libtss2-dev
+        curl -LO "$PB_REL/download/v$PB_VERSION/protoc-$PB_VERSION-linux-x86_64.zip"
+        unzip "protoc-$PB_VERSION-linux-x86_64.zip" -d "$HOME/.local"
+        rm "protoc-$PB_VERSION-linux-x86_64.zip"
     - name: Install MacOS system dependencies
       if: ${{ startsWith(inputs.for-image, 'macos-') }}
       shell: bash
