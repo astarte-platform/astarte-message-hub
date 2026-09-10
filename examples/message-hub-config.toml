@@ -25,10 +25,10 @@ pairing_token = "YOUR_PAIRING_TOKEN"
 # credentials_secret = "YOUR_CREDENTIAL_SECRET"
 store_directory = "/var/lib/message-hub"
 
-[astarte]
-ignore_ssl = false
-# keep_alive_secs = 30
-# timeout_secs = 5
+# [astarte]
+# ignore_ssl = false
+# keep_alive_secs = 10
+# timeout_secs = 30
 
 # [astarte.volatile]
 # max_retention_items = 1000
