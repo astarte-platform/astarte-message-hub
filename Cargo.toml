@@ -142,7 +142,7 @@ itertools = "0.15.0"
 mockall = "0.15.0"
 pretty_assertions = "1.4.1"
 reqwest = { version = "0.13.3", default-features = false }
-rstest = "0.26.1"
+rstest = "0.27.0"
 rustls = "0.23.40"
 rustls-platform-verifier = "0.7.0"
 serde = "1.0.228"
