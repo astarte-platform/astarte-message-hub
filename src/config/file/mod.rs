@@ -634,10 +634,7 @@ mod test {
             interfaces_directory: Some(PathBuf::from("/usr/share/message-hub/astarte-interfaces/")),
             grpc_socket_port: Some(50051),
             store_directory: Some(PathBuf::from("/var/lib/message-hub")),
-            astarte: Some(DeviceSdkOptions {
-                ignore_ssl: Some(false),
-                ..Default::default()
-            }),
+            astarte: None,
             ..Default::default()
         };
 
