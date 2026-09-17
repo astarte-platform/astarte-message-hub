@@ -156,9 +156,9 @@ checksum = "e36a904fb755c033f877364ff74d8f18586c74d8beb6a045eb63c5d01d796f99"
 
 [[package]]
 name = "astarte-device-fdo"
-version = "1.0.3"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2c30248d51597f578fd652fd1befcce711759ba70dcb902c7b574f28bd7eac0"
+checksum = "eaa947dd67de65777063f9facdd166c77dc11842797af784660466ed0236ad9c"
 dependencies = [
  "astarte-fdo-protocol",
  "aws-lc-rs",
@@ -167,6 +167,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "http",
+ "mime",
  "p256",
  "pin-project-lite",
  "rand 0.10.2",
@@ -252,9 +253,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-fdo-protocol"
-version = "1.0.3"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb913ab6b4207ad43491621696bf68c42b5029bd9c06377aa958eb68de641565"
+checksum = "0102b22fda1f925ba60ce5ccbd76b1987e2e3b9da079c95b7fcc6b2802365af3"
 dependencies = [
  "ciborium",
  "coset",
@@ -3376,7 +3377,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
