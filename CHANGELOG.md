@@ -25,6 +25,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.4](https://github.com/astarte-platform/astarte-message-hub/compare/v0.12.3...v0.12.4) - 2026-10-01
+### `astarte-message-hub` - [0.12.3](https://github.com/astarte-platform/astarte-message-hub/compare/v0.12.2...v0.12.3) - 2026-10-01
+
+#### Fixed
+
+- _(deps)_  bump astarte-device-fdo version to 1.1.0
+
+
 ## [0.12.3](https://github.com/astarte-platform/astarte-message-hub/compare/v0.12.2...v0.12.3) - 2026-08-20
 ### `astarte-message-hub` - [0.12.3](https://github.com/astarte-platform/astarte-message-hub/compare/v0.12.2...v0.12.3) - 2026-09-17
 
