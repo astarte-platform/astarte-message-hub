@@ -156,9 +156,9 @@ checksum = "23819ab279c1a5fdaaa5338a7a9a69a7c0400e09bef720d561602197bb92e943"
 
 [[package]]
 name = "astarte-device-fdo"
-version = "1.0.3"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2c30248d51597f578fd652fd1befcce711759ba70dcb902c7b574f28bd7eac0"
+checksum = "6d8bae15858b26d43c8410274fc585f134983ebb9e1cb2030a52a0d4ab1d0a5c"
 dependencies = [
  "astarte-fdo-protocol",
  "aws-lc-rs",
@@ -167,6 +167,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "http",
+ "mime",
  "p256",
  "pin-project-lite",
  "rand 0.10.2",
@@ -252,9 +253,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-fdo-protocol"
-version = "1.0.3"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb913ab6b4207ad43491621696bf68c42b5029bd9c06377aa958eb68de641565"
+checksum = "267263bb31a4a4838201396b6603317028f3138996e797fa6737b03b392d3fb3"
 dependencies = [
  "ciborium",
  "coset",
@@ -263,7 +264,6 @@ dependencies = [
  "serde",
  "serde_bytes",
  "tracing",
- "tracing-subscriber",
  "x509-parser",
 ]
 
@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "astarte-message-hub"
-version = "0.12.2"
+version = "0.12.4"
 dependencies = [
  "astarte-device-sdk",
  "astarte-device-sdk-mock",
@@ -1073,7 +1073,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "e2e-test"
-version = "0.12.2"
+version = "0.12.4"
 dependencies = [
  "astarte-device-sdk",
  "astarte-interfaces",
