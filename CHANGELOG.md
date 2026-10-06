@@ -25,6 +25,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.5](https://github.com/astarte-platform/astarte-message-hub/compare/astarte-message-hub-proto-v0.10.1...astarte-message-hub-proto-v0.12.5) - 2026-10-06
+### `astarte-message-hub-proto` - [0.12.5](https://github.com/astarte-platform/astarte-message-hub/compare/astarte-message-hub-proto-v0.10.1...astarte-message-hub-proto-v0.12.5) - 2026-10-06
+
+#### Changed
+
+- _(proto)_ include protos in the wrokspace
+
+
 ## [0.12.4](https://github.com/astarte-platform/astarte-message-hub/compare/v0.12.3...v0.12.4) - 2026-10-01
 ### `astarte-message-hub` - [0.12.3](https://github.com/astarte-platform/astarte-message-hub/compare/v0.12.2...v0.12.3) - 2026-10-01
 
