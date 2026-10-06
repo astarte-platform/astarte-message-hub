@@ -44,7 +44,10 @@ listPackage() {
 
 pkgsFiles=$(
     cat <(cargo package --allow-dirty -l -p "astarte-message-hub") \
-        <(listPackage "e2e-test") |
+        <(listPackage "astarte-message-hub-proto") \
+        <(listPackage "astarte-message-hub-proto-mock") \
+        <(listPackage "e2e-test") \
+        <(listPackage "proto-codegen") |
         sort
 )
 localFiles=$(
