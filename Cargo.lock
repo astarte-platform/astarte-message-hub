@@ -269,9 +269,9 @@ dependencies = [
 
 [[package]]
 name = "astarte-interfaces"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f8b7a2a5a2e54f865ebe5ca93ee3efd41dea73f7eb0b5e0802f5ced63a8cf9d"
+checksum = "6fb679cfcf6e84171c1f559b82b388345fe9f3b8e43062830b79576b7fedba37"
 dependencies = [
  "cfg-if",
  "regex",
