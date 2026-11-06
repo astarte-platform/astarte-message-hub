@@ -68,7 +68,7 @@ jobs:
         with:
           submodules: true
       - uses: ./.github/actions/install-deps
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@v10.3.3
       - uses: go-task/setup-task@v2.2.0
       - uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
       - uses: mozilla-actions/sccache-action@v0.0.11
