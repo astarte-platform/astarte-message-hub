@@ -6,7 +6,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,6 +29,7 @@ on:
     types: [published]
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/astarte-message-hub
+  INPUTS_TAG: ${{ inputs.tag }}
 jobs:
   push_release_to_registry:
     name: Push Docker images to registry
@@ -39,10 +40,10 @@ jobs:
       attestations: write
       id-token: write
     steps:
-      - name: Check out the repo at specified tag
-        uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
+          persist-credentials: false
       - name: Log in to registry
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
         with:
@@ -53,10 +54,10 @@ jobs:
         id: tag-types
         run: |
           echo "metadata<<EOF" >> $GITHUB_OUTPUT
-          if [[ -z "${{ inputs.tag }}" ]]; then
+          if [[ -z "${INPUTS_TAG}" ]]; then
             echo "type=semver,pattern={{version}}" >> $GITHUB_OUTPUT
           else
-            echo "type=semver,pattern={{version}},value=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "type=semver,pattern={{version}},value=${INPUTS_TAG}" >> $GITHUB_OUTPUT
           fi
           echo "EOF" >> $GITHUB_OUTPUT
       - name: Extract metadata (tags, labels) for Docker

@@ -8,7 +8,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -28,4 +28,4 @@ podman run \
     -v ./:/app:z \
     -v cargo-cache:/root/.cargo/registry:z \
     -it --rm localhost/cross-build:latest \
-    -c "cargo build --release --target aarch64-unknown-linux-gnu $@"
+    -c "cargo build --release --target aarch64-unknown-linux-gnu $*"

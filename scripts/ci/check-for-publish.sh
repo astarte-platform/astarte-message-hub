@@ -51,11 +51,16 @@ pkgsFiles=$(
         sort
 )
 localFiles=$(
-    git ls-files --recurse-submodules --cached --no-deleted | sort -u
+    git ls-files --recurse-submodules --cached --no-deleted | sort -i | uniq
 )
 
 # List files unique to localFiles and not present in pkgsFiles
 toCopy=$(comm -12 <(echo "$localFiles") <(echo "$pkgsFiles"))
+
+if [[ -z $toCopy ]]; then
+    echo Nothing to check
+    exit
+fi
 
 cp -v Cargo.toml Cargo.lock "$workingDir"
 
