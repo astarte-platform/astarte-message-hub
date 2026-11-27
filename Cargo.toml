@@ -27,7 +27,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.12.4"
+version = "0.12.5"
 edition = "2024"
 homepage = "https://astarte.cloud/"
 license = "Apache-2.0"
@@ -112,7 +112,7 @@ tempfile.workspace = true
 astarte-device-sdk = "0.15.0"
 astarte-device-sdk-mock = "0.15.0"
 astarte-interfaces = "1.0.0"
-astarte-message-hub-proto = { path = "./astarte-message-hub-proto", version = "=0.12.4" }
+astarte-message-hub-proto = { path = "./astarte-message-hub-proto", version = "=0.12.5" }
 async-trait = "0.1.89"
 axum = "0.8.9"
 base64 = "0.23.0"
