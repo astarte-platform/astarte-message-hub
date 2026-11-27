@@ -18,32 +18,31 @@
 
 //! Security events
 
-use std::time::Duration;
-
-use astarte_device_sdk::{
-    DeviceClient,
-    pairing::Pairing,
-    store::{PropertyStore, StoreCapabilities},
-    transport::mqtt::Mqtt,
-};
+use astarte_device_sdk::Client;
 use chrono::Utc;
+use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
 /// Checks the expiry of the certificate
-pub async fn check_cert_expiry<S, P>(client: DeviceClient<Mqtt<S, P>>) -> Result<(), eyre::Report>
+pub async fn check_cert_expiry<C>(client: C, cancel: CancellationToken) -> eyre::Result<()>
 where
-    S: PropertyStore + StoreCapabilities,
-    P: Pairing,
+    C: Client,
 {
     // NOTE interval of 10 days to check certificate expiry
     const CHECK_CERT_INTERVAL: Duration = Duration::from_secs(60 * 60 * 24 * 10);
 
     let mut interval = tokio::time::interval(CHECK_CERT_INTERVAL);
 
-    loop {
+    while let Some(_instant) = cancel.run_until_cancelled(interval.tick()).await {
         let check_datetime = Utc::now() + CHECK_CERT_INTERVAL;
 
-        let cert_check = client.is_valid_at(check_datetime).await;
+        let Some(cert_check) = cancel
+            .run_until_cancelled(client.is_valid_at(check_datetime))
+            .await
+        else {
+            break;
+        };
 
         if let Some(cert_check_res) = cert_check {
             if cert_check_res {
@@ -60,7 +59,7 @@ where
         } else {
             debug!("Could not check certificate validity");
         }
-
-        interval.tick().await;
     }
+
+    Ok(())
 }

@@ -21,6 +21,7 @@ use std::{env::VarError, future::Future, sync::Arc};
 
 use astarte_device_sdk::store::memory::MemoryStore;
 use astarte_device_sdk::transport::grpc::Grpc;
+use astarte_device_sdk::transport::grpc::store::GrpcStore;
 use astarte_device_sdk::{DeviceClient, Value, prelude::*};
 use astarte_interfaces::Interface;
 use eyre::{Context, OptionExt, bail, ensure, eyre};
@@ -179,7 +180,7 @@ async fn e2e_test(
 
 async fn send<F, O>(node: &Node, barrier: &Barrier, f: F) -> eyre::Result<()>
 where
-    F: FnOnce(DeviceClient<Grpc<MemoryStore>>) -> O,
+    F: FnOnce(DeviceClient<Grpc, GrpcStore<MemoryStore>>) -> O,
     O: Future<Output = eyre::Result<()>> + Send + 'static,
 {
     let client = node.client.clone();
@@ -196,7 +197,7 @@ where
 #[instrument(skip_all)]
 async fn send_prop<F, O>(node: &Node, barrier: &Barrier, f: F) -> eyre::Result<()>
 where
-    F: FnOnce(DeviceClient<Grpc<MemoryStore>>) -> O,
+    F: FnOnce(DeviceClient<Grpc, GrpcStore<MemoryStore>>) -> O,
     O: Future<Output = eyre::Result<()>> + Send + 'static,
 {
     let client = node.client.clone();
@@ -213,7 +214,7 @@ where
 #[instrument(skip_all)]
 async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre::Result<()> {
     info!("sending DeviceAggregate");
-    send(node, barrier, |mut client| async move {
+    send(node, barrier, |client| async move {
         client
             .send_object_with_timestamp(
                 DeviceAggregate::name(),
@@ -244,7 +245,7 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
     let mut data = DeviceDatastream::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
-        send(node, barrier, |mut client| async move {
+        send(node, barrier, |client| async move {
             client
                 .send_individual_with_timestamp(
                     DeviceDatastream::name(),
@@ -278,7 +279,7 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
 
-        send_prop(node, barrier, |mut client| async move {
+        send_prop(node, barrier, |client| async move {
             client
                 .set_property(DeviceProperty::name(), &format!("/{endpoint}"), value)
                 .await?;
@@ -347,7 +348,7 @@ async fn send_device_data(node: &mut Node, api: &Api, barrier: &Barrier) -> eyre
     for &endpoint in ENDPOINTS {
         ensure!(data.get(endpoint).is_some(), "endpoint not found");
 
-        send(node, barrier, |mut client| async move {
+        send(node, barrier, |client| async move {
             client
                 .unset_property(DeviceProperty::name(), &format!("/{endpoint}"))
                 .await?;
@@ -471,7 +472,7 @@ async fn extend_node_interfaces(
     to_add: Vec<Interface>,
 ) -> eyre::Result<()> {
     debug!("extending interfaces with AdditionalDeviceDatastream");
-    let mut client = node.client.clone();
+    let client = node.client.clone();
     let handle = tokio::spawn(async move { client.extend_interfaces(to_add).await });
 
     tokio::time::timeout(tokio::time::Duration::from_secs(5), barrier.wait())
@@ -510,7 +511,7 @@ async fn extend_node_interfaces(
     let mut data = AdditionalDeviceDatastream::default().into_object()?;
     for &endpoint in ENDPOINTS {
         let value = data.remove(endpoint).ok_or_eyre("endpoint not found")?;
-        send(node, barrier, |mut client| async move {
+        send(node, barrier, |client| async move {
             client
                 .send_individual_with_timestamp(
                     AdditionalDeviceDatastream::name(),
@@ -550,7 +551,7 @@ async fn remove_node_interfaces(
     mut to_remove: Vec<String>,
 ) -> eyre::Result<()> {
     debug!("removing interfaces {to_remove:?}");
-    let mut client = node.client.clone();
+    let client = node.client.clone();
     let to_remove_cl = to_remove.clone();
     let handle = tokio::spawn(async move { client.remove_interfaces(to_remove_cl).await });
 

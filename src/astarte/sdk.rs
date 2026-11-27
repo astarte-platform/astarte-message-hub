@@ -19,6 +19,6 @@
 //! Wrapper on the traits and structs for the device sdk.
 
 #[cfg(not(test))]
-pub(crate) use astarte_device_sdk::introspection::DynamicIntrospection;
+pub(crate) use astarte_device_sdk::introspection::DeviceIntrospection;
 #[cfg(test)]
 pub(crate) use astarte_device_sdk_mock::DynamicIntrospection;

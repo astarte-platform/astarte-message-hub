@@ -48,7 +48,7 @@ rust-version.workspace = true
 description = "A central service that runs on (Linux) devices for collecting and delivering messages from N apps using 1 MQTT connection to Astarte"
 
 [features]
-default = ["fdo"]
+default = ["fdo", "platform-verifier"]
 # Enables registration using the FIDO Device Onboarding protocol.
 fdo = ["astarte-device-sdk/fdo"]
 # Enables the Trusted Platform Module for singing.
@@ -62,9 +62,20 @@ bindgen = ["astarte-device-sdk/bindgen"]
 # Feature to make it easier to cross compile the runtime, it requires clang and cmake to be
 # installed
 cross = ["vendored", "bindgen", "astarte-device-sdk/cross"]
+# Preferred, use the platform certificate and TLS verifier.
+platform-verifier = [
+  "astarte-device-tls/platform-verifier",
+  "astarte-device-sdk/platform-verifier",
+]
+# Uses the webpki-roots as a CA bundles
+webpki-roots = [
+  "astarte-device-sdk/webpki-roots",
+  "astarte-device-tls/webpki-roots",
+]
 
 [dependencies]
 astarte-device-sdk = { workspace = true, features = ["derive"] }
+astarte-device-tls = { workspace = true, default-features = false }
 astarte-interfaces.workspace = true
 astarte-message-hub-proto.workspace = true
 async-trait.workspace = true
@@ -109,8 +120,9 @@ rstest.workspace = true
 tempfile.workspace = true
 
 [workspace.dependencies]
-astarte-device-sdk = "0.15.0"
-astarte-device-sdk-mock = "0.15.0"
+astarte-device-sdk = "0.15.1"
+astarte-device-sdk-mock = "0.15.1"
+astarte-device-tls = { version = "0.15.1", default-features = false }
 astarte-interfaces = "1.0.0"
 astarte-message-hub-proto = { path = "./astarte-message-hub-proto", version = "=0.12.4" }
 async-trait = "0.1.89"
@@ -163,3 +175,6 @@ lto = "thin"
 debug = true
 # Supported by all platform
 split-debuginfo = "packed"
+
+[patch.crates-io]
+astarte-device-sdk = { git = "https://github.com/astarte-platform/astarte-device-sdk-rust", rev = "934a28261582843c35b72b9792c91b217b03eeaf" }
