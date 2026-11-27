@@ -6,7 +6,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,34 +20,57 @@ name: common
 on:
   workflow_call:
   workflow_dispatch:
+
+# Spend CI time only on latest ref
+concurrency:
+  group: common-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+
 defaults:
   run:
     shell: bash
+
 env:
   CLICOLOR: 1
+
 jobs:
   check-copyright:
+    name: check-copyright
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-26.04
     env:
       BASE_REF: ${{ github.event.pull_request.base.sha }}
       HEAD_REF: ${{ github.event.pull_request.head.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v10.4.0
+          persist-credentials: false
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@61b401267256bb9c047d6d1481b176d5772a0ba7 # 2026.11.23.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache Homebrew prefix from Brewfile
+        uses: Homebrew/actions/cache-homebrew-prefix@61b401267256bb9c047d6d1481b176d5772a0ba7 # 2026.11.23.1
+        with:
+          brewfile: true
       - run: |
           ./scripts/ci/add-copyright-to-modified.sh "$BASE_REF" "$HEAD_REF"
           git diff --exit-code --name-only
+
   conventional-commit:
+    name: conventional-commit
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: crate-ci/committed@v1.1.12
+          persist-credentials: false
+      - uses: crate-ci/committed@02af07ed1d11ad69a96ab75f08c9831a4e2c00da # v1.1.12
         with:
           args: "-vv"

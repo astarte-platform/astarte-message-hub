@@ -6,7 +6,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -42,10 +42,10 @@ jobs:
       attestations: write
       id-token: write
     steps:
-      - name: Check out the repo at the specified ref
-        uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit-sha }}
+          persist-credentials: false
       - name: Log in to registry
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
         with:
@@ -55,7 +55,7 @@ jobs:
       - name: Compute tag name for snapshot images
         id: compute-tag
         run: |
-          # ${{ github.ref }} references the ref of the branch or tag that triggered the worflow run
+          # ${GITHUB_REF} references the ref of the branch or tag that triggered the worflow run
           # we need to handle dispatched invocations so we use this git command
           REF=$(git symbolic-ref HEAD)
           export TAG="$(echo $REF | sed 's,refs/heads/,,' | sed 's/master/snapshot/g' | sed 's/release-\(.*\)/\1-snapshot/g' )"

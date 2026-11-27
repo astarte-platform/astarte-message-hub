@@ -25,68 +25,90 @@ on:
       - master
       - main
       - release-[0-9]+.[0-9]+
+
+# Spend CI time only on latest ref
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
-  id-token: write
+
+defaults:
+  run:
+    shell: bash
+
 env:
   CI: "true"
   CARGO_TERM_COLOR: always
-  SCCACHE_GHA_ENABLED: "true"
-  RUSTC_WRAPPER: "sccache"
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
   NEXTEST_PROFILE: "ci"
   MAIN_CRATE: "astarte-message-hub"
   EXPORT_FOR_CI: "true"
-# Spend CI time only on latest ref
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
-defaults:
-  run:
-    shell: bash
+
 jobs:
   dco:
-    uses: ./.github/workflows/dco.yaml
+    uses: $/.github/workflows/dco.yaml
     permissions:
-      checks: read
-      contents: read
-      actions: read
-      pull-requests: read
+      contents: read # clones the repo
+      actions: read # checks the action rollup
+      checks: read # checks the action rollup
+      pull-requests: read # checks the action rollup
     with:
       pr: ${{ github.event.pull_request.number }}
+
   common:
-    uses: ./.github/workflows/common.yaml
+    uses: $/.github/workflows/common.yaml
+
   e2e-test:
-    uses: ./.github/workflows/e2e-test.yaml
+    uses: $/.github/workflows/e2e-test.yaml
+
   multi-platform:
-    uses: ./.github/workflows/multi-platform.yaml
+    uses: $/.github/workflows/multi-platform.yaml
+
   check:
+    name: check
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read # clones the repository
+      id-token: write # authenticates with codecov
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
-      - uses: ./.github/actions/install-deps
-      - uses: astral-sh/setup-uv@v10.4.0
-      - uses: go-task/setup-task@v2.2.0
-      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
-      - uses: mozilla-actions/sccache-action@v0.0.11
-      - uses: taiki-e/install-action@v2.90.8
+          persist-credentials: false
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@ceec4e8419bb3c97ce96e9dda7738499ed5f869d # 2026.11.14.1
         with:
-          tool: |
-            cargo-docs-rs
-            cargo-hack
-            cargo-llvm-cov
-            cargo-minimal-versions
-            cargo-nextest
-            cargo-semver-checks
-            rustfilt
-            typos-cli
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: install rust toolchain
+        # zizmor: ignore[cache-poisoning] we release and publish in another job without cache
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
+        with:
+          cache: true
+      - parallel:
+          - name: Cache Homebrew prefix from Brewfile
+            uses: Homebrew/actions/cache-homebrew-prefix@61b401267256bb9c047d6d1481b176d5772a0ba7 # 2026.11.23.1
+            with:
+              brewfile: true
+          - uses: $/.github/actions/install-deps
+          - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+            with:
+              tool: |
+                cargo-docs-rs
+                cargo-hack
+                cargo-llvm-cov
+                cargo-minimal-versions
+                cargo-nextest
+                cargo-semver-checks
+                rustfilt
+                typos-cli
       - run: |
           task ci
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v7.1.1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
           fail_ci_if_error: false
