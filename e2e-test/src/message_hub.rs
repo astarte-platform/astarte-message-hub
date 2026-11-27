@@ -22,7 +22,7 @@ use astarte_device_sdk::{
     builder::DeviceBuilder,
     prelude::*,
     store::SqliteStore,
-    transport::mqtt::{Credential, MqttConfig},
+    transport::mqtt::{Credential, Mqtt},
 };
 use astarte_message_hub::{
     AstarteMessageHub, astarte::handler::init_pub_sub, cache::Introspection, store::StoreDir,
@@ -68,16 +68,16 @@ pub async fn init_message_hub(
 
     let store_dir = StoreDir::create(path.to_path_buf()).await?;
 
-    let mut mqtt_config = MqttConfig::new(astarte_device_sdk::transport::mqtt::MqttArgs {
+    let mqtt_config = Mqtt::new(astarte_device_sdk::transport::mqtt::MqttArgs {
         realm,
         device_id,
         credential: Credential::paring_token(pairing_token),
         pairing_url: pairing_url.parse()?,
     });
 
-    if read_env("E2E_IGNORE_SSL").is_ok() {
-        mqtt_config = mqtt_config.ignore_ssl_errors();
-    }
+    // if read_env("E2E_IGNORE_SSL").is_ok() {
+    //     mqtt_config = mqtt_config.ignore_ssl_errors();
+    // }
 
     let cache = Introspection::new(store_dir);
 

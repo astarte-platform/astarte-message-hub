@@ -20,7 +20,7 @@
 
 use std::sync::Arc;
 
-use astarte_device_sdk::client::ClientConnection;
+use astarte_device_sdk::client::Client;
 use tokio::sync::{RwLock, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -105,10 +105,10 @@ pub trait IsPaired {
 
 impl<T> IsPaired for T
 where
-    T: ClientConnection,
+    T: Client,
 {
     fn is_paired(&self) -> bool {
-        ClientConnection::is_paired(self)
+        Client::is_paired(self)
     }
 }
 

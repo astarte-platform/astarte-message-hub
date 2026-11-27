@@ -16,18 +16,16 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::ops::ControlFlow;
-use std::sync::Arc;
-use std::{net::SocketAddr, time::Duration};
-
-use astarte_device_sdk::client::ClientConnection;
-use astarte_device_sdk::pairing::Pairing;
-use astarte_device_sdk::store::SqliteStore;
-use astarte_device_sdk::transport::mqtt::Mqtt;
-use astarte_device_sdk::{DeviceClient, DeviceConnection, EventLoop};
+use astarte_device_sdk::Connection;
+use astarte_device_sdk::client::Client;
+use astarte_device_sdk::introspection::DeviceIntrospection;
+use astarte_device_sdk::properties::PropAccess;
 use astarte_message_hub_proto::message_hub_server::MessageHubServer;
 use clap::error::Result;
 use eyre::{ContextCompat, OptionExt, WrapErr, eyre};
+use std::ops::ControlFlow;
+use std::sync::Arc;
+use std::{net::SocketAddr, time::Duration};
 use tokio::select;
 use tokio::sync::{RwLock, mpsc};
 use tokio::task::{JoinError, JoinSet};
@@ -128,16 +126,17 @@ impl MessageHubTasks {
         }
     }
 
-    async fn with_connection<P>(
+    async fn with_connection<C, D>(
         &mut self,
         cancel: CancellationToken,
         dyn_validate: SharedValidate,
         options: astarte_message_hub::config::MessageHubOptions,
-        client: DeviceClient<Mqtt<SqliteStore, P>>,
-        connection: DeviceConnection<Mqtt<SqliteStore, P>>,
+        client: C,
+        connection: D,
     ) -> std::result::Result<ControlFlow<()>, eyre::Error>
     where
-        P: Pairing + 'static,
+        C: Client + DeviceIntrospection + PropAccess,
+        D: Connection,
     {
         *dyn_validate.write().await = Some(Validate::new(client.clone(), &options));
 
@@ -148,7 +147,7 @@ impl MessageHubTasks {
         // disconnect from astarte
         self.tasks.spawn({
             let cancel = cancel.child_token();
-            let mut client = client.clone();
+            let client = client.clone();
 
             async move {
                 cancel.cancelled().await;
@@ -169,12 +168,7 @@ impl MessageHubTasks {
             let client = client.clone();
             let cancel = cancel.child_token();
 
-            self.tasks.spawn(async move {
-                cancel
-                    .run_until_cancelled_owned(check_cert_expiry(client))
-                    .await
-                    .unwrap_or(Ok(()))
-            });
+            self.tasks.spawn(check_cert_expiry(client, cancel));
         }
 
         // Event loop for the astarte device sdk

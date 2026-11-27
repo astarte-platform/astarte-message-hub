@@ -82,17 +82,17 @@ pub(crate) fn map_stored_properties_to_proto(
     let properties = props
         .into_iter()
         .map(|prop| {
-            let ownership = match prop.ownership {
+            let ownership = match prop.ownership() {
                 Ownership::Device => astarte_message_hub_proto::Ownership::Device,
                 Ownership::Server => astarte_message_hub_proto::Ownership::Server,
             };
-
+            let version_major = prop.interface_major();
             let data = convert_data_into_proto(prop.value);
 
             Property {
                 interface_name: prop.interface,
                 path: prop.path,
-                version_major: prop.interface_major,
+                version_major,
                 ownership: ownership.into(),
                 data: Some(data),
             }

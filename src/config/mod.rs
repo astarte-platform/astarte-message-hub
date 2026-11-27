@@ -23,11 +23,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use astarte_device_sdk::builder::{ConnectionConfig, DeviceBuilder};
-use astarte_device_sdk::pairing::api::PairingApi;
-use astarte_device_sdk::store::SqliteStore;
-use astarte_device_sdk::transport::mqtt::{Credential, Mqtt, MqttArgs, MqttConfig};
+use astarte_device_sdk::store::{SqliteStore, StoreCapabilities};
+use astarte_device_sdk::transport::mqtt::{Credential, Mqtt, MqttArgs, fdo::FdoConfig};
 use astarte_device_sdk::{DeviceClient, DeviceConnection};
 use eyre::{Context, OptionExt};
+use rustls::ClientConfig;
 use tracing::{debug, info};
 use url::Url;
 
@@ -111,14 +111,10 @@ pub struct MessageHubOptions {
     pub astarte: DeviceSdkOptions,
 }
 
-type MqttPairing = Mqtt<SqliteStore, PairingApi>;
 #[cfg(feature = "fdo")]
-type MqttFdo = Mqtt<
-    SqliteStore,
-    astarte_device_sdk::pairing::fdo::FdoConfig<
-        astarte_device_sdk::astarte_device_fdo::crypto::software::SoftwareCrypto<
-            astarte_device_sdk::astarte_device_fdo::storage::FileStorage,
-        >,
+type MqttFdo = FdoConfig<
+    astarte_device_sdk::astarte_device_fdo::crypto::software::SoftwareCrypto<
+        astarte_device_sdk::astarte_device_fdo::storage::FileStorage,
     >,
 >;
 
@@ -133,30 +129,34 @@ impl MessageHubOptions {
         &self,
         pairing: &Legacy,
         store_dir: &StoreDir,
-    ) -> eyre::Result<(DeviceClient<MqttPairing>, DeviceConnection<MqttPairing>)> {
+    ) -> eyre::Result<(
+        DeviceClient<Mqtt, SqliteStore>,
+        DeviceConnection<Mqtt, SqliteStore>,
+    )> {
         let Legacy {
             realm,
             device_id,
             pairing_url,
             credential,
         } = pairing;
+        let tls = if self.astarte.ignore_ssl == Some(true) {
+            astarte_device_tls::insecure::insecure()?
+        } else {
+            astarte_device_tls::config()?
+        };
 
-        let mut mqtt_config = MqttConfig::new(MqttArgs {
+        let mut mqtt = Mqtt::new(MqttArgs {
             realm: realm.clone(),
             device_id: device_id.clone(),
             credential: credential.clone(),
             pairing_url: pairing_url.clone(),
         });
 
-        if self.astarte.ignore_ssl == Some(true) {
-            mqtt_config = mqtt_config.ignore_ssl_errors();
-        }
-
         if let Some(keep_alive) = self.astarte.keep_alive_secs {
-            mqtt_config = mqtt_config.keepalive(Duration::from_secs(keep_alive));
+            mqtt = mqtt.keepalive(Duration::from_secs(keep_alive));
         }
 
-        self.connect(store_dir, mqtt_config).await
+        self.connect(store_dir, mqtt, tls).await
     }
 
     /// Pair with Astarte using FDO
@@ -165,9 +165,14 @@ impl MessageHubOptions {
         &self,
         pairing: &Fdo,
         store_dir: &StoreDir,
-    ) -> Result<(DeviceClient<MqttFdo>, DeviceConnection<MqttFdo>), eyre::Error> {
-        use astarte_device_sdk::pairing::fdo::FdoConfig;
-        use rustls_platform_verifier::ConfigVerifierExt;
+    ) -> Result<
+        (
+            DeviceClient<MqttFdo, SqliteStore>,
+            DeviceConnection<MqttFdo, SqliteStore>,
+        ),
+        eyre::Error,
+    > {
+        use astarte_device_sdk::transport::mqtt::fdo::FdoConfig;
 
         let fdo_dir = store_dir.get_store_dir().await?;
         let storage = astarte_device_sdk::astarte_device_fdo::storage::FileStorage::open(
@@ -180,36 +185,44 @@ impl MessageHubOptions {
             )
             .await?;
 
-        let tls = rustls::ClientConfig::with_platform_verifier()?;
+        let tls = if self.astarte.ignore_ssl == Some(true) {
+            astarte_device_tls::insecure::insecure()?
+        } else {
+            astarte_device_tls::config()?
+        };
 
         let mut fdo = FdoConfig::build("fdo-test-message-hub", &pairing.device_id)
             .set_manufacturing_url(&pairing.manufacturing_url)
             .set_crypto(crypto);
 
-        if self.astarte.ignore_ssl == Some(true) {
-            fdo = fdo.set_insecure_ssl(true);
-        }
-
         if let Some(keep_alive) = self.astarte.keep_alive_secs {
             fdo = fdo.set_keepalive(Duration::from_secs(keep_alive));
         }
 
-        let fdo = fdo.build()?.device_initialize(fdo_dir, tls).await?;
+        let fdo = fdo.build()?.device_initialize(fdo_dir, tls.clone()).await?;
 
-        self.connect(store_dir, fdo).await
+        self.connect(store_dir, fdo, tls).await
     }
 
     async fn connect<C>(
         &self,
         store_dir: &StoreDir,
         conn_cfg: C,
-    ) -> eyre::Result<(DeviceClient<C::Conn>, DeviceConnection<C::Conn>)>
+        tls: ClientConfig,
+    ) -> eyre::Result<(
+        DeviceClient<C, C::Store<SqliteStore>>,
+        DeviceConnection<C, C::Store<SqliteStore>>,
+    )>
     where
-        C: ConnectionConfig<SqliteStore>,
+        C: ConnectionConfig,
+        //C::Store<SqliteStore>: PropertyStore,
+        C::Store<SqliteStore>: StoreCapabilities,
     {
         let store_directory = store_dir.get_store_dir().await?;
 
-        let mut builder = DeviceBuilder::new().writable_dir(store_directory);
+        let mut builder = DeviceBuilder::new()
+            .client_tls(tls)
+            .writable_dir(store_directory);
 
         if let Some(timeout) = self.astarte.timeout_secs {
             builder = builder.connection_timeout(Duration::from_secs(timeout))
@@ -269,7 +282,6 @@ impl MessageHubOptions {
 
             builder = builder.max_stored_retention(max_stored_items);
         }
-
         let (client, connection) = builder.connection(conn_cfg).build().await?;
 
         info!("Astarte device initialized");

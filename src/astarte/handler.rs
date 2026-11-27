@@ -44,7 +44,7 @@ use tonic::{Code, Status};
 use tracing::{debug, error, info, trace};
 use uuid::Uuid;
 
-use super::sdk::DynamicIntrospection;
+use super::sdk::DeviceIntrospection;
 use super::{AstartePublisher, AstarteSubscriber, PropAccessExt, Subscription};
 use crate::error::AstarteMessageHubError;
 use crate::messages::{
@@ -216,7 +216,7 @@ impl<C> DevicePublisher<C> {
                 AstarteMessageHubError::AstarteInvalidData("Invalid individual data".to_string())
             })?;
 
-        let mut client = self.client.clone();
+        let client = self.client.clone();
 
         if let Some(timestamp) = data.timestamp {
             let timestamp = convert_timestamp_to_chrono(timestamp)?;
@@ -249,7 +249,7 @@ impl<C> DevicePublisher<C> {
             .map(|(k, v)| convert_proto_into_data(v).map(|v| (k, v)))
             .collect::<Result<AstarteObject, AstarteMessageHubError>>()?;
 
-        let mut client = self.client.clone();
+        let client = self.client.clone();
 
         if let Some(timestamp) = timestamp {
             let timestamp = convert_timestamp_to_chrono(timestamp)?;
@@ -273,7 +273,7 @@ impl<C> DevicePublisher<C> {
     where
         C: Client,
     {
-        let mut client = self.client.clone();
+        let client = self.client.clone();
 
         match data.data {
             Some(data) => {
@@ -374,7 +374,7 @@ impl<C> DevicePublisher<C> {
 #[async_trait]
 impl<C> AstarteSubscriber for DevicePublisher<C>
 where
-    C: Client + DynamicIntrospection + PropAccess + Send + Sync,
+    C: Client + DeviceIntrospection + PropAccess + Send + Sync,
 {
     async fn subscribe(&self, node: &AstarteNode) -> Result<Subscription, AstarteMessageHubError> {
         let introspection = node
@@ -383,7 +383,7 @@ where
             .map(|i| i.interface_name().to_string())
             .collect();
 
-        let mut client = self.client.clone();
+        let client = self.client.clone();
         let added_names = client
             .extend_interfaces(node.introspection.values().cloned().collect::<Vec<_>>())
             .await?;
@@ -471,7 +471,7 @@ where
             to_add.keys()
         );
 
-        let mut client = self.client.clone();
+        let client = self.client.clone();
         let added_names = client
             .extend_interfaces(to_add.values().cloned().collect::<Vec<_>>())
             .await?;
@@ -515,7 +515,7 @@ where
             .collect_vec();
 
         trace!("removing the following interfaces from the introspection: {to_remove_from_intr:?}");
-        let mut client = self.client.clone();
+        let client = self.client.clone();
         let removed_interfaces = client.remove_interfaces(to_remove_from_intr).await?;
         debug!("interfaces removed");
 

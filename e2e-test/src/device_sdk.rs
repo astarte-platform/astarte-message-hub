@@ -23,7 +23,7 @@ use astarte_device_sdk::{
     builder::DeviceBuilder,
     prelude::*,
     store::memory::MemoryStore,
-    transport::grpc::{Grpc, GrpcConfig},
+    transport::grpc::{Grpc, store::GrpcStore},
 };
 use eyre::{Context, OptionExt};
 use tokio::{
@@ -37,7 +37,7 @@ use crate::{GRPC_PORT, UUID, interfaces::INTERFACES};
 
 pub struct Node {
     handle: AbortHandle,
-    pub client: DeviceClient<Grpc<MemoryStore>>,
+    pub client: DeviceClient<Grpc, GrpcStore<MemoryStore>>,
 }
 
 impl Node {
@@ -61,7 +61,7 @@ pub async fn init_node(
     barrier: &Arc<Barrier>,
     tasks: &mut JoinSet<eyre::Result<()>>,
 ) -> eyre::Result<Node> {
-    let grpc = GrpcConfig::from_url(UUID, format!("http://[::1]:{GRPC_PORT}"))?;
+    let grpc = Grpc::from_url(UUID, format!("http://[::1]:{GRPC_PORT}"))?;
 
     let mut builder = DeviceBuilder::new().store(MemoryStore::new());
 
